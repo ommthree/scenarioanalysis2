@@ -85,6 +85,11 @@ add_subdirectory(engine)
 enable_testing()
 add_subdirectory(engine/tests)
 
+# Build utility scripts
+add_executable(init_database scripts/init_database.cpp)
+target_link_libraries(init_database PRIVATE engine_lib)
+target_include_directories(init_database PRIVATE ${CMAKE_SOURCE_DIR}/engine/include)
+
 # Install targets
 install(TARGETS scenario_engine
     RUNTIME DESTINATION bin
