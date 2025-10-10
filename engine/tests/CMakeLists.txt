@@ -1,10 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Find Catch2 (or use bundled version)
-if(EXISTS "${CMAKE_SOURCE_DIR}/external/catch2/single_include")
-    add_library(Catch2 INTERFACE)
-    target_include_directories(Catch2 INTERFACE ${CMAKE_SOURCE_DIR}/external/catch2/single_include)
-    message(STATUS "Found Catch2 at external/catch2")
+# Find Catch2 - v3 uses src/catch2 instead of single_include
+if(EXISTS "${CMAKE_SOURCE_DIR}/external/catch2/src/catch2")
+    add_subdirectory(${CMAKE_SOURCE_DIR}/external/catch2 ${CMAKE_BINARY_DIR}/catch2)
+    message(STATUS "Found Catch2 v3 at external/catch2")
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/external/catch2/single_include")
+    add_library(Catch2::Catch2 INTERFACE IMPORTED)
+    target_include_directories(Catch2::Catch2 INTERFACE ${CMAKE_SOURCE_DIR}/external/catch2/single_include)
+    message(STATUS "Found Catch2 v2 at external/catch2")
 else()
     message(WARNING "Catch2 not found - tests will not build")
     return()
@@ -25,7 +28,7 @@ add_executable(run_tests ${TEST_SOURCES})
 target_link_libraries(run_tests
     PRIVATE
         engine_lib
-        Catch2
+        Catch2::Catch2WithMain
 )
 
 target_include_directories(run_tests

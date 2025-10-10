@@ -27,41 +27,53 @@ A production-grade financial modelling framework for scenario analysis, stress t
 
 ```
 ScenarioAnalysis2/
-├── README.md                       # This file
+├── README.md                       # This file - start here
+├── tidyup.md                       # Directory organization rules
 ├── CMakeLists.txt                  # Main build configuration
 ├── .gitignore                      # Git ignore rules
 │
 ├── docs/                           # 📚 Documentation
-│   ├── Dynamic_Financial_Statement_Modelling_Framework_v3.8.md
-│   ├── SYSTEM_ARCHITECTURE_PLAN.md
-│   ├── ADVANCED_MODULES_ARCHITECTURE.md
-│   ├── NATIVE_VISUALIZATION_ARCHITECTURE.md
-│   ├── PROJECT_MILESTONES.md
-│   ├── ARCHITECTURE_REVIEW.md
-│   └── REVISED_PROJECT_PLAN.md
+│   ├── TARGET_STATE.md             # ⭐ Complete target architecture (800 lines)
+│   ├── IMPLEMENTATION_PLAN.md      # ⭐ 24-week execution plan (700 lines)
+│   ├── M1_DETAILED_WORKPLAN.md     # ⭐ Milestone 1 day-by-day plan (600 lines)
+│   │
+│   ├── docu/                       # 📋 Documentation indices
+│   │   ├── md.md                   # Index of all markdown files
+│   │   └── codefiles.md            # Index of all code files with function docs
+│   │
+│   ├── target/                     # 🎯 Target specifications
+│   │   └── schema.md               # Complete database schema documentation
+│   │
+│   └── archive/                    # 📦 Historical/superseded documents
+│       ├── SYSTEM_ARCHITECTURE_PLAN.md
+│       ├── ADVANCED_MODULES_ARCHITECTURE.md
+│       ├── NATIVE_VISUALIZATION_ARCHITECTURE.md
+│       ├── ARCHITECTURE_REVIEW.md
+│       ├── PROJECT_MILESTONES.md
+│       └── REVISED_PROJECT_PLAN.md
 │
 ├── engine/                         # 🔧 C++ Core Engine
 │   ├── CMakeLists.txt
 │   ├── include/                    # Public headers
 │   │   ├── database/
-│   │   │   ├── idatabase.h
-│   │   │   ├── result_set.h
-│   │   │   └── database_factory.h
+│   │   │   ├── idatabase.h         # Database abstraction interface
+│   │   │   ├── result_set.h        # Query result iterator
+│   │   │   └── database_factory.h  # Factory for DB creation
 │   │   ├── core/
-│   │   │   ├── statement_template.h
-│   │   │   ├── formula_evaluator.h
-│   │   │   ├── pl_engine.h
-│   │   │   ├── bs_engine.h
-│   │   │   ├── cf_engine.h
-│   │   │   └── scenario_runner.h
+│   │   │   ├── statement_template.h    # JSON-driven P&L/BS/CF templates
+│   │   │   ├── formula_evaluator.h     # Expression parser/calculator
+│   │   │   ├── pl_engine.h             # P&L calculation engine
+│   │   │   ├── bs_engine.h             # Balance sheet engine
+│   │   │   ├── cf_engine.h             # Cash flow engine
+│   │   │   └── scenario_runner.h       # Orchestrates multi-period runs
 │   │   ├── policy/
-│   │   │   ├── funding_policy.h
-│   │   │   ├── capex_policy.h
-│   │   │   └── wc_policy.h
+│   │   │   ├── funding_policy.h    # Working capital & debt rules
+│   │   │   ├── capex_policy.h      # CapEx allocation rules
+│   │   │   └── wc_policy.h         # DSO/DPO/DIO policies
 │   │   ├── tax/
-│   │   │   └── tax_strategy.h
+│   │   │   └── tax_strategy.h      # Tax calculation strategy interface
 │   │   └── types/
-│   │       └── common_types.h
+│   │       └── common_types.h      # Shared type definitions
 │   │
 │   ├── src/                        # Implementation
 │   │   ├── database/
@@ -79,12 +91,12 @@ ScenarioAnalysis2/
 │   │   │   ├── funding_policy_solver.cpp
 │   │   │   └── wc_policy.cpp
 │   │   ├── tax/
-│   │   │   ├── simple_tax_strategy.cpp
-│   │   │   ├── progressive_tax_strategy.cpp
-│   │   │   └── loss_carryforward_tax_strategy.cpp
+│   │   │   ├── simple_tax_strategy.cpp         # Flat rate tax
+│   │   │   ├── progressive_tax_strategy.cpp    # Bracket-based tax
+│   │   │   └── loss_carryforward_tax_strategy.cpp  # NOL handling
 │   │   ├── web/
-│   │   │   └── server.cpp
-│   │   └── main.cpp
+│   │   │   └── server.cpp          # Crow HTTP/WebSocket server
+│   │   └── main.cpp                # Application entry point
 │   │
 │   └── tests/                      # 🧪 Unit & Integration Tests
 │       ├── CMakeLists.txt
@@ -95,39 +107,39 @@ ScenarioAnalysis2/
 │       └── test_integration.cpp
 │
 ├── web/                            # 🌐 Frontend (HTML/JS/CSS)
-│   ├── index.html
+│   ├── index.html                  # Main dashboard entry point
 │   ├── css/
-│   │   ├── main.css
-│   │   └── dashboard.css
+│   │   ├── main.css                # Global styles
+│   │   └── dashboard.css           # Dashboard-specific styles
 │   ├── js/
-│   │   ├── app.js
-│   │   ├── api-client.js
+│   │   ├── app.js                  # Main application logic
+│   │   ├── api-client.js           # REST API client wrapper
 │   │   ├── charts/
-│   │   │   ├── pl-chart.js
-│   │   │   ├── bs-chart.js
-│   │   │   └── waterfall-chart.js
+│   │   │   ├── pl-chart.js         # P&L waterfall charts
+│   │   │   ├── bs-chart.js         # Balance sheet charts
+│   │   │   └── waterfall-chart.js  # Generic waterfall component
 │   │   └── components/
-│   │       ├── kpi-card.js
-│   │       └── data-table.js
-│   ├── lib/                        # External JS libraries
-│   │   ├── echarts.min.js
-│   │   └── ag-grid-community.min.js
+│   │       ├── kpi-card.js         # KPI summary cards
+│   │       └── data-table.js       # AG Grid wrappers
+│   ├── lib/                        # External JS libraries (downloaded in M4)
+│   │   ├── echarts.min.js          # Apache ECharts 5.4+
+│   │   └── ag-grid-community.min.js    # AG Grid Community 30+
 │   └── assets/
-│       └── logo.svg
+│       └── logo.svg                # Application logo
 │
 ├── data/                           # 📊 Data & Configuration
 │   ├── database/
-│   │   └── finmodel.db             # SQLite database (gitignored)
+│   │   └── finmodel.db             # SQLite database (created in M1, gitignored)
 │   ├── migrations/
-│   │   ├── 001_initial_schema.sql
-│   │   ├── 002_add_lineage.sql
-│   │   └── 003_add_currency.sql
+│   │   ├── 001_initial_schema.sql      # Initial tables (M1)
+│   │   ├── 002_add_lineage.sql         # Calculation lineage (M2)
+│   │   └── 003_add_currency.sql        # Multi-currency support (M6)
 │   ├── config/
-│   │   ├── model_config.yaml
+│   │   ├── model_config.yaml           # Runtime configuration
 │   │   └── templates/
-│   │       ├── corporate_template.json
-│   │       └── insurance_template.json
-│   ├── sample/                     # Sample input data
+│   │       ├── corporate_template.json     # Standard corporate P&L/BS/CF
+│   │       └── insurance_template.json     # Insurance-specific templates
+│   ├── sample/                     # Sample input data (created in M1)
 │   │   ├── scenario_definitions.csv
 │   │   ├── driver_timeseries.csv
 │   │   ├── pl_base.csv
@@ -135,48 +147,67 @@ ScenarioAnalysis2/
 │   └── results/                    # Exported results (gitignored)
 │
 ├── scripts/                        # 🛠️ Deployment & Utilities
-│   ├── setup_dev_environment.sh
-│   ├── deploy_lightsail.sh
-│   ├── backup_database.sh
-│   └── run_tests.sh
+│   ├── setup_dev_environment.sh    # Install dependencies, clone submodules
+│   ├── deploy_lightsail.sh         # AWS Lightsail deployment script
+│   ├── backup_database.sh          # Database backup automation
+│   └── run_tests.sh                # Test runner with coverage
 │
 ├── .github/                        # 🔄 CI/CD
 │   └── workflows/
-│       ├── build_and_test.yml
-│       └── deploy_production.yml
+│       ├── build_and_test.yml      # PR checks (build + test)
+│       └── deploy_production.yml   # Auto-deploy on main branch
 │
-└── external/                       # 📦 Third-party libraries (submodules)
-    ├── crow/                       # Web framework
-    ├── eigen/                      # Linear algebra
-    ├── nlohmann_json/              # JSON parsing
-    ├── spdlog/                     # Logging
-    └── catch2/                     # Testing
+├── .claude/                        # 🤖 Claude Code settings
+│   └── settings.local.json         # Local Claude settings
+│
+├── env/                            # 🔐 Environment secrets (gitignored)
+│   └── api_keys.json               # AWS/Claude API keys (not committed)
+│
+└── external/                       # 📦 Third-party libraries (git submodules)
+    ├── crow/                       # Web framework (M1 Day 1)
+    ├── eigen/                      # Linear algebra (M1 Day 1)
+    ├── nlohmann_json/              # JSON parsing (M1 Day 1)
+    ├── spdlog/                     # Logging (M1 Day 1)
+    └── catch2/                     # Testing (M1 Day 1)
 ```
 
 ---
 
 ## Documentation Guide
 
-### 📖 Core Specifications
-| Document | Purpose | Audience |
-|----------|---------|----------|
-| [v3.8 Framework Spec](docs/Dynamic_Financial_Statement_Modelling_Framework_v3.8.md) | Mathematical & accounting specification | All |
-| [Revised Project Plan](docs/REVISED_PROJECT_PLAN.md) | **START HERE** - Implementation plan with critical fixes | Developers |
-| [Project Milestones](docs/PROJECT_MILESTONES.md) | 10 milestone breakdown (24 weeks) | Project managers |
+### 📖 Primary Planning Documents (Read These First)
+| Document | Purpose | Lines | Status |
+|----------|---------|-------|--------|
+| [TARGET_STATE.md](docs/TARGET_STATE.md) | ⭐ Complete target architecture with MAC curves & granularity | ~800 | ✅ Final |
+| [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | ⭐ 24-week execution plan (10 milestones) | ~700 | ✅ Final |
+| [M1_DETAILED_WORKPLAN.md](docs/M1_DETAILED_WORKPLAN.md) | ⭐ Day-by-day breakdown of Milestone 1 (Weeks 1-3) | ~600 | ✅ Ready |
 
-### 🏗️ Architecture
-| Document | Purpose | Audience |
-|----------|---------|----------|
-| [System Architecture Plan](docs/SYSTEM_ARCHITECTURE_PLAN.md) | Core system design (data I/O, hosting, APIs) | Architects |
-| [Advanced Modules Architecture](docs/ADVANCED_MODULES_ARCHITECTURE.md) | Stochastic, portfolio, credit, LLM modules | Architects |
-| [Native Visualization Architecture](docs/NATIVE_VISUALIZATION_ARCHITECTURE.md) | C++ web server + ECharts dashboards | Frontend devs |
-| [Architecture Review](docs/ARCHITECTURE_REVIEW.md) | ⚠️ Critical fixes & future-proofing analysis | All |
+### 📦 Archived Documents (Historical Reference)
+All background architecture documents have been moved to `docs/archive/` since the key information has been consolidated into TARGET_STATE.md and IMPLEMENTATION_PLAN.md:
 
-### 📋 Reading Order (New Developers)
-1. This README
-2. [Revised Project Plan](docs/REVISED_PROJECT_PLAN.md) (start of M1)
-3. [v3.8 Framework Spec](docs/Dynamic_Financial_Statement_Modelling_Framework_v3.8.md) (accounting details)
-4. [System Architecture Plan](docs/SYSTEM_ARCHITECTURE_PLAN.md) (system design)
+| Document | Purpose | Status |
+|----------|---------|--------|
+| [SYSTEM_ARCHITECTURE_PLAN.md](docs/archive/SYSTEM_ARCHITECTURE_PLAN.md) | Core system design (data I/O, hosting, APIs) | 📦 Archived |
+| [ADVANCED_MODULES_ARCHITECTURE.md](docs/archive/ADVANCED_MODULES_ARCHITECTURE.md) | Stochastic, portfolio, credit, LLM modules | 📦 Archived |
+| [NATIVE_VISUALIZATION_ARCHITECTURE.md](docs/archive/NATIVE_VISUALIZATION_ARCHITECTURE.md) | C++ web server + ECharts dashboards | 📦 Archived |
+| [ARCHITECTURE_REVIEW.md](docs/archive/ARCHITECTURE_REVIEW.md) | Critical fixes & future-proofing analysis | 📦 Archived |
+| [PROJECT_MILESTONES.md](docs/archive/PROJECT_MILESTONES.md) | Original 10-milestone breakdown | 📦 Archived |
+| [REVISED_PROJECT_PLAN.md](docs/archive/REVISED_PROJECT_PLAN.md) | Plan with critical fixes integrated | 📦 Archived |
+
+### 📋 Documentation Indices
+| Document | Purpose |
+|----------|---------|
+| [docs/docu/md.md](docs/docu/md.md) | Index of all markdown documentation files |
+| [docs/docu/codefiles.md](docs/docu/codefiles.md) | Index of all code files with function call graphs |
+| [docs/target/schema.md](docs/target/schema.md) | Complete database schema with all tables |
+
+### 🎯 Reading Order (New Developers)
+1. This README (you are here)
+2. [TARGET_STATE.md](docs/TARGET_STATE.md) — "What are we building?"
+3. [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — "How do we build it?"
+4. [M1_DETAILED_WORKPLAN.md](docs/M1_DETAILED_WORKPLAN.md) — "What do I do today?"
+
+*Note: All background architecture documents are in `docs/archive/` for historical reference.*
 
 ---
 

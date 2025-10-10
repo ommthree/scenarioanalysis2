@@ -13,21 +13,19 @@ endif()
 
 # Compiler flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Werror=return-type
-        $<$<CONFIG:Debug>:-g -O0>
-        $<$<CONFIG:Release>:-O3 -DNDEBUG -march=native>
-    )
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror=return-type)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_options(-g -O0)
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(-O3 -DNDEBUG -march=native)
+    endif()
 elseif(MSVC)
-    add_compile_options(
-        /W4
-        /WX
-        $<$<CONFIG:Debug>:/Od /Zi>
-        $<$<CONFIG:Release>:/O2 /DNDEBUG>
-    )
+    add_compile_options(/W4 /WX)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_options(/Od /Zi)
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(/O2 /DNDEBUG)
+    endif()
 endif()
 
 # Output directories
@@ -37,8 +35,20 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Find packages
 find_package(SQLite3 REQUIRED)
-find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
+
+# Eigen3 - try system package first, fall back to submodule
+find_package(Eigen3 3.4 QUIET)
+if(NOT Eigen3_FOUND)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/external/eigen/Eigen")
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        target_include_directories(Eigen3::Eigen INTERFACE ${CMAKE_SOURCE_DIR}/external/eigen)
+        set(Eigen3_FOUND TRUE)
+        message(STATUS "Using Eigen3 from external/eigen submodule")
+    else()
+        message(FATAL_ERROR "Eigen3 not found. Run: git submodule update --init --recursive")
+    endif()
+endif()
 
 # External libraries (header-only or to be added as submodules)
 # Crow - Web framework
