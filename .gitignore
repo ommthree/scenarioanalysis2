@@ -1,0 +1,168 @@
+# C++ Build artifacts
+build/
+bin/
+lib/
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.dylib
+*.so
+*.dll
+*.a
+*.lib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+out/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrion CLion
+.idea/
+cmake-build-*/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/database/
+data/results/
+
+# Log files
+*.log
+logs/
+
+# Environment & secrets
+.env
+.env.local
+*.key
+*.pem
+api_keys.json
+config/secrets.yaml
+
+# Operating System
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Python (for utility scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Node modules (if using any JS tooling)
+node_modules/
+package-lock.json
+
+# Test results
+Testing/
+test_results/
+coverage/
+htmlcov/
+*.gcda
+*.gcno
+*.gcov
+
+# Documentation build artifacts
+docs/_build/
+*.pdf
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# IDE-specific
+*.workspace
+*.project
+*.cproject
+*.settings/
+
+# macOS
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.lo
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Large data files (optional - uncomment if needed)
+# *.csv
+# *.parquet
+# *.xlsx
+
+# Keep some essential files
+!data/sample/*.csv
+!data/config/*.yaml
+!data/config/templates/*.json
+!data/migrations/*.sql
