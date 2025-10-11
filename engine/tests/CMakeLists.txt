@@ -18,6 +18,7 @@ set(TEST_SOURCES
     test_database.cpp
     test_statement_template.cpp
     test_formula_evaluator.cpp
+    test_dependency_graph.cpp
     test_pl_engine.cpp
     test_tax_strategies.cpp
     test_integration.cpp
@@ -46,6 +47,7 @@ add_test(NAME AllTests COMMAND run_tests)
 add_test(NAME DatabaseTests COMMAND run_tests "[database]")
 add_test(NAME TemplateTests COMMAND run_tests "[template]")
 add_test(NAME FormulaTests COMMAND run_tests "[formula]")
+add_test(NAME DependencyTests COMMAND run_tests "[dependency]")
 add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]")
 add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]")
 add_test(NAME IntegrationTests COMMAND run_tests "[integration]")

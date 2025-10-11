@@ -67,30 +67,50 @@ std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::strin
 
         if (pos_ >= formula_.length()) break;
 
-        if (is_alpha(peek())) {
+        if (is_alpha(formula_[pos_])) {
             std::string identifier = read_identifier();
 
             // Check if it's a function call
             skip_whitespace();
-            if (peek() == '(') {
-                // It's a function - skip to matching ')'
+            if (pos_ < formula_.length() && formula_[pos_] == '(') {
+                // It's a function - recursively extract deps from arguments
                 int depth = 1;
-                next(); // skip '('
+                pos_++; // skip '('
+                size_t arg_start = pos_;
+
                 while (depth > 0 && pos_ < formula_.length()) {
-                    char c = next();
-                    if (c == '(') depth++;
-                    if (c == ')') depth--;
+                    if (formula_[pos_] == '(') depth++;
+                    else if (formula_[pos_] == ')') depth--;
+
+                    if (depth > 0) {
+                        pos_++;
+                    }
+                }
+
+                // Extract dependencies from function arguments
+                std::string args = formula_.substr(arg_start, pos_ - arg_start);
+                if (!args.empty()) {
+                    auto arg_deps = extract_dependencies(args);
+                    for (const auto& dep : arg_deps) {
+                        deps_set.insert(dep);
+                    }
+                }
+
+                if (pos_ < formula_.length() && formula_[pos_] == ')') {
+                    pos_++;  // skip ')'
                 }
                 continue;
             }
 
             // Check for time reference [t-1]
-            if (peek() == '[') {
-                next(); // skip '['
-                while (peek() != ']' && pos_ < formula_.length()) {
-                    next();
+            if (pos_ < formula_.length() && formula_[pos_] == '[') {
+                pos_++; // skip '['
+                while (pos_ < formula_.length() && formula_[pos_] != ']') {
+                    pos_++;
                 }
-                if (peek() == ']') next();
+                if (pos_ < formula_.length() && formula_[pos_] == ']') {
+                    pos_++;
+                }
             }
 
             // It's a variable dependency
@@ -318,6 +338,8 @@ char FormulaEvaluator::peek() const {
 }
 
 char FormulaEvaluator::next() {
+    // Skip whitespace to stay in sync with peek()
+    skip_whitespace();
     if (pos_ < formula_.length()) {
         return formula_[pos_++];
     }
@@ -425,7 +447,7 @@ int FormulaEvaluator::parse_time_reference() {
 double FormulaEvaluator::get_variable_value(const std::string& code, int time_offset) {
     // Create context with time offset
     Context time_ctx = ctx_;
-    time_ctx.time_index = time_offset;
+    time_ctx.time_index = ctx_.time_index + time_offset;
 
     // Try each provider in order
     for (auto* provider : providers_) {

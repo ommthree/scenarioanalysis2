@@ -68,11 +68,11 @@ std::vector<std::string> DependencyGraph::topological_sort() const {
         in_degree[node] = 0;
     }
 
-    // Calculate in-degree (number of incoming edges)
-    for (const auto& [from_node, to_nodes] : adjacency_) {
-        for (const auto& to_node : to_nodes) {
-            in_degree[to_node]++;
-        }
+    // Calculate in-degree (number of dependencies each node has)
+    // adjacency_[from] = {to1, to2} means "from depends on to1, to2"
+    // So from's in-degree = size of its dependency set
+    for (const auto& [node, dependencies] : adjacency_) {
+        in_degree[node] = dependencies.size();
     }
 
     // Queue of nodes with no dependencies (in-degree = 0)
@@ -89,15 +89,16 @@ std::vector<std::string> DependencyGraph::topological_sort() const {
         ready.pop();
         result.push_back(node);
 
-        // For each node that depends on current node
-        for (const auto& [dependent, dependencies] : adjacency_) {
+        // For each node that depends on the current node,
+        // decrease its in-degree (one dependency satisfied)
+        for (const auto& [other_node, dependencies] : adjacency_) {
+            // If other_node depends on current node
             if (dependencies.find(node) != dependencies.end()) {
-                // Decrease in-degree
-                in_degree[dependent]--;
+                in_degree[other_node]--;
 
                 // If all dependencies satisfied, add to ready queue
-                if (in_degree[dependent] == 0) {
-                    ready.push(dependent);
+                if (in_degree[other_node] == 0) {
+                    ready.push(other_node);
                 }
             }
         }
