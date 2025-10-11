@@ -21,6 +21,65 @@ using DriverID = int;
 using ParamValue = std::variant<int, double, std::string, std::nullptr_t>;
 using ParamMap = std::map<std::string, ParamValue>;
 
+/**
+ * @brief Sign convention for financial statement line items
+ *
+ * Determines how values are treated in calculations:
+ * - POSITIVE: Value is added as-is (Revenue, Assets, Cash inflows)
+ * - NEGATIVE: Value is subtracted/negated (Expenses, Liabilities, Cash outflows)
+ * - NEUTRAL: No automatic sign adjustment (used for calculated totals)
+ *
+ * Users input all values as positive numbers. The system applies signs automatically.
+ *
+ * P&L Example:
+ *   REVENUE (100k, POSITIVE) + EXPENSES (60k, NEGATIVE) = NET_INCOME (40k)
+ *   System calculates: 100,000 + (-60,000) = 40,000
+ *
+ * Balance Sheet:
+ *   Assets = POSITIVE (debit normal balance)
+ *   Liabilities/Equity = NEGATIVE (credit normal balance)
+ *   Check: Assets + Liabilities + Equity = 0 (when using signs)
+ */
+enum class SignConvention {
+    POSITIVE,   // Add value as-is (debit normal balance)
+    NEGATIVE,   // Negate value (credit normal balance)
+    NEUTRAL     // No sign adjustment (for calculated lines)
+};
+
+/**
+ * @brief Parse sign convention from string
+ * @param str String representation: "positive", "negative", "neutral", or empty/null
+ * @return SignConvention enum value
+ */
+inline SignConvention parse_sign_convention(const std::string& str) {
+    if (str.empty() || str == "neutral" || str == "null") {
+        return SignConvention::NEUTRAL;
+    } else if (str == "positive" || str == "debit") {
+        return SignConvention::POSITIVE;
+    } else if (str == "negative" || str == "credit") {
+        return SignConvention::NEGATIVE;
+    }
+    return SignConvention::NEUTRAL;  // Default
+}
+
+/**
+ * @brief Apply sign convention to a value
+ * @param value The base value (always positive from user input)
+ * @param sign The sign convention to apply
+ * @return Signed value
+ */
+inline double apply_sign(double value, SignConvention sign) {
+    switch (sign) {
+        case SignConvention::POSITIVE:
+            return value;
+        case SignConvention::NEGATIVE:
+            return -value;
+        case SignConvention::NEUTRAL:
+            return value;
+    }
+    return value;
+}
+
 // Common structures
 struct Period {
     PeriodID id;

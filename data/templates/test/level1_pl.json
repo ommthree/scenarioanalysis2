@@ -1,0 +1,36 @@
+{
+  "template_code": "TEST_PL_L1",
+  "template_name": "Level 1: Simple P&L (with Sign Convention)",
+  "statement_type": "pl",
+  "description": "Simplest P&L: Revenue (positive) + Expenses (negative) = Net Income",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "formula": null,
+      "driver_mapping": "REVENUE",
+      "is_computed": false,
+      "line_order": 1,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Operating Expenses",
+      "formula": null,
+      "driver_mapping": "EXPENSES",
+      "is_computed": false,
+      "line_order": 2,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "formula": "REVENUE + EXPENSES",
+      "driver_mapping": null,
+      "is_computed": true,
+      "line_order": 3,
+      "sign_convention": "neutral"
+    }
+  ],
+  "calculation_order": ["REVENUE", "EXPENSES", "NET_INCOME"]
+}

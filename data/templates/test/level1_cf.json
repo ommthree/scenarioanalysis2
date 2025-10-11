@@ -1,0 +1,16 @@
+{
+  "template_code": "TEST_CF_L1",
+  "template_name": "Level 1: Stub Cash Flow (CF_NET = 0)",
+  "statement_type": "cf",
+  "description": "Stub CF: Just CF_NET = 0 for now (proper CF comes in Level 3)",
+  "line_items": [
+    {
+      "code": "CF_NET",
+      "display_name": "Net Cash Flow",
+      "formula": "0",
+      "is_computed": true,
+      "line_order": 1
+    }
+  ],
+  "calculation_order": ["CF_NET"]
+}

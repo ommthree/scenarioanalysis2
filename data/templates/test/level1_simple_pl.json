@@ -1,0 +1,38 @@
+{
+  "template_code": "TEST_PL_L1",
+  "template_name": "Level 1: Simple P&L",
+  "statement_type": "pl",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Simplest P&L: REVENUE - EXPENSES = NET_INCOME (3 lines only)",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "formula": null,
+      "base_value_source": "driver:REVENUE",
+      "is_computed": false,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Expenses",
+      "level": 1,
+      "formula": null,
+      "base_value_source": "driver:EXPENSES",
+      "is_computed": false,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "formula": "REVENUE + EXPENSES",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["REVENUE", "EXPENSES"]
+    }
+  ],
+  "calculation_order": ["REVENUE", "EXPENSES", "NET_INCOME"]
+}

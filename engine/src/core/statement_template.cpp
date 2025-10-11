@@ -81,9 +81,23 @@ void StatementTemplate::compute_calculation_order() {
 
             // Add edge for each dependency: item depends on dep
             for (const auto& dep : deps) {
+                // Check if this is a time-shifted reference (ends with "[t-1]")
+                std::string dep_code = dep;
+                bool is_time_shifted = false;
+                if (dep.size() > 5 && dep.substr(dep.size() - 5) == "[t-1]") {
+                    is_time_shifted = true;
+                    dep_code = dep.substr(0, dep.size() - 5);  // Strip "[t-1]"
+                }
+
+                // Skip time-shifted self-references (e.g., ACCOUNTS_PAYABLE[t-1] in ACCOUNTS_PAYABLE formula)
+                // These are inter-period dependencies, not intra-period circular dependencies
+                if (is_time_shifted && dep_code == item.code) {
+                    continue;
+                }
+
                 // Only add edge if dependency exists in this template
-                if (line_item_index_.find(dep) != line_item_index_.end()) {
-                    graph.add_edge(item.code, dep);
+                if (line_item_index_.find(dep_code) != line_item_index_.end()) {
+                    graph.add_edge(item.code, dep_code);
                 }
                 // Note: External dependencies (e.g., from other statements)
                 // are not added to graph - they're resolved at runtime via IValueProvider
@@ -129,8 +143,11 @@ void StatementTemplate::parse_json(const std::string& json_content) {
                     item.base_value_source = item_json["base_value_source"].get<std::string>();
                 }
 
+                // Handle both driver_code and driver_mapping (legacy)
                 if (item_json.contains("driver_code") && !item_json["driver_code"].is_null()) {
                     item.driver_code = item_json["driver_code"].get<std::string>();
+                } else if (item_json.contains("driver_mapping") && !item_json["driver_mapping"].is_null()) {
+                    item.driver_code = item_json["driver_mapping"].get<std::string>();
                 }
 
                 // Dependencies array
@@ -140,6 +157,14 @@ void StatementTemplate::parse_json(const std::string& json_content) {
                             item.dependencies.push_back(dep.get<std::string>());
                         }
                     }
+                }
+
+                // Sign convention (defaults to NEUTRAL if not specified)
+                if (item_json.contains("sign_convention") && !item_json["sign_convention"].is_null()) {
+                    std::string sign_str = item_json["sign_convention"].get<std::string>();
+                    item.sign_convention = parse_sign_convention(sign_str);
+                } else {
+                    item.sign_convention = SignConvention::NEUTRAL;
                 }
 
                 // Add to vectors

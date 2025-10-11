@@ -6,6 +6,7 @@
 #include "bs/bs_engine.h"
 #include "core/statement_template.h"
 #include "database/result_set.h"
+#include "types/common_types.h"
 #include <stdexcept>
 #include <sstream>
 #include <cmath>
@@ -21,7 +22,7 @@ BSEngine::BSEngine(std::shared_ptr<database::IDatabase> db)
     }
 
     // Initialize value providers
-    bs_provider_ = std::make_unique<BSValueProvider>(db_);
+    bs_provider_ = std::make_unique<StatementValueProvider>(db_);
     pl_provider_ = std::make_unique<pl::PLValueProvider>();
 
     // Register providers with evaluator
@@ -34,7 +35,8 @@ BalanceSheet BSEngine::calculate(
     ScenarioID scenario_id,
     PeriodID period_id,
     const PLResult& pl_result,
-    const BalanceSheet& opening_bs
+    const BalanceSheet& opening_bs,
+    const std::string& template_code
 ) {
     // Set context for value providers
     bs_provider_->set_context(entity_id, scenario_id);
@@ -43,11 +45,10 @@ BalanceSheet BSEngine::calculate(
     populate_opening_bs_values(opening_bs);
     populate_pl_values(pl_result);
 
-    // Load balance sheet template
-    // For now, assume template_id = 3 (CORP_BS_001)
-    auto tmpl = load_template(3);
+    // Load balance sheet template by code
+    auto tmpl = core::StatementTemplate::load_from_database(db_.get(), template_code);
     if (!tmpl) {
-        throw std::runtime_error("BSEngine: failed to load BS template");
+        throw std::runtime_error("BSEngine: failed to load BS template: " + template_code);
     }
 
     // Create context for this calculation
@@ -67,8 +68,8 @@ BalanceSheet BSEngine::calculate(
             throw std::runtime_error("BSEngine: line item '" + code + "' not found in template");
         }
 
-        // Calculate value
-        double value = calculate_line_item(code, line_item->formula, ctx);
+        // Calculate value and apply sign convention
+        double value = calculate_line_item(code, line_item->formula, line_item->sign_convention, ctx);
 
         // Store in result
         closing_bs.line_items[code] = value;
@@ -138,14 +139,19 @@ ValidationResult BSEngine::validate(const BalanceSheet& bs, double tolerance) {
 double BSEngine::calculate_line_item(
     const std::string& code,
     const std::optional<std::string>& formula,
+    SignConvention sign,
     const core::Context& ctx
 ) {
+    double value = 0.0;
+
     if (!formula.has_value() || formula->empty()) {
         // No formula: this is a base value
         // Try to get from providers (might be from drivers or actuals)
         for (auto* provider : providers_) {
             if (provider->has_value(code)) {
-                return provider->get_value(code, ctx);
+                value = provider->get_value(code, ctx);
+                // Apply sign convention to base values
+                return apply_sign(value, sign);
             }
         }
 
@@ -155,7 +161,10 @@ double BSEngine::calculate_line_item(
 
     // Has formula: evaluate it
     try {
-        return evaluator_.evaluate(formula.value(), providers_, ctx);
+        value = evaluator_.evaluate(formula.value(), providers_, ctx);
+        // Apply sign convention to calculated values
+        // Note: For formulas, sign is typically NEUTRAL, but we apply it for consistency
+        return apply_sign(value, sign);
     } catch (const std::exception& e) {
         throw std::runtime_error("BSEngine: failed to evaluate formula for '" + code +
                                "': " + e.what());

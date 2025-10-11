@@ -1,0 +1,41 @@
+{
+  "template_code": "TEST_BS_L1",
+  "template_name": "Level 1: Simple Balance Sheet (Cash = RE, no P&L link yet)",
+  "statement_type": "bs",
+  "description": "Simplest BS: Fixed cash and equity, no P&L link (that's Level 2)",
+  "line_items": [
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "formula": "1000000",
+      "is_computed": true,
+      "line_order": 1,
+      "category": "asset"
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "formula": "CASH",
+      "is_computed": true,
+      "line_order": 2,
+      "category": "asset"
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "formula": "1000000",
+      "is_computed": true,
+      "line_order": 3,
+      "category": "equity"
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "formula": "RETAINED_EARNINGS",
+      "is_computed": true,
+      "line_order": 4,
+      "category": "equity"
+    }
+  ],
+  "calculation_order": ["CASH", "TOTAL_ASSETS", "RETAINED_EARNINGS", "TOTAL_EQUITY"]
+}

@@ -1,0 +1,62 @@
+{
+  "template_code": "TEST_BS_L3",
+  "template_name": "Level 3: Balance Sheet (for CF validation)",
+  "statement_type": "bs",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Level 3 BS - CASH = CASH[t-1] + NET_INCOME (CF will validate this)",
+  "line_items": [
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "level": 2,
+      "formula": "CASH[t-1] + NET_INCOME",
+      "base_value_source": "opening_bs:CASH",
+      "is_computed": true,
+      "category": "current_asset",
+      "sign_convention": "positive",
+      "dependencies": ["CASH[t-1]", "NET_INCOME"]
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "level": 1,
+      "formula": "CASH",
+      "is_computed": true,
+      "category": "subtotal",
+      "sign_convention": "positive",
+      "dependencies": ["CASH"]
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "level": 2,
+      "formula": "RETAINED_EARNINGS[t-1] + NET_INCOME",
+      "base_value_source": "opening_bs:RETAINED_EARNINGS",
+      "is_computed": true,
+      "category": "equity",
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS[t-1]", "NET_INCOME"]
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "level": 1,
+      "formula": "RETAINED_EARNINGS",
+      "is_computed": true,
+      "category": "subtotal",
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS"]
+    },
+    {
+      "code": "TOTAL_LIABILITIES",
+      "display_name": "Total Liabilities",
+      "level": 1,
+      "formula": "0",
+      "is_computed": true,
+      "category": "subtotal",
+      "sign_convention": "positive"
+    }
+  ],
+  "calculation_order": ["CASH", "TOTAL_ASSETS", "RETAINED_EARNINGS", "TOTAL_EQUITY", "TOTAL_LIABILITIES"]
+}

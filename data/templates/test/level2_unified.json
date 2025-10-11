@@ -1,0 +1,89 @@
+{
+  "template_code": "TEST_UNIFIED_L2",
+  "template_name": "Level 2: P&L to BS Link (RE accumulation)",
+  "statement_type": "unified",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Level 2: First inter-statement link - Net Income flows to Retained Earnings with time-series rollforward",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:REVENUE",
+      "is_computed": false,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Expenses",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:EXPENSES",
+      "is_computed": false,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "REVENUE + EXPENSES",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["REVENUE", "EXPENSES"]
+    },
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH[t-1]",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH[t-1]"]
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS[t-1] + NET_INCOME",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS[t-1]", "NET_INCOME"]
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH"]
+    },
+    {
+      "code": "TOTAL_LIABILITIES",
+      "display_name": "Total Liabilities",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "0",
+      "is_computed": true,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS"]
+    }
+  ]
+}

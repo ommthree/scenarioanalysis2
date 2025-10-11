@@ -1,0 +1,42 @@
+{
+  "template_code": "TEST_PL_L2",
+  "template_name": "Level 2: P&L (same as Level 1)",
+  "statement_type": "pl",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Level 2 P&L - same as Level 1, just Revenue - Expenses = Net Income",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "driver_mapping": "REVENUE",
+      "is_computed": false,
+      "driver_applicable": true,
+      "category": "revenue",
+      "sign_convention": "positive"
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Expenses",
+      "level": 1,
+      "driver_mapping": "EXPENSES",
+      "is_computed": false,
+      "driver_applicable": true,
+      "category": "expense",
+      "sign_convention": "negative"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "formula": "REVENUE + EXPENSES",
+      "is_computed": true,
+      "driver_applicable": false,
+      "category": "net_income",
+      "sign_convention": "neutral",
+      "dependencies": ["REVENUE", "EXPENSES"]
+    }
+  ],
+  "calculation_order": ["REVENUE", "EXPENSES", "NET_INCOME"]
+}

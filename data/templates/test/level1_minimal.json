@@ -1,0 +1,40 @@
+{
+  "template_code": "TEST_UNIFIED_L1_MIN",
+  "template_name": "Level 1: Minimal (just P&L, no BS totals)",
+  "statement_type": "unified",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Level 1 minimal: Only REVENUE - EXPENSES = NET_INCOME",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:REVENUE",
+      "is_computed": false,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Expenses",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:EXPENSES",
+      "is_computed": false,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "REVENUE + EXPENSES",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["REVENUE", "EXPENSES"]
+    }
+  ]
+}

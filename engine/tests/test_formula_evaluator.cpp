@@ -482,7 +482,8 @@ TEST_CASE("FormulaEvaluator - Dependency extraction", "[formula][dependencies]")
     SECTION("Dependencies with time references") {
         auto deps = eval.extract_dependencies("CASH[t-1] + NET_CF");
         REQUIRE(deps.size() == 2);
-        REQUIRE(std::find(deps.begin(), deps.end(), "CASH") != deps.end());
+        // Time-shifted references include the [t-1] suffix in dependencies
+        REQUIRE(std::find(deps.begin(), deps.end(), "CASH[t-1]") != deps.end());
         REQUIRE(std::find(deps.begin(), deps.end(), "NET_CF") != deps.end());
     }
 

@@ -16,7 +16,7 @@
 #include "types/common_types.h"
 #include "cf/providers/cf_value_provider.h"
 #include "pl/providers/pl_value_provider.h"
-#include "bs/providers/bs_value_provider.h"
+#include "bs/providers/statement_value_provider.h"
 #include <memory>
 #include <string>
 
@@ -63,6 +63,7 @@ public:
      * @param pl_result P&L results for this period
      * @param opening_bs Opening balance sheet (t-1)
      * @param closing_bs Closing balance sheet (t)
+     * @param template_code CF template code (defaults to CORP_CF_001)
      * @return Cash flow statement
      * @throws std::runtime_error if template not found or calculation fails
      */
@@ -72,7 +73,8 @@ public:
         PeriodID period_id,
         const PLResult& pl_result,
         const BalanceSheet& opening_bs,
-        const BalanceSheet& closing_bs
+        const BalanceSheet& closing_bs,
+        const std::string& template_code = "CORP_CF_001"
     );
 
     /**
@@ -95,7 +97,7 @@ private:
     // Value providers
     std::unique_ptr<CFValueProvider> cf_provider_;
     std::unique_ptr<pl::PLValueProvider> pl_provider_;
-    std::unique_ptr<bs::BSValueProvider> bs_provider_;
+    std::unique_ptr<bs::StatementValueProvider> bs_provider_;
 
     std::vector<core::IValueProvider*> providers_;
 
@@ -103,12 +105,14 @@ private:
      * @brief Calculate a single line item
      * @param code Line item code
      * @param formula Formula to evaluate (or empty if base value)
+     * @param sign Sign convention to apply
      * @param ctx Calculation context
      * @return Calculated value
      */
     double calculate_line_item(
         const std::string& code,
         const std::optional<std::string>& formula,
+        SignConvention sign,
         const core::Context& ctx
     );
 

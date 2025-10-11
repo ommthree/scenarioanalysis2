@@ -1,0 +1,70 @@
+{
+  "template_code": "TEST_CF_L3",
+  "template_name": "Level 3: Cash Flow Statement (stub)",
+  "statement_type": "cf",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Level 3 CF - Simple stub with CF_NET = NET_INCOME (simplified)",
+  "line_items": [
+    {
+      "code": "CF_OPERATING",
+      "display_name": "Operating Cash Flow",
+      "level": 2,
+      "formula": "NET_INCOME",
+      "is_computed": true,
+      "category": "operating",
+      "sign_convention": "positive",
+      "dependencies": ["NET_INCOME"]
+    },
+    {
+      "code": "CF_INVESTING",
+      "display_name": "Investing Cash Flow",
+      "level": 2,
+      "formula": "0",
+      "is_computed": true,
+      "category": "investing",
+      "sign_convention": "positive"
+    },
+    {
+      "code": "CF_FINANCING",
+      "display_name": "Financing Cash Flow",
+      "level": 2,
+      "formula": "0",
+      "is_computed": true,
+      "category": "financing",
+      "sign_convention": "positive"
+    },
+    {
+      "code": "CF_NET",
+      "display_name": "Net Cash Flow",
+      "level": 1,
+      "formula": "CF_OPERATING + CF_INVESTING + CF_FINANCING",
+      "is_computed": true,
+      "category": "total",
+      "sign_convention": "positive",
+      "dependencies": ["CF_OPERATING", "CF_INVESTING", "CF_FINANCING"]
+    },
+    {
+      "code": "CASH_BEGINNING",
+      "display_name": "Cash at Beginning",
+      "level": 1,
+      "formula": "CASH[t-1]",
+      "base_value_source": "opening_bs:CASH",
+      "is_computed": true,
+      "category": "total",
+      "sign_convention": "positive",
+      "dependencies": ["CASH[t-1]"]
+    },
+    {
+      "code": "CASH_ENDING",
+      "display_name": "Cash at End",
+      "level": 1,
+      "formula": "CASH_BEGINNING + CF_NET",
+      "is_computed": true,
+      "category": "total",
+      "sign_convention": "positive",
+      "dependencies": ["CASH_BEGINNING", "CF_NET"]
+    }
+  ],
+  "calculation_order": ["CF_OPERATING", "CF_INVESTING", "CF_FINANCING", "CF_NET", "CASH_BEGINNING", "CASH_ENDING"]
+}

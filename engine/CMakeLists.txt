@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Collect all source files (exclude main.cpp which is only for executable)
+# Collect all source files (exclude main.cpp and archived files)
 file(GLOB_RECURSE ENGINE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 list(FILTER ENGINE_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
+list(FILTER ENGINE_SOURCES EXCLUDE REGEX ".*/archive/.*")
 
 # Collect all header files (for IDE organization)
 file(GLOB_RECURSE ENGINE_HEADERS

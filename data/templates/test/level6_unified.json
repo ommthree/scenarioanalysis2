@@ -1,0 +1,368 @@
+{
+  "template_code": "TEST_UNIFIED_L6",
+  "template_name": "Level 6: Debt & Interest",
+  "statement_type": "unified",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Extends Level 5 with debt financing and interest expense",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:REVENUE",
+      "is_computed": false,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "COST_OF_GOODS_SOLD",
+      "display_name": "Cost of Goods Sold",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:COGS",
+      "is_computed": false,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "GROSS_PROFIT",
+      "display_name": "Gross Profit",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "REVENUE + COST_OF_GOODS_SOLD",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["REVENUE", "COST_OF_GOODS_SOLD"]
+    },
+    {
+      "code": "DEPRECIATION",
+      "display_name": "Depreciation Expense",
+      "level": 2,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:DEPRECIATION",
+      "is_computed": false,
+      "sign_convention": "negative",
+      "comments": "Non-cash: reduces Fixed Assets"
+    },
+    {
+      "code": "AMORTIZATION",
+      "display_name": "Amortization Expense",
+      "level": 2,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:AMORTIZATION",
+      "is_computed": false,
+      "sign_convention": "negative",
+      "comments": "Non-cash expense that reduces Intangible Assets"
+    },
+    {
+      "code": "STOCK_BASED_COMPENSATION",
+      "display_name": "Stock-Based Compensation",
+      "level": 2,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:STOCK_COMP",
+      "is_computed": false,
+      "sign_convention": "negative",
+      "comments": "Non-cash expense"
+    },
+    {
+      "code": "OPERATING_EXPENSES",
+      "display_name": "Operating Expenses",
+      "level": 2,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:OPEX",
+      "is_computed": false,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "INTEREST_EXPENSE",
+      "display_name": "Interest Expense",
+      "level": 2,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:INTEREST",
+      "is_computed": false,
+      "sign_convention": "negative",
+      "comments": "NEW: Cash expense from debt"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "GROSS_PROFIT + OPERATING_EXPENSES + DEPRECIATION + AMORTIZATION + STOCK_BASED_COMPENSATION + INTEREST_EXPENSE",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["GROSS_PROFIT", "OPERATING_EXPENSES", "DEPRECIATION", "AMORTIZATION", "STOCK_BASED_COMPENSATION", "INTEREST_EXPENSE"]
+    },
+    {
+      "code": "CASH_COLLECTIONS",
+      "display_name": "Cash Collections from Customers",
+      "level": 3,
+      "section": "working_capital",
+      "formula": "REVENUE * 0.95",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["REVENUE"]
+    },
+    {
+      "code": "ACCOUNTS_RECEIVABLE",
+      "display_name": "Accounts Receivable",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "ACCOUNTS_RECEIVABLE[t-1] + REVENUE - CASH_COLLECTIONS",
+      "base_value_source": "opening_bs:ACCOUNTS_RECEIVABLE",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["ACCOUNTS_RECEIVABLE[t-1]", "REVENUE", "CASH_COLLECTIONS"]
+    },
+    {
+      "code": "DELTA_ACCOUNTS_RECEIVABLE",
+      "display_name": "Change in Accounts Receivable",
+      "level": 3,
+      "section": "working_capital",
+      "formula": "ACCOUNTS_RECEIVABLE - ACCOUNTS_RECEIVABLE[t-1]",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["ACCOUNTS_RECEIVABLE", "ACCOUNTS_RECEIVABLE[t-1]"]
+    },
+    {
+      "code": "PURCHASES",
+      "display_name": "Inventory Purchases",
+      "level": 3,
+      "section": "working_capital",
+      "formula": "COST_OF_GOODS_SOLD * -1.1",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["COST_OF_GOODS_SOLD"]
+    },
+    {
+      "code": "INVENTORY",
+      "display_name": "Inventory",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "INVENTORY[t-1] + PURCHASES + COST_OF_GOODS_SOLD",
+      "base_value_source": "opening_bs:INVENTORY",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["INVENTORY[t-1]", "PURCHASES", "COST_OF_GOODS_SOLD"]
+    },
+    {
+      "code": "DELTA_INVENTORY",
+      "display_name": "Change in Inventory",
+      "level": 3,
+      "section": "working_capital",
+      "formula": "INVENTORY - INVENTORY[t-1]",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["INVENTORY", "INVENTORY[t-1]"]
+    },
+    {
+      "code": "CASH_PAYMENTS",
+      "display_name": "Cash Payments to Suppliers",
+      "level": 3,
+      "section": "working_capital",
+      "formula": "PURCHASES * 0.90",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["PURCHASES"]
+    },
+    {
+      "code": "ACCOUNTS_PAYABLE",
+      "display_name": "Accounts Payable",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "ACCOUNTS_PAYABLE[t-1] + PURCHASES - CASH_PAYMENTS",
+      "base_value_source": "opening_bs:ACCOUNTS_PAYABLE",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["ACCOUNTS_PAYABLE[t-1]", "PURCHASES", "CASH_PAYMENTS"]
+    },
+    {
+      "code": "DELTA_ACCOUNTS_PAYABLE",
+      "display_name": "Change in Accounts Payable",
+      "level": 3,
+      "section": "working_capital",
+      "formula": "ACCOUNTS_PAYABLE - ACCOUNTS_PAYABLE[t-1]",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["ACCOUNTS_PAYABLE", "ACCOUNTS_PAYABLE[t-1]"]
+    },
+    {
+      "code": "CASH_FLOW_OPERATING",
+      "display_name": "Operating Cash Flow",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "NET_INCOME - DEPRECIATION - AMORTIZATION - STOCK_BASED_COMPENSATION - DELTA_ACCOUNTS_RECEIVABLE - DELTA_INVENTORY + DELTA_ACCOUNTS_PAYABLE",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["NET_INCOME", "DEPRECIATION", "AMORTIZATION", "STOCK_BASED_COMPENSATION", "DELTA_ACCOUNTS_RECEIVABLE", "DELTA_INVENTORY", "DELTA_ACCOUNTS_PAYABLE"],
+      "comments": "Add back non-cash expenses (Interest is cash, not added back)"
+    },
+    {
+      "code": "CASH_FLOW_INVESTING",
+      "display_name": "Investing Cash Flow",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "0",
+      "is_computed": true,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "DEBT_PROCEEDS",
+      "display_name": "Debt Proceeds",
+      "level": 3,
+      "section": "financing",
+      "formula": null,
+      "base_value_source": "driver:DEBT_PROCEEDS",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "comments": "NEW: Cash inflow from borrowing"
+    },
+    {
+      "code": "DEBT_REPAYMENT",
+      "display_name": "Debt Repayment",
+      "level": 3,
+      "section": "financing",
+      "formula": null,
+      "base_value_source": "driver:DEBT_REPAY",
+      "is_computed": false,
+      "sign_convention": "negative",
+      "comments": "NEW: Cash outflow to repay debt"
+    },
+    {
+      "code": "CASH_FLOW_FINANCING",
+      "display_name": "Financing Cash Flow",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "DEBT_PROCEEDS + DEBT_REPAYMENT",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["DEBT_PROCEEDS", "DEBT_REPAYMENT"],
+      "comments": "NEW: Debt proceeds (positive) + Debt repayment (negative)"
+    },
+    {
+      "code": "CASH_FLOW_NET",
+      "display_name": "Net Cash Flow",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "CASH_FLOW_OPERATING + CASH_FLOW_INVESTING + CASH_FLOW_FINANCING",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH_FLOW_OPERATING", "CASH_FLOW_INVESTING", "CASH_FLOW_FINANCING"]
+    },
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "CASH[t-1] + CASH_FLOW_NET",
+      "base_value_source": "opening_bs:CASH",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH[t-1]", "CASH_FLOW_NET"]
+    },
+    {
+      "code": "TOTAL_CURRENT_ASSETS",
+      "display_name": "Total Current Assets",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH + ACCOUNTS_RECEIVABLE + INVENTORY",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH", "ACCOUNTS_RECEIVABLE", "INVENTORY"]
+    },
+    {
+      "code": "FIXED_ASSETS",
+      "display_name": "Fixed Assets (Net)",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "FIXED_ASSETS[t-1] + DEPRECIATION",
+      "base_value_source": "opening_bs:FIXED_ASSETS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["FIXED_ASSETS[t-1]", "DEPRECIATION"],
+      "comments": "Depreciation is negative, so this reduces Fixed Assets"
+    },
+    {
+      "code": "INTANGIBLE_ASSETS",
+      "display_name": "Intangible Assets (Net)",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "INTANGIBLE_ASSETS[t-1] + AMORTIZATION",
+      "base_value_source": "opening_bs:INTANGIBLE_ASSETS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["INTANGIBLE_ASSETS[t-1]", "AMORTIZATION"],
+      "comments": "Amortization is negative, so this reduces Intangible Assets"
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "TOTAL_CURRENT_ASSETS + FIXED_ASSETS + INTANGIBLE_ASSETS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["TOTAL_CURRENT_ASSETS", "FIXED_ASSETS", "INTANGIBLE_ASSETS"]
+    },
+    {
+      "code": "TOTAL_CURRENT_LIABILITIES",
+      "display_name": "Total Current Liabilities",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "ACCOUNTS_PAYABLE",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["ACCOUNTS_PAYABLE"]
+    },
+    {
+      "code": "DEBT",
+      "display_name": "Long-Term Debt",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "DEBT[t-1] + DEBT_PROCEEDS + DEBT_REPAYMENT",
+      "base_value_source": "opening_bs:DEBT",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["DEBT[t-1]", "DEBT_PROCEEDS", "DEBT_REPAYMENT"],
+      "comments": "NEW: Debt rollforward (proceeds increase, repayment decreases)"
+    },
+    {
+      "code": "TOTAL_LIABILITIES",
+      "display_name": "Total Liabilities",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "TOTAL_CURRENT_LIABILITIES + DEBT",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["TOTAL_CURRENT_LIABILITIES", "DEBT"]
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "level": 2,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS[t-1] + NET_INCOME",
+      "base_value_source": "opening_bs:RETAINED_EARNINGS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS[t-1]", "NET_INCOME"]
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS"]
+    }
+  ]
+}

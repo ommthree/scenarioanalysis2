@@ -100,13 +100,21 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: Single period calculation",
         "TEST_ENTITY",
         1,  // scenario_id
         period_ids,
-        initial_bs
+        initial_bs,
+        "UNIFIED_TEMPLATE"
     );
 
-    // Should have 1 result for each statement
-    CHECK(results.pl_results.size() == 1);
-    CHECK(results.bs_results.size() == 1);
-    CHECK(results.cf_results.size() == 1);
+    // Should have 1 result
+    CHECK(results.results.size() == 1);
+
+    // Extract individual statements
+    auto pl_results = results.extract_pl_results();
+    auto bs_results = results.extract_balance_sheets();
+    auto cf_results = results.extract_cash_flows();
+
+    CHECK(pl_results.size() == 1);
+    CHECK(bs_results.size() == 1);
+    CHECK(cf_results.size() == 1);
 
     // Check if calculation succeeded
     // Note: This may fail if drivers are not set up, but structure should be correct
@@ -137,12 +145,20 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: 3-period sequential calcula
         "TEST_ENTITY",
         1,
         period_ids,
-        initial_bs
+        initial_bs,
+        "UNIFIED_TEMPLATE"
     );
 
-    REQUIRE(results.pl_results.size() == 3);
-    REQUIRE(results.bs_results.size() == 3);
-    REQUIRE(results.cf_results.size() == 3);
+    REQUIRE(results.results.size() == 3);
+
+    // Extract individual statements
+    auto pl_results = results.extract_pl_results();
+    auto bs_results = results.extract_balance_sheets();
+    auto cf_results = results.extract_cash_flows();
+
+    REQUIRE(pl_results.size() == 3);
+    REQUIRE(bs_results.size() == 3);
+    REQUIRE(cf_results.size() == 3);
 
     INFO("Results success: " << results.success);
     if (!results.success) {
@@ -159,21 +175,21 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: 3-period sequential calcula
     if (results.success) {
         for (size_t i = 0; i < 3; i++) {
             INFO("Period " << (i + 1) << " Net Income: "
-                 << results.pl_results[i].net_income);
+                 << pl_results[i].net_income);
             INFO("Period " << (i + 1) << " Closing RE: "
-                 << results.bs_results[i].line_items["RETAINED_EARNINGS"]);
+                 << bs_results[i].line_items["RETAINED_EARNINGS"]);
         }
 
         // Verify retained earnings is monotonically increasing (if profitable)
-        double re1 = results.bs_results[0].line_items["RETAINED_EARNINGS"];
-        double re2 = results.bs_results[1].line_items["RETAINED_EARNINGS"];
-        double re3 = results.bs_results[2].line_items["RETAINED_EARNINGS"];
+        double re1 = bs_results[0].line_items["RETAINED_EARNINGS"];
+        double re2 = bs_results[1].line_items["RETAINED_EARNINGS"];
+        double re3 = bs_results[2].line_items["RETAINED_EARNINGS"];
 
         // With positive net income, RE should accumulate
-        if (results.pl_results[0].net_income > 0) {
+        if (pl_results[0].net_income > 0) {
             CHECK(re2 >= re1);
         }
-        if (results.pl_results[1].net_income > 0) {
+        if (pl_results[1].net_income > 0) {
             CHECK(re3 >= re2);
         }
     }
@@ -194,14 +210,19 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: Cash accumulation over peri
         "TEST_ENTITY",
         1,
         period_ids,
-        initial_bs
+        initial_bs,
+        "UNIFIED_TEMPLATE"
     );
 
     if (results.success) {
+        // Extract statements
+        auto bs_results = results.extract_balance_sheets();
+        auto cf_results = results.extract_cash_flows();
+
         // Each period's opening cash should equal previous period's closing cash
-        double cash_p1_closing = results.bs_results[0].cash;
-        double cash_p2_closing = results.bs_results[1].cash;
-        double cash_p3_closing = results.bs_results[2].cash;
+        double cash_p1_closing = bs_results[0].cash;
+        double cash_p2_closing = bs_results[1].cash;
+        double cash_p3_closing = bs_results[2].cash;
 
         INFO("Period 1 closing cash: " << cash_p1_closing);
         INFO("Period 2 closing cash: " << cash_p2_closing);
@@ -209,7 +230,7 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: Cash accumulation over peri
 
         // Verify CF reconciles each period
         for (size_t i = 0; i < 3; i++) {
-            CHECK(results.cf_results[i].reconciles(results.bs_results[i].cash));
+            CHECK(cf_results[i].reconciles(bs_results[i].cash));
         }
     }
 }
@@ -236,7 +257,8 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: Multiple scenarios", "[orch
         "TEST_ENTITY",
         scenario_ids,
         period_ids,
-        initial_bs
+        initial_bs,
+        "UNIFIED_TEMPLATE"
     );
 
     // Should have results for each scenario
@@ -247,9 +269,16 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: Multiple scenarios", "[orch
         INFO("Scenario " << scenario_id << " success: " << results.success);
 
         if (results.success) {
-            CHECK(results.pl_results.size() == 12);
-            CHECK(results.bs_results.size() == 12);
-            CHECK(results.cf_results.size() == 12);
+            CHECK(results.results.size() == 12);
+
+            // Extract statements
+            auto pl_results = results.extract_pl_results();
+            auto bs_results = results.extract_balance_sheets();
+            auto cf_results = results.extract_cash_flows();
+
+            CHECK(pl_results.size() == 12);
+            CHECK(bs_results.size() == 12);
+            CHECK(cf_results.size() == 12);
         }
     }
 }
@@ -283,7 +312,8 @@ TEST_CASE_METHOD(PeriodRunnerFixture, "PeriodRunner: Performance - 10 scenarios 
         "TEST_ENTITY",
         scenario_ids,
         period_ids,
-        initial_bs
+        initial_bs,
+        "UNIFIED_TEMPLATE"
     );
 
     auto end = std::chrono::high_resolution_clock::now();

@@ -1,39 +1,40 @@
 /**
- * @file bs_value_provider.cpp
- * @brief Implementation of balance sheet value provider
+ * @file statement_value_provider.cpp
+ * @brief Implementation of financial statement value provider
  */
 
-#include "bs/providers/bs_value_provider.h"
+#include "bs/providers/statement_value_provider.h"
 #include "core/context.h"
 #include "database/result_set.h"
 #include <stdexcept>
 #include <regex>
 #include <sstream>
+#include <iostream>
 
 namespace finmodel {
 namespace bs {
 
-BSValueProvider::BSValueProvider(std::shared_ptr<database::IDatabase> db)
+StatementValueProvider::StatementValueProvider(std::shared_ptr<database::IDatabase> db)
     : db_(db), entity_id_(""), scenario_id_(0) {
     if (!db_) {
-        throw std::runtime_error("BSValueProvider: null database pointer");
+        throw std::runtime_error("StatementValueProvider: null database pointer");
     }
 }
 
-void BSValueProvider::set_current_values(const std::map<std::string, double>& values) {
+void StatementValueProvider::set_current_values(const std::map<std::string, double>& values) {
     current_values_ = values;
 }
 
-void BSValueProvider::set_opening_values(const std::map<std::string, double>& opening_values) {
+void StatementValueProvider::set_opening_values(const std::map<std::string, double>& opening_values) {
     opening_values_ = opening_values;
 }
 
-void BSValueProvider::set_context(const EntityID& entity_id, ScenarioID scenario_id) {
+void StatementValueProvider::set_context(const EntityID& entity_id, ScenarioID scenario_id) {
     entity_id_ = entity_id;
     scenario_id_ = scenario_id;
 }
 
-bool BSValueProvider::has_value(const std::string& key) const {
+bool StatementValueProvider::has_value(const std::string& key) const {
     std::string base_name;
     int time_offset;
 
@@ -57,7 +58,7 @@ bool BSValueProvider::has_value(const std::string& key) const {
     return false;
 }
 
-double BSValueProvider::get_value(const std::string& key, const core::Context& ctx) const {
+double StatementValueProvider::get_value(const std::string& key, const core::Context& ctx) const {
     std::string base_name;
     int time_offset;
 
@@ -75,14 +76,14 @@ double BSValueProvider::get_value(const std::string& key, const core::Context& c
             if (it != current_values_.end()) {
                 return it->second;
             }
-            throw std::runtime_error("BSValueProvider: current value not found for '" + base_name + "'");
+            throw std::runtime_error("StatementValueProvider: current value not found for '" + base_name + "'");
         } else if (target_time_index == ctx.time_index - 1) {
             // Previous period: look in opening_values_
             auto it = opening_values_.find(base_name);
             if (it != opening_values_.end()) {
                 return it->second;
             }
-            throw std::runtime_error("BSValueProvider: opening value not found for '" + base_name + "'");
+            throw std::runtime_error("StatementValueProvider: opening value not found for '" + base_name + "'");
         } else {
             // Other time periods: database lookup required
             // Create a context with the target time_index to get effective period
@@ -93,25 +94,40 @@ double BSValueProvider::get_value(const std::string& key, const core::Context& c
         }
     } else {
         // Simple reference (no explicit time offset)
-        // Default to current period (time_index = ctx.time_index)
+        // Use ctx.time_index to determine which values map to use
 
-        // Check current_values_ first
+        // If ctx.time_index == 0, use current_values_ (current period)
+        // If ctx.time_index == -1, use opening_values_ (previous period)
+        if (ctx.time_index == 0) {
+            // Current period: check current_values_ first
+            auto it = current_values_.find(key);
+            if (it != current_values_.end()) {
+                return it->second;
+            }
+        } else if (ctx.time_index == -1) {
+            // Previous period: check opening_values_
+            auto it = opening_values_.find(key);
+            if (it != opening_values_.end()) {
+                return it->second;
+            }
+        }
+
+        // Fall back: check both maps for other time indices
         auto it = current_values_.find(key);
         if (it != current_values_.end()) {
             return it->second;
         }
 
-        // Then check opening_values_ (previous period)
         auto it_opening = opening_values_.find(key);
         if (it_opening != opening_values_.end()) {
             return it_opening->second;
         }
 
-        throw std::runtime_error("BSValueProvider: value not found for '" + key + "'");
+        throw std::runtime_error("StatementValueProvider: value not found for '" + key + "'");
     }
 }
 
-bool BSValueProvider::parse_time_series(const std::string& key,
+bool StatementValueProvider::parse_time_series(const std::string& key,
                                        std::string& base_name,
                                        int& time_offset) const {
     // Match pattern: "VARIABLE[t+offset]" or "VARIABLE[t-offset]" or "VARIABLE[t]"
@@ -137,7 +153,7 @@ bool BSValueProvider::parse_time_series(const std::string& key,
     return false;
 }
 
-double BSValueProvider::fetch_from_database(const std::string& code,
+double StatementValueProvider::fetch_from_database(const std::string& code,
                                            PeriodID period_id) const {
     // Query balance_sheet_actuals for historical value
     std::ostringstream query;
@@ -154,7 +170,7 @@ double BSValueProvider::fetch_from_database(const std::string& code,
         return result->get_double(0);
     }
 
-    throw std::runtime_error("BSValueProvider: database lookup failed for '" + code +
+    throw std::runtime_error("StatementValueProvider: database lookup failed for '" + code +
                            "' in period " + std::to_string(period_id));
 }
 

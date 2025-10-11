@@ -1,0 +1,27 @@
+{
+  "template_code": "TEST_BS_L1",
+  "template_name": "Level 1: Simple BS",
+  "statement_type": "bs",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Simplest BS: Static CASH and RETAINED_EARNINGS (no P&L link yet)",
+  "line_items": [
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "level": 1,
+      "formula": "1000000",
+      "is_computed": true,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "level": 1,
+      "formula": "1000000",
+      "is_computed": true,
+      "sign_convention": "positive"
+    }
+  ],
+  "calculation_order": ["CASH", "RETAINED_EARNINGS"]
+}

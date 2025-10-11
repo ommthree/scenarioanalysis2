@@ -117,7 +117,9 @@ std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::strin
             }
 
             // Check for time reference [t-1]
+            bool is_time_shifted = false;
             if (pos_ < formula_.length() && formula_[pos_] == '[') {
+                is_time_shifted = true;
                 pos_++; // skip '['
                 while (pos_ < formula_.length() && formula_[pos_] != ']') {
                     pos_++;
@@ -127,8 +129,14 @@ std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::strin
                 }
             }
 
-            // It's a variable dependency
-            deps_set.insert(identifier);
+            // Add to dependencies
+            // For time-shifted references, we mark them specially with "[t-1]" suffix
+            // so the dependency graph can distinguish inter-period from intra-period deps
+            if (is_time_shifted) {
+                deps_set.insert(identifier + "[t-1]");
+            } else {
+                deps_set.insert(identifier);
+            }
         } else {
             pos_++;
         }

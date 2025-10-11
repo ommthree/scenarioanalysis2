@@ -19,12 +19,24 @@ set(TEST_SOURCES
     test_statement_template.cpp
     test_formula_evaluator.cpp
     test_dependency_graph.cpp
-    test_pl_engine.cpp
-    test_bs_engine.cpp
-    test_cf_engine.cpp
+    # Legacy engine tests archived (use UnifiedEngine instead)
+    # test_pl_engine.cpp
+    # test_bs_engine.cpp
+    # test_cf_engine.cpp
+    # test_level1_systematic.cpp
+    # test_level2_systematic.cpp
+    # test_level3_systematic.cpp
     test_tax_strategies.cpp
     test_period_runner.cpp
     test_fx_provider.cpp
+    test_level1.cpp
+    test_level2.cpp
+    test_level3.cpp
+    test_level4_unified.cpp
+    test_level5.cpp
+    test_level6.cpp
+    test_level7.cpp
+    test_level8.cpp
     test_integration.cpp
 )
 
@@ -53,12 +65,24 @@ add_test(NAME DatabaseTests COMMAND run_tests "[database]" WORKING_DIRECTORY ${C
 add_test(NAME TemplateTests COMMAND run_tests "[template]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME FormulaTests COMMAND run_tests "[formula]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME DependencyTests COMMAND run_tests "[dependency]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-add_test(NAME BSEngineTests COMMAND run_tests "[bs]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-add_test(NAME CFEngineTests COMMAND run_tests "[cf_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# Legacy engine tests archived
+# add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME BSEngineTests COMMAND run_tests "[bs]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME CFEngineTests COMMAND run_tests "[cf_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME Level1Tests COMMAND run_tests "[level1]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME Level2Tests COMMAND run_tests "[level2]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# add_test(NAME Level3Tests COMMAND run_tests "[level3]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME OrchestrationTests COMMAND run_tests "[orchestration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME FXProviderTests COMMAND run_tests "[fx]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level1Tests COMMAND run_tests "[level1]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level2Tests COMMAND run_tests "[level2]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level3Tests COMMAND run_tests "[level3]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level4Tests COMMAND run_tests "[level4]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level5Tests COMMAND run_tests "[level5]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level6Tests COMMAND run_tests "[level6]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level7Tests COMMAND run_tests "[level7]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level8Tests COMMAND run_tests "[level8]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME IntegrationTests COMMAND run_tests "[integration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Coverage (optional)

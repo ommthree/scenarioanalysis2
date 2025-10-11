@@ -1,0 +1,131 @@
+{
+  "template_code": "TEST_UNIFIED_L3",
+  "template_name": "Level 3: Complete Three-Statement Link (P&L → BS → CF → BS)",
+  "statement_type": "unified",
+  "industry": "TEST",
+  "version": "1.0.0",
+  "description": "Level 3: Circular linkage complete - Cash Flow affects Balance Sheet, Balance Sheet now balances",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:REVENUE",
+      "is_computed": false,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Expenses",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": null,
+      "base_value_source": "driver:EXPENSES",
+      "is_computed": false,
+      "sign_convention": "negative"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "REVENUE + EXPENSES",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["REVENUE", "EXPENSES"]
+    },
+    {
+      "code": "CF_OPERATING",
+      "display_name": "Cash Flow from Operations",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "NET_INCOME",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["NET_INCOME"],
+      "comments": "Simplified: CF_OPERATING = NET_INCOME (no working capital adjustments yet)"
+    },
+    {
+      "code": "CF_INVESTING",
+      "display_name": "Cash Flow from Investing",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "0",
+      "is_computed": true,
+      "sign_convention": "negative",
+      "comments": "No investing activities in Level 3"
+    },
+    {
+      "code": "CF_FINANCING",
+      "display_name": "Cash Flow from Financing",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "0",
+      "is_computed": true,
+      "sign_convention": "neutral",
+      "comments": "No financing activities in Level 3"
+    },
+    {
+      "code": "CF_NET",
+      "display_name": "Net Cash Flow",
+      "level": 1,
+      "section": "cash_flow",
+      "formula": "CF_OPERATING + CF_INVESTING + CF_FINANCING",
+      "is_computed": true,
+      "sign_convention": "neutral",
+      "dependencies": ["CF_OPERATING", "CF_INVESTING", "CF_FINANCING"]
+    },
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH[t-1] + CF_NET",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH[t-1]", "CF_NET"],
+      "comments": "KEY LINK: Cash Flow affects Balance Sheet!"
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS[t-1] + NET_INCOME",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS[t-1]", "NET_INCOME"]
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["CASH"]
+    },
+    {
+      "code": "TOTAL_LIABILITIES",
+      "display_name": "Total Liabilities",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "0",
+      "is_computed": true,
+      "sign_convention": "positive"
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": ["RETAINED_EARNINGS"]
+    }
+  ]
+}
