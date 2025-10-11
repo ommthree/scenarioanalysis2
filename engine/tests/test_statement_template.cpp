@@ -19,7 +19,7 @@ using namespace finmodel::database;
 // ============================================================================
 
 TEST_CASE("Load Corporate P&L template from database", "[template][load]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
 
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
@@ -32,7 +32,7 @@ TEST_CASE("Load Corporate P&L template from database", "[template][load]") {
 }
 
 TEST_CASE("Load Corporate BS template from database", "[template][load]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
 
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_BS_001");
 
@@ -44,7 +44,7 @@ TEST_CASE("Load Corporate BS template from database", "[template][load]") {
 }
 
 TEST_CASE("Load Insurance P&L template from database", "[template][load]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
 
     auto tmpl = StatementTemplate::load_from_database(db.get(), "INS_PL_001");
 
@@ -56,7 +56,7 @@ TEST_CASE("Load Insurance P&L template from database", "[template][load]") {
 }
 
 TEST_CASE("Load nonexistent template returns nullptr", "[template][load]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
 
     auto tmpl = StatementTemplate::load_from_database(db.get(), "NONEXISTENT");
 
@@ -75,7 +75,7 @@ TEST_CASE("Load template with null database throws exception", "[template][error
 // ============================================================================
 
 TEST_CASE("Corporate P&L has correct line items", "[template][line_items]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
     REQUIRE(tmpl != nullptr);
@@ -105,7 +105,7 @@ TEST_CASE("Corporate P&L has correct line items", "[template][line_items]") {
 }
 
 TEST_CASE("Get line item by code works correctly", "[template][line_items]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
     // Existing item
@@ -119,7 +119,7 @@ TEST_CASE("Get line item by code works correctly", "[template][line_items]") {
 }
 
 TEST_CASE("Corporate BS has time-series formulas", "[template][formulas]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_BS_001");
 
     REQUIRE(tmpl != nullptr);
@@ -138,7 +138,7 @@ TEST_CASE("Corporate BS has time-series formulas", "[template][formulas]") {
 }
 
 TEST_CASE("Insurance P&L has industry-specific line items", "[template][insurance]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "INS_PL_001");
 
     REQUIRE(tmpl != nullptr);
@@ -165,7 +165,7 @@ TEST_CASE("Insurance P&L has industry-specific line items", "[template][insuranc
 // ============================================================================
 
 TEST_CASE("Corporate P&L has correct calculation order", "[template][calculation_order]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
     const auto& order = tmpl->get_calculation_order();
@@ -186,7 +186,7 @@ TEST_CASE("Corporate P&L has correct calculation order", "[template][calculation
 }
 
 TEST_CASE("Corporate BS calculation order respects dependencies", "[template][calculation_order]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_BS_001");
 
     const auto& order = tmpl->get_calculation_order();
@@ -208,7 +208,7 @@ TEST_CASE("Corporate BS calculation order respects dependencies", "[template][ca
 // ============================================================================
 
 TEST_CASE("Corporate P&L has validation rules", "[template][validation]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
     const auto& rules = tmpl->get_validation_rules();
@@ -235,7 +235,7 @@ TEST_CASE("Corporate P&L has validation rules", "[template][validation]") {
 }
 
 TEST_CASE("Corporate BS has balance sheet validation", "[template][validation]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_BS_001");
 
     const auto& rules = tmpl->get_validation_rules();
@@ -259,7 +259,7 @@ TEST_CASE("Corporate BS has balance sheet validation", "[template][validation]")
 // ============================================================================
 
 TEST_CASE("Corporate P&L has denormalized columns", "[template][denormalized]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
     const auto& denorm = tmpl->get_denormalized_columns();
@@ -272,7 +272,7 @@ TEST_CASE("Corporate P&L has denormalized columns", "[template][denormalized]") 
 }
 
 TEST_CASE("Corporate BS has denormalized columns", "[template][denormalized]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_BS_001");
 
     const auto& denorm = tmpl->get_denormalized_columns();
@@ -289,7 +289,7 @@ TEST_CASE("Corporate BS has denormalized columns", "[template][denormalized]") {
 // ============================================================================
 
 TEST_CASE("Templates have correct metadata", "[template][metadata]") {
-    auto db = DatabaseFactory::create_sqlite("../../data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
     auto tmpl = StatementTemplate::load_from_database(db.get(), "CORP_PL_001");
 
     REQUIRE(tmpl->supports_consolidation() == true);

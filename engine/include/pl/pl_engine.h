@@ -49,14 +49,12 @@ public:
      * @param scenario_id Scenario ID
      * @param period_id Period ID
      * @param statement_id P&L statement template ID
-     * @param tax_strategy Tax strategy name (default: "US_FEDERAL")
      */
     void calculate(
         int entity_id,
         int scenario_id,
         int period_id,
-        int statement_id,
-        const std::string& tax_strategy = "US_FEDERAL"
+        int statement_id
     );
 
     /**
@@ -84,6 +82,14 @@ private:
     std::map<std::string, double> results_;
 
     /**
+     * @brief Custom function handler for TAX_COMPUTE
+     * @param func_name Function name (format: "TAX_COMPUTE:strategy_name")
+     * @param args Function arguments (pre-tax income)
+     * @return Computed tax value
+     */
+    double handle_custom_function(const std::string& func_name, const std::vector<double>& args);
+
+    /**
      * @brief Build dependency graph from P&L template
      * @param statement_id Statement template ID
      */
@@ -93,25 +99,21 @@ private:
      * @brief Calculate all line items in topological order
      * @param ctx Calculation context
      * @param calc_order Line codes in calculation order
-     * @param tax_strategy Tax strategy name
      */
     void calculate_line_items(
         const core::Context& ctx,
-        const std::vector<std::string>& calc_order,
-        const std::string& tax_strategy
+        const std::vector<std::string>& calc_order
     );
 
     /**
      * @brief Calculate single line item
      * @param code Line code
      * @param ctx Calculation context
-     * @param tax_strategy Tax strategy name
      * @return Calculated value
      */
     double calculate_line(
         const std::string& code,
-        const core::Context& ctx,
-        const std::string& tax_strategy
+        const core::Context& ctx
     );
 
     /**

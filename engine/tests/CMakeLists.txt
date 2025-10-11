@@ -41,16 +41,17 @@ target_include_directories(run_tests
 # Register tests with CTest
 include(CTest)
 
-add_test(NAME AllTests COMMAND run_tests)
+# Set working directory to build/ for all tests so database paths work
+add_test(NAME AllTests COMMAND run_tests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Individual test registration (optional)
-add_test(NAME DatabaseTests COMMAND run_tests "[database]")
-add_test(NAME TemplateTests COMMAND run_tests "[template]")
-add_test(NAME FormulaTests COMMAND run_tests "[formula]")
-add_test(NAME DependencyTests COMMAND run_tests "[dependency]")
-add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]")
-add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]")
-add_test(NAME IntegrationTests COMMAND run_tests "[integration]")
+add_test(NAME DatabaseTests COMMAND run_tests "[database]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME TemplateTests COMMAND run_tests "[template]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME FormulaTests COMMAND run_tests "[formula]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME DependencyTests COMMAND run_tests "[dependency]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME IntegrationTests COMMAND run_tests "[integration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Coverage (optional)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)

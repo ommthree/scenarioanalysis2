@@ -6,14 +6,14 @@
 namespace finmodel {
 namespace database {
 
-std::unique_ptr<IDatabase> DatabaseFactory::create(const DatabaseConfig& config) {
+std::shared_ptr<IDatabase> DatabaseFactory::create(const DatabaseConfig& config) {
     // Convert type to lowercase for case-insensitive comparison
     std::string type_lower = config.type;
     std::transform(type_lower.begin(), type_lower.end(), type_lower.begin(),
                    [](unsigned char c){ return std::tolower(c); });
 
     if (type_lower == "sqlite" || type_lower == "sqlite3") {
-        auto db = std::make_unique<SQLiteDatabase>();
+        auto db = std::make_shared<SQLiteDatabase>();
         db->connect(config.connection_string);
         return db;
     }
@@ -39,8 +39,8 @@ std::unique_ptr<IDatabase> DatabaseFactory::create(const DatabaseConfig& config)
     }
 }
 
-std::unique_ptr<IDatabase> DatabaseFactory::create_sqlite(const std::string& connection_string) {
-    auto db = std::make_unique<SQLiteDatabase>();
+std::shared_ptr<IDatabase> DatabaseFactory::create_sqlite(const std::string& connection_string) {
+    auto db = std::make_shared<SQLiteDatabase>();
     db->connect(connection_string);
     return db;
 }

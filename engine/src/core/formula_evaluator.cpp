@@ -27,12 +27,14 @@ FormulaEvaluator::~FormulaEvaluator() = default;
 double FormulaEvaluator::evaluate(
     const std::string& formula,
     const std::vector<IValueProvider*>& providers,
-    const Context& ctx
+    const Context& ctx,
+    std::function<double(const std::string&, const std::vector<double>&)> custom_functions
 ) {
     formula_ = formula;
     pos_ = 0;
     providers_ = providers;
     ctx_ = ctx;
+    custom_functions_ = custom_functions;
 
     if (formula_.empty()) {
         throw std::runtime_error("Empty formula");
@@ -66,6 +68,18 @@ std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::strin
         skip_whitespace();
 
         if (pos_ >= formula_.length()) break;
+
+        // Skip string literals
+        if (formula_[pos_] == '"' || formula_[pos_] == '\'') {
+            char quote = formula_[pos_++];
+            while (pos_ < formula_.length() && formula_[pos_] != quote) {
+                pos_++;
+            }
+            if (pos_ < formula_.length()) {
+                pos_++;  // skip closing quote
+            }
+            continue;
+        }
 
         if (is_alpha(formula_[pos_])) {
             std::string identifier = read_identifier();
@@ -232,6 +246,57 @@ double FormulaEvaluator::parse_factor() {
 }
 
 double FormulaEvaluator::parse_function(const std::string& func_name) {
+    // Special handling for TAX_COMPUTE which takes (value, "strategy_name")
+    if (func_name == "TAX_COMPUTE") {
+        skip_whitespace();
+        if (peek() != '(') {
+            throw std::runtime_error("Expected '(' after TAX_COMPUTE");
+        }
+        next();
+
+        // First argument: pre-tax income value (expression)
+        double pre_tax_income = parse_expression();
+        skip_whitespace();
+
+        if (peek() != ',') {
+            throw std::runtime_error("TAX_COMPUTE requires 2 arguments: (pre_tax_income, \"strategy\")");
+        }
+        next();
+        skip_whitespace();
+
+        // Second argument: strategy name (string literal)
+        if (peek() != '"' && peek() != '\'') {
+            throw std::runtime_error("TAX_COMPUTE strategy must be a string literal");
+        }
+        char quote_char = next();
+        std::string strategy_name;
+        while (pos_ < formula_.length() && formula_[pos_] != quote_char) {
+            strategy_name += formula_[pos_++];
+        }
+        if (pos_ >= formula_.length() || formula_[pos_] != quote_char) {
+            throw std::runtime_error("Unterminated string literal in TAX_COMPUTE");
+        }
+        pos_++;  // Skip closing quote
+
+        skip_whitespace();
+        if (peek() != ')') {
+            throw std::runtime_error("Expected ')' after TAX_COMPUTE arguments");
+        }
+        next();
+
+        // Call custom function with strategy name encoded as special value
+        // We'll encode the strategy name's hash as a double (not ideal but works for now)
+        // Actually, let's use a different approach - store strategy in a map
+        std::vector<double> args = {pre_tax_income};
+
+        if (custom_functions_) {
+            // Pass strategy name as part of function name
+            return custom_functions_("TAX_COMPUTE:" + strategy_name, args);
+        }
+        throw std::runtime_error("TAX_COMPUTE requires custom function handler");
+    }
+
+    // Standard function parsing
     // Expect '('
     skip_whitespace();
     if (peek() != '(') {
@@ -270,7 +335,16 @@ double FormulaEvaluator::parse_function(const std::string& func_name) {
     }
     next();
 
-    // Evaluate function
+    // Try custom functions first
+    if (custom_functions_) {
+        try {
+            return custom_functions_(func_name, args);
+        } catch (const std::exception&) {
+            // Fall through to built-in functions
+        }
+    }
+
+    // Evaluate built-in functions
     if (func_name == "MIN") {
         if (args.size() != 2) {
             throw std::runtime_error("MIN requires exactly 2 arguments, got " +
@@ -360,7 +434,7 @@ bool FormulaEvaluator::is_alnum(char c) const {
 
 std::string FormulaEvaluator::read_identifier() {
     std::string result;
-    while (pos_ < formula_.length() && is_alnum(formula_[pos_])) {
+    while (pos_ < formula_.length() && (is_alnum(formula_[pos_]) || formula_[pos_] == ':')) {
         result += formula_[pos_++];
     }
     return result;

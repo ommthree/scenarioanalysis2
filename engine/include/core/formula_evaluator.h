@@ -67,13 +67,15 @@ public:
      * @param formula The formula string (e.g., "REVENUE - COGS")
      * @param providers List of value providers (checked in order)
      * @param ctx Context with scenario, period, entity, time
+     * @param custom_functions Optional custom function handler
      * @return Evaluated result
      * @throws std::runtime_error if syntax error or variable not found
      */
     double evaluate(
         const std::string& formula,
         const std::vector<IValueProvider*>& providers,
-        const Context& ctx
+        const Context& ctx,
+        std::function<double(const std::string&, const std::vector<double>&)> custom_functions = nullptr
     );
 
     /**
@@ -203,6 +205,7 @@ private:
     size_t pos_;                                  ///< Current position in formula
     std::vector<IValueProvider*> providers_;      ///< Value providers
     Context ctx_;                                 ///< Current context
+    std::function<double(const std::string&, const std::vector<double>&)> custom_functions_;  ///< Custom function handler
 };
 
 } // namespace core

@@ -23,7 +23,14 @@ class PreparedStatement;
  * particularly prepared statements.
  *
  * Example:
+ *   // Using SQLite (convenience constructor)
  *   DatabaseConnection db(":memory:");
+ *
+ *   // Using any IDatabase implementation (most flexible)
+ *   auto pg_db = DatabaseFactory::create_postgresql("localhost", 5432, "finmodel");
+ *   DatabaseConnection db(pg_db);
+ *
+ *   // Using the connection
  *   auto stmt = db.prepare("SELECT * FROM users WHERE id = ?");
  *   stmt.bind(1, 42);
  *   while (stmt.step()) {
@@ -33,8 +40,20 @@ class PreparedStatement;
 class DatabaseConnection {
 public:
     /**
-     * @brief Construct and connect to database
-     * @param db_path Database path (":memory:" for in-memory)
+     * @brief Construct from any IDatabase implementation
+     * @param db Shared pointer to IDatabase implementation
+     *
+     * This is the most flexible constructor - works with SQLite, PostgreSQL,
+     * or any custom IDatabase implementation.
+     */
+    explicit DatabaseConnection(std::shared_ptr<IDatabase> db);
+
+    /**
+     * @brief Convenience constructor for SQLite
+     * @param db_path Database path (":memory:" for in-memory, or file path)
+     *
+     * This is a convenience wrapper around create_sqlite().
+     * For backward compatibility with existing code.
      */
     explicit DatabaseConnection(const std::string& db_path);
 

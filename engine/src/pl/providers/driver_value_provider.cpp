@@ -61,10 +61,10 @@ double DriverValueProvider::get_value(const std::string& code, const core::Conte
 
     // Find value for specific period
     const auto& period_map = driver_it->second;
-    auto period_it = period_map.find(ctx.time_index);
+    auto period_it = period_map.find(ctx.period_id);
     if (period_it == period_map.end()) {
         std::ostringstream oss;
-        oss << "Driver '" << driver_code << "' not found for period " << ctx.time_index;
+        oss << "Driver '" << driver_code << "' not found for period " << ctx.period_id;
         throw std::runtime_error(oss.str());
     }
 

@@ -16,12 +16,24 @@ namespace database {
 // DatabaseConnection
 // ============================================================================
 
-DatabaseConnection::DatabaseConnection(const std::string& db_path)
-    : db_(DatabaseFactory::create_sqlite(db_path))
+DatabaseConnection::DatabaseConnection(std::shared_ptr<IDatabase> db)
+    : db_(db)
 {
+    // Database should already be connected by the factory
+    // But check just in case
     if (db_ && !db_->is_connected()) {
-        db_->connect(db_path);
+        throw std::runtime_error(
+            "DatabaseConnection: provided IDatabase is not connected. "
+            "Did you forget to call connect()?"
+        );
     }
+}
+
+DatabaseConnection::DatabaseConnection(const std::string& db_path)
+    : DatabaseConnection(DatabaseFactory::create_sqlite(db_path))
+{
+    // Delegate to the flexible constructor
+    // SQLite factory already connects, so we're good
 }
 
 PreparedStatement DatabaseConnection::prepare(const std::string& sql) {

@@ -16,19 +16,22 @@ struct DatabaseConfig {
 /**
  * @brief Factory for creating database instances
  *
+ * Returns shared_ptr to allow sharing database connection between
+ * DatabaseConnection and PreparedStatement objects.
+ *
  * Usage:
  *   DatabaseConfig config{
  *       .type = "sqlite",
  *       .connection_string = "file:mydb.db?mode=rwc"
  *   };
  *   auto db = DatabaseFactory::create(config);
- *   db->connect(config.connection_string);
+ *   // Already connected by factory
  */
 class DatabaseFactory {
 public:
-    static std::unique_ptr<IDatabase> create(const DatabaseConfig& config);
-    static std::unique_ptr<IDatabase> create_sqlite(const std::string& connection_string);
-    // Future: static std::unique_ptr<IDatabase> create_postgresql(...);
+    static std::shared_ptr<IDatabase> create(const DatabaseConfig& config);
+    static std::shared_ptr<IDatabase> create_sqlite(const std::string& connection_string);
+    // Future: static std::shared_ptr<IDatabase> create_postgresql(...);
 };
 
 } // namespace database
