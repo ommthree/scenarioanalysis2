@@ -1,22 +1,50 @@
 # M4: P&L Engine - Detailed Work Plan
 
-**Version**: 1.0
+**Version**: 1.1
 **Date**: 2025-10-11
 **Status**: Ready for Implementation
 **Prerequisites**: M1 (Database), M2 (Templates), M3 (Formula Evaluator) ✅
+
+**Change Log**:
+- v1.1: Added multi-source driver architecture with explicit source prefixes (scenario:, carbon:, bs:, pl:)
+- v1.0: Initial version
 
 ---
 
 ## Overview
 
 The P&L Engine (M4) is the first **financial statement engine** in the system. It calculates Profit & Loss statements for a single period using:
-- **Driver values** (scenario inputs)
+- **Driver values** (scenario inputs via `scenario:` prefix)
 - **P&L templates** (formula definitions)
 - **Tax computation** (integrated tax strategies)
 - **Formula evaluation** (M3 FormulaEvaluator)
 - **Dependency resolution** (M3 DependencyGraph)
 
 This milestone establishes the **calculation pattern** that will be reused in M5 (Balance Sheet) and M6 (Cash Flow).
+
+### Multi-Source Architecture (Extensible)
+
+**M4 implements the foundation** of a multi-source value provider system. P&L lines can reference values from multiple sources using **explicit source prefixes**:
+
+```sql
+-- Examples of driver_mapping values:
+'scenario:GRAIN_PRICE'          -- Scenario driver (M4)
+'carbon:CARBON_TAX'             -- Carbon accounting output (M8 - future)
+'bs:DEBT'                       -- Balance sheet value (M5 - future)
+'physical:PROPERTY_DAMAGE'      -- Physical risk calculation (M9 - future)
+```
+
+**For M4 scope**, we implement:
+- ✅ `DriverValueProvider` - handles `scenario:*` prefixes
+- ✅ `PLValueProvider` - handles calculated P&L line values
+- ✅ Source prefix parsing in driver_mapping field
+
+**Future milestones** will add additional providers:
+- M5: `BSValueProvider` for `bs:*` prefixes
+- M8: `CarbonValueProvider` for `carbon:*` prefixes
+- M9: `PhysicalRiskProvider` for `physical:*` prefixes
+
+The `IValueProvider` interface and provider chain pattern enables this extensibility without modifying M4 code.
 
 ---
 
@@ -224,7 +252,7 @@ private:
 
 #### 5. DriverValueProvider
 
-**Responsibility**: Provide driver values from scenarios
+**Responsibility**: Provide driver values from scenarios (handles `scenario:*` prefixes)
 
 ```cpp
 class DriverValueProvider : public IValueProvider {
@@ -235,6 +263,7 @@ public:
     void set_context(int entity_id, int scenario_id);
 
     // IValueProvider interface
+    // Handles codes with "scenario:" prefix (e.g., "scenario:GRAIN_PRICE")
     bool has_value(const std::string& code) const override;
     double get_value(const std::string& code, const Context& ctx) const override;
 
@@ -247,6 +276,9 @@ private:
     mutable std::map<std::string, std::map<int, double>> driver_cache_;
 
     void load_drivers() const;
+
+    // Parse "scenario:CODE" -> "CODE", return empty if not scenario prefix
+    std::string parse_driver_code(const std::string& code) const;
 };
 ```
 
@@ -314,41 +346,43 @@ private:
 
 **P&L Template**:
 ```
-REVENUE         = REVENUE              (driver-mapped)
-COGS            = COGS                 (driver-mapped)
-GROSS_PROFIT    = REVENUE - COGS       (formula)
-OPEX            = OPEX                 (driver-mapped)
-EBITDA          = GROSS_PROFIT - OPEX  (formula)
-DEPRECIATION    = DEPRECIATION         (driver-mapped)
-EBIT            = EBITDA - DEPRECIATION (formula)
-INTEREST        = INTEREST             (driver-mapped)
-PRE_TAX_INCOME  = EBIT - INTEREST      (formula)
-TAX             = <computed>           (tax strategy)
-NET_INCOME      = PRE_TAX_INCOME - TAX (formula)
+REVENUE         = scenario:GRAIN_PRICE * VOLUME       (driver-mapped)
+COGS            = scenario:GRAIN_COST * VOLUME        (driver-mapped)
+GROSS_PROFIT    = REVENUE - COGS                      (formula)
+OPEX            = scenario:OPEX_BASE                  (driver-mapped)
+EBITDA          = GROSS_PROFIT - OPEX                 (formula)
+DEPRECIATION    = scenario:DEPRECIATION               (driver-mapped)
+EBIT            = EBITDA - DEPRECIATION               (formula)
+INTEREST        = scenario:INTEREST_EXPENSE           (driver-mapped)
+PRE_TAX_INCOME  = EBIT - INTEREST                     (formula)
+TAX             = <computed>                          (tax strategy)
+NET_INCOME      = PRE_TAX_INCOME - TAX                (formula)
 ```
 
 **Driver Values** (scenario_id=1, period_id=5):
 ```
-REVENUE       = 1,000,000
-COGS          = 600,000
-OPEX          = 200,000
-DEPRECIATION  = 50,000
-INTEREST      = 30,000
+scenario:GRAIN_PRICE      = 850.50    ($/ton)
+scenario:GRAIN_COST       = 600.00    ($/ton)
+scenario:VOLUME           = 1,176     (tons)
+scenario:OPEX_BASE        = 200,000   ($)
+scenario:DEPRECIATION     = 50,000    ($)
+scenario:INTEREST_EXPENSE = 30,000    ($)
 ```
 
 **Calculation Order** (topological sort):
 ```
-1. REVENUE         → 1,000,000  (driver)
-2. COGS            → 600,000    (driver)
-3. GROSS_PROFIT    → 400,000    (1,000,000 - 600,000)
-4. OPEX            → 200,000    (driver)
-5. EBITDA          → 200,000    (400,000 - 200,000)
-6. DEPRECIATION    → 50,000     (driver)
-7. EBIT            → 150,000    (200,000 - 50,000)
-8. INTEREST        → 30,000     (driver)
-9. PRE_TAX_INCOME  → 120,000    (150,000 - 30,000)
-10. TAX            → 25,200     (TaxEngine: 21% of 120,000)
-11. NET_INCOME     → 94,800     (120,000 - 25,200)
+1. VOLUME          → 1,176      (scenario:VOLUME)
+2. REVENUE         → 1,000,428  (850.50 * 1,176)
+3. COGS            → 705,600    (600.00 * 1,176)
+4. GROSS_PROFIT    → 294,828    (1,000,428 - 705,600)
+5. OPEX            → 200,000    (scenario:OPEX_BASE)
+6. EBITDA          → 94,828     (294,828 - 200,000)
+7. DEPRECIATION    → 50,000     (scenario:DEPRECIATION)
+8. EBIT            → 44,828     (94,828 - 50,000)
+9. INTEREST        → 30,000     (scenario:INTEREST_EXPENSE)
+10. PRE_TAX_INCOME → 14,828     (44,828 - 30,000)
+11. TAX            → 3,114      (TaxEngine: 21% of 14,828)
+12. NET_INCOME     → 11,714     (14,828 - 3,114)
 ```
 
 ---
@@ -508,7 +542,7 @@ TEST_CASE("ProgressiveTaxStrategy - Multiple brackets", "[tax]") {
 
 **Tests**:
 ```cpp
-TEST_CASE("DriverValueProvider - Load and retrieve", "[pl_engine][provider]") {
+TEST_CASE("DriverValueProvider - Load and retrieve with prefix", "[pl_engine][provider]") {
     DatabaseConnection db(":memory:");
     setup_test_database(db);
 
@@ -517,19 +551,24 @@ TEST_CASE("DriverValueProvider - Load and retrieve", "[pl_engine][provider]") {
 
     Context ctx(1, 1, 5);  // period_id=5
 
-    SECTION("Has driver value") {
-        REQUIRE(provider.has_value("REVENUE"));
-        REQUIRE(provider.has_value("COGS"));
+    SECTION("Has driver value with scenario: prefix") {
+        REQUIRE(provider.has_value("scenario:GRAIN_PRICE"));
+        REQUIRE(provider.has_value("scenario:GRAIN_COST"));
     }
 
-    SECTION("Get driver value") {
-        REQUIRE(provider.get_value("REVENUE", ctx) == Approx(1000000.0));
-        REQUIRE(provider.get_value("COGS", ctx) == Approx(600000.0));
+    SECTION("Get driver value with scenario: prefix") {
+        REQUIRE(provider.get_value("scenario:GRAIN_PRICE", ctx) == Approx(850.50));
+        REQUIRE(provider.get_value("scenario:GRAIN_COST", ctx) == Approx(600.00));
+    }
+
+    SECTION("Wrong prefix - not handled by this provider") {
+        REQUIRE_FALSE(provider.has_value("carbon:CARBON_TAX"));
+        REQUIRE_FALSE(provider.has_value("bs:DEBT"));
     }
 
     SECTION("Missing driver throws") {
         REQUIRE_THROWS_AS(
-            provider.get_value("NONEXISTENT", ctx),
+            provider.get_value("scenario:NONEXISTENT", ctx),
             std::runtime_error
         );
     }
@@ -1092,19 +1131,24 @@ Will orchestrate:
 ## Appendix A: Example P&L Template
 
 ```sql
--- statement_id = 1: "Standard P&L"
+-- statement_id = 1: "Agriculture P&L"
 INSERT INTO pl_lines (statement_id, code, display_name, line_order, formula, driver_mapping) VALUES
-(1, 'REVENUE', 'Revenue', 1, NULL, 'REVENUE'),
-(1, 'COGS', 'Cost of Goods Sold', 2, NULL, 'COGS'),
-(1, 'GROSS_PROFIT', 'Gross Profit', 3, 'REVENUE - COGS', NULL),
-(1, 'OPEX', 'Operating Expenses', 4, NULL, 'OPEX'),
-(1, 'EBITDA', 'EBITDA', 5, 'GROSS_PROFIT - OPEX', NULL),
-(1, 'DEPRECIATION', 'Depreciation', 6, NULL, 'DEPRECIATION'),
-(1, 'EBIT', 'EBIT', 7, 'EBITDA - DEPRECIATION', NULL),
-(1, 'INTEREST', 'Interest Expense', 8, NULL, 'INTEREST'),
-(1, 'PRE_TAX_INCOME', 'Pre-Tax Income', 9, 'EBIT - INTEREST', NULL),
-(1, 'TAX', 'Income Tax', 10, NULL, NULL),  -- Computed by TaxEngine
-(1, 'NET_INCOME', 'Net Income', 11, 'PRE_TAX_INCOME - TAX', NULL);
+(1, 'VOLUME', 'Sales Volume (tons)', 1, NULL, 'scenario:VOLUME'),
+(1, 'REVENUE', 'Revenue', 2, 'scenario:GRAIN_PRICE * VOLUME', NULL),
+(1, 'COGS', 'Cost of Goods Sold', 3, 'scenario:GRAIN_COST * VOLUME', NULL),
+(1, 'GROSS_PROFIT', 'Gross Profit', 4, 'REVENUE - COGS', NULL),
+(1, 'OPEX', 'Operating Expenses', 5, NULL, 'scenario:OPEX_BASE'),
+(1, 'EBITDA', 'EBITDA', 6, 'GROSS_PROFIT - OPEX', NULL),
+(1, 'DEPRECIATION', 'Depreciation', 7, NULL, 'scenario:DEPRECIATION'),
+(1, 'EBIT', 'EBIT', 8, 'EBITDA - DEPRECIATION', NULL),
+(1, 'INTEREST', 'Interest Expense', 9, NULL, 'scenario:INTEREST_EXPENSE'),
+(1, 'PRE_TAX_INCOME', 'Pre-Tax Income', 10, 'EBIT - INTEREST', NULL),
+(1, 'TAX', 'Income Tax', 11, NULL, NULL),  -- Computed by TaxEngine
+(1, 'NET_INCOME', 'Net Income', 12, 'PRE_TAX_INCOME - TAX', NULL);
+
+-- Example with future multi-source mappings (M5+, M8+):
+-- (1, 'CARBON_TAX', 'Carbon Tax', 13, NULL, 'carbon:TOTAL_CARBON_TAX'),
+-- (1, 'INTEREST_ON_DEBT', 'Interest', 14, 'bs:DEBT[t-1] * scenario:INTEREST_RATE', NULL);
 ```
 
 ---
