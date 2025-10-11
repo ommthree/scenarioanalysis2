@@ -1,1 +1,456 @@
-// TODO: Implement (M1/M2)
+/**
+ * @file formula_evaluator.cpp
+ * @brief Formula evaluator implementation
+ */
+
+#include "core/formula_evaluator.h"
+#include <cmath>
+#include <stdexcept>
+#include <sstream>
+#include <set>
+#include <algorithm>
+
+namespace finmodel {
+namespace core {
+
+FormulaEvaluator::FormulaEvaluator()
+    : pos_(0)
+{
+}
+
+FormulaEvaluator::~FormulaEvaluator() = default;
+
+// ============================================================================
+// Public Interface
+// ============================================================================
+
+double FormulaEvaluator::evaluate(
+    const std::string& formula,
+    const std::vector<IValueProvider*>& providers,
+    const Context& ctx
+) {
+    formula_ = formula;
+    pos_ = 0;
+    providers_ = providers;
+    ctx_ = ctx;
+
+    if (formula_.empty()) {
+        throw std::runtime_error("Empty formula");
+    }
+
+    double result = parse_expression();
+
+    // Ensure we consumed entire formula
+    skip_whitespace();
+    if (pos_ < formula_.length()) {
+        std::ostringstream oss;
+        oss << "Unexpected characters after expression at position " << pos_
+            << ": '" << formula_.substr(pos_) << "'";
+        throw std::runtime_error(oss.str());
+    }
+
+    return result;
+}
+
+std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::string& formula) {
+    std::set<std::string> deps_set;  // Use set to avoid duplicates
+    formula_ = formula;
+    pos_ = 0;
+
+    if (formula_.empty()) {
+        return {};
+    }
+
+    // Parse and collect all identifiers
+    while (pos_ < formula_.length()) {
+        skip_whitespace();
+
+        if (pos_ >= formula_.length()) break;
+
+        if (is_alpha(peek())) {
+            std::string identifier = read_identifier();
+
+            // Check if it's a function call
+            skip_whitespace();
+            if (peek() == '(') {
+                // It's a function - skip to matching ')'
+                int depth = 1;
+                next(); // skip '('
+                while (depth > 0 && pos_ < formula_.length()) {
+                    char c = next();
+                    if (c == '(') depth++;
+                    if (c == ')') depth--;
+                }
+                continue;
+            }
+
+            // Check for time reference [t-1]
+            if (peek() == '[') {
+                next(); // skip '['
+                while (peek() != ']' && pos_ < formula_.length()) {
+                    next();
+                }
+                if (peek() == ']') next();
+            }
+
+            // It's a variable dependency
+            deps_set.insert(identifier);
+        } else {
+            pos_++;
+        }
+    }
+
+    // Convert set to vector
+    return std::vector<std::string>(deps_set.begin(), deps_set.end());
+}
+
+// ============================================================================
+// Recursive Descent Parser
+// ============================================================================
+
+double FormulaEvaluator::parse_expression() {
+    double result = parse_term();
+
+    while (peek() == '+' || peek() == '-') {
+        char op = next();
+        double right = parse_term();
+        if (op == '+') {
+            result += right;
+        } else {
+            result -= right;
+        }
+    }
+
+    return result;
+}
+
+double FormulaEvaluator::parse_term() {
+    double result = parse_power();
+
+    while (peek() == '*' || peek() == '/') {
+        char op = next();
+        double right = parse_power();
+        if (op == '*') {
+            result *= right;
+        } else {
+            if (right == 0.0) {
+                std::ostringstream oss;
+                oss << "Division by zero at position " << pos_;
+                throw std::runtime_error(oss.str());
+            }
+            result /= right;
+        }
+    }
+
+    return result;
+}
+
+double FormulaEvaluator::parse_power() {
+    double result = parse_factor();
+
+    if (peek() == '^') {
+        next();
+        double exponent = parse_factor();
+        result = std::pow(result, exponent);
+    }
+
+    return result;
+}
+
+double FormulaEvaluator::parse_factor() {
+    skip_whitespace();
+
+    // Unary minus
+    if (peek() == '-') {
+        next();
+        return -parse_factor();
+    }
+
+    // Unary plus (just skip it)
+    if (peek() == '+') {
+        next();
+        return parse_factor();
+    }
+
+    // Parentheses
+    if (peek() == '(') {
+        next();
+        double result = parse_expression();
+        skip_whitespace();
+        if (peek() != ')') {
+            std::ostringstream oss;
+            oss << "Unmatched parentheses at position " << pos_;
+            throw std::runtime_error(oss.str());
+        }
+        next();
+        return result;
+    }
+
+    // Numbers
+    if (is_digit(peek()) || peek() == '.') {
+        return read_number();
+    }
+
+    // Variables or functions
+    if (is_alpha(peek())) {
+        std::string identifier = read_identifier();
+
+        // Check if function call
+        skip_whitespace();
+        if (peek() == '(') {
+            return parse_function(identifier);
+        }
+
+        // Variable (possibly with time reference)
+        return parse_variable(identifier);
+    }
+
+    // Error
+    std::ostringstream oss;
+    oss << "Unexpected character '" << peek() << "' at position " << pos_;
+    throw std::runtime_error(oss.str());
+}
+
+double FormulaEvaluator::parse_function(const std::string& func_name) {
+    // Expect '('
+    skip_whitespace();
+    if (peek() != '(') {
+        throw std::runtime_error("Expected '(' after function name: " + func_name);
+    }
+    next();
+
+    // Parse arguments
+    std::vector<double> args;
+    skip_whitespace();
+
+    // Handle empty argument list
+    if (peek() == ')') {
+        next();
+        throw std::runtime_error("Function " + func_name + " requires at least one argument");
+    }
+
+    // Parse first argument
+    args.push_back(parse_expression());
+    skip_whitespace();
+
+    // Parse remaining arguments
+    while (peek() == ',') {
+        next();
+        skip_whitespace();
+        args.push_back(parse_expression());
+        skip_whitespace();
+    }
+
+    // Expect ')'
+    if (peek() != ')') {
+        std::ostringstream oss;
+        oss << "Unmatched parentheses in function call '" << func_name
+            << "' at position " << pos_;
+        throw std::runtime_error(oss.str());
+    }
+    next();
+
+    // Evaluate function
+    if (func_name == "MIN") {
+        if (args.size() != 2) {
+            throw std::runtime_error("MIN requires exactly 2 arguments, got " +
+                                   std::to_string(args.size()));
+        }
+        return std::min(args[0], args[1]);
+    }
+    else if (func_name == "MAX") {
+        if (args.size() != 2) {
+            throw std::runtime_error("MAX requires exactly 2 arguments, got " +
+                                   std::to_string(args.size()));
+        }
+        return std::max(args[0], args[1]);
+    }
+    else if (func_name == "ABS") {
+        if (args.size() != 1) {
+            throw std::runtime_error("ABS requires exactly 1 argument, got " +
+                                   std::to_string(args.size()));
+        }
+        return std::abs(args[0]);
+    }
+    else if (func_name == "IF") {
+        if (args.size() != 3) {
+            throw std::runtime_error("IF requires exactly 3 arguments, got " +
+                                   std::to_string(args.size()));
+        }
+        return (args[0] != 0.0) ? args[1] : args[2];
+    }
+
+    throw std::runtime_error("Unknown function: " + func_name);
+}
+
+double FormulaEvaluator::parse_variable(const std::string& var_name) {
+    int time_offset = 0;
+
+    // Check for time reference [t-1], [t], etc.
+    skip_whitespace();
+    if (peek() == '[') {
+        time_offset = parse_time_reference();
+    }
+
+    return get_variable_value(var_name, time_offset);
+}
+
+// ============================================================================
+// Lexer Methods
+// ============================================================================
+
+void FormulaEvaluator::skip_whitespace() {
+    while (pos_ < formula_.length() && std::isspace(formula_[pos_])) {
+        pos_++;
+    }
+}
+
+char FormulaEvaluator::peek() const {
+    // Note: We need to skip whitespace in peek() for lookahead to work correctly
+    size_t temp_pos = pos_;
+    while (temp_pos < formula_.length() && std::isspace(formula_[temp_pos])) {
+        temp_pos++;
+    }
+    if (temp_pos < formula_.length()) {
+        return formula_[temp_pos];
+    }
+    return '\0';
+}
+
+char FormulaEvaluator::next() {
+    if (pos_ < formula_.length()) {
+        return formula_[pos_++];
+    }
+    return '\0';
+}
+
+bool FormulaEvaluator::is_alpha(char c) const {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+bool FormulaEvaluator::is_digit(char c) const {
+    return c >= '0' && c <= '9';
+}
+
+bool FormulaEvaluator::is_alnum(char c) const {
+    return is_alpha(c) || is_digit(c);
+}
+
+std::string FormulaEvaluator::read_identifier() {
+    std::string result;
+    while (pos_ < formula_.length() && is_alnum(formula_[pos_])) {
+        result += formula_[pos_++];
+    }
+    return result;
+}
+
+double FormulaEvaluator::read_number() {
+    std::string num_str;
+
+    // Read digits before decimal point
+    while (pos_ < formula_.length() && is_digit(formula_[pos_])) {
+        num_str += formula_[pos_++];
+    }
+
+    // Read decimal point and digits after
+    if (pos_ < formula_.length() && formula_[pos_] == '.') {
+        num_str += formula_[pos_++];
+        while (pos_ < formula_.length() && is_digit(formula_[pos_])) {
+            num_str += formula_[pos_++];
+        }
+    }
+
+    try {
+        return std::stod(num_str);
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Invalid number: " + num_str);
+    }
+}
+
+int FormulaEvaluator::parse_time_reference() {
+    // Expect '['
+    if (peek() != '[') {
+        throw std::runtime_error("Expected '[' for time reference");
+    }
+    next();
+
+    skip_whitespace();
+
+    // Parse 't' or 't-1' or 't+1' or 't-2', etc.
+    if (peek() != 't' && peek() != 'T') {
+        throw std::runtime_error("Time reference must start with 't'");
+    }
+    next();
+
+    skip_whitespace();
+
+    int offset = 0;
+
+    // Check for +/- offset
+    if (peek() == '-' || peek() == '+') {
+        char op = next();
+        skip_whitespace();
+
+        // Read offset number
+        if (!is_digit(peek())) {
+            throw std::runtime_error("Expected number after '" + std::string(1, op) + "' in time reference");
+        }
+
+        std::string offset_str;
+        while (is_digit(peek())) {
+            offset_str += next();
+        }
+
+        offset = std::stoi(offset_str);
+        if (op == '-') {
+            offset = -offset;
+        }
+    }
+
+    skip_whitespace();
+
+    // Expect ']'
+    if (peek() != ']') {
+        throw std::runtime_error("Expected ']' to close time reference");
+    }
+    next();
+
+    return offset;
+}
+
+// ============================================================================
+// Variable Resolution
+// ============================================================================
+
+double FormulaEvaluator::get_variable_value(const std::string& code, int time_offset) {
+    // Create context with time offset
+    Context time_ctx = ctx_;
+    time_ctx.time_index = time_offset;
+
+    // Try each provider in order
+    for (auto* provider : providers_) {
+        if (provider->has_value(code)) {
+            try {
+                return provider->get_value(code, time_ctx);
+            } catch (const std::exception& e) {
+                // Provider claims to handle this code but failed
+                // Continue to next provider
+                continue;
+            }
+        }
+    }
+
+    // Variable not found in any provider
+    std::ostringstream oss;
+    oss << "Variable not found: " << code;
+    if (time_offset != 0) {
+        oss << "[t";
+        if (time_offset > 0) oss << "+" << time_offset;
+        else oss << time_offset;
+        oss << "]";
+    }
+    throw std::runtime_error(oss.str());
+}
+
+} // namespace core
+} // namespace finmodel
