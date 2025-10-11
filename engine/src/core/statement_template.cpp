@@ -4,6 +4,8 @@
  */
 
 #include "core/statement_template.h"
+#include "core/dependency_graph.h"
+#include "core/formula_evaluator.h"
 #include "database/idatabase.h"
 #include "database/result_set.h"
 #include <nlohmann/json.hpp>
@@ -59,6 +61,38 @@ const LineItem* StatementTemplate::get_line_item(const std::string& code) const 
         return nullptr;
     }
     return &line_items_[it->second];
+}
+
+void StatementTemplate::compute_calculation_order() {
+    // Create dependency graph
+    DependencyGraph graph;
+    FormulaEvaluator evaluator;
+
+    // Add all line items as nodes
+    for (const auto& item : line_items_) {
+        graph.add_node(item.code);
+    }
+
+    // Extract dependencies from formulas and add edges
+    for (const auto& item : line_items_) {
+        if (item.formula.has_value()) {
+            // Extract dependencies from formula
+            std::vector<std::string> deps = evaluator.extract_dependencies(*item.formula);
+
+            // Add edge for each dependency: item depends on dep
+            for (const auto& dep : deps) {
+                // Only add edge if dependency exists in this template
+                if (line_item_index_.find(dep) != line_item_index_.end()) {
+                    graph.add_edge(item.code, dep);
+                }
+                // Note: External dependencies (e.g., from other statements)
+                // are not added to graph - they're resolved at runtime via IValueProvider
+            }
+        }
+    }
+
+    // Compute topological sort
+    calculation_order_ = graph.topological_sort();
 }
 
 void StatementTemplate::parse_json(const std::string& json_content) {

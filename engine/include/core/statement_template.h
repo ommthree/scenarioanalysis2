@@ -144,6 +144,25 @@ public:
     }
 
     /**
+     * @brief Compute calculation order from formulas using dependency graph
+     *
+     * This method analyzes the formulas in line items to extract dependencies,
+     * builds a dependency graph, performs topological sort, and updates the
+     * calculation_order_ field.
+     *
+     * @throws std::runtime_error if circular dependency detected
+     *
+     * Example:
+     * @code
+     * auto tmpl = StatementTemplate::load_from_json(json);
+     * tmpl->compute_calculation_order();  // Analyzes formulas, builds DAG
+     * auto order = tmpl->get_calculation_order();
+     * // Result: Line items ordered so dependencies are calculated first
+     * @endcode
+     */
+    void compute_calculation_order();
+
+    /**
      * @brief Get validation rules
      */
     const std::vector<ValidationRule>& get_validation_rules() const {
