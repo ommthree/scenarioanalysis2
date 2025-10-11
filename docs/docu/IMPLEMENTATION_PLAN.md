@@ -39,7 +39,7 @@ This implementation plan delivers a **production-ready financial modeling engine
 │ M1:  Database Abstraction & Schema              ✅ COMPLETED     │
 │ M2:  Statement Templates & Tests                ✅ COMPLETED     │
 │ M3:  Formula Evaluator & Dependencies           ✅ COMPLETED     │
-│ M4:  P&L Engine                                                  │
+│ M4:  P&L Engine                                 ✅ COMPLETED     │
 │ M5:  Balance Sheet Engine                                        │
 │ M6:  Cash Flow Engine                                            │
 │ M7:  Multi-Period Runner & Validation                            │
@@ -72,17 +72,72 @@ This implementation plan delivers a **production-ready financial modeling engine
 
 ---
 
-## M1-M3: Already Completed ✅
+## M1: Database Abstraction & Schema ✅
+**Status:** COMPLETED
+**Effort:** 8-10 days
 
-[Content unchanged - see previous version]
+### Completed Deliverables
+- ✅ IDatabase interface with SQLite implementation
+- ✅ Named parameter support (`:param_name`)
+- ✅ Transaction management
+- ✅ Complete schema with 18+ tables
+- ✅ DatabaseFactory for easy database creation
+- ✅ DatabaseConnection convenience wrapper
+- ✅ PreparedStatement for safe SQL execution
+- ✅ Full test coverage (29 tests)
 
 ---
 
-## M4: P&L Engine
-**Status:** PENDING
+## M2: Statement Templates & Tests ✅
+**Status:** COMPLETED
 **Effort:** 8-10 days
 
-[Content to be detailed in M4_DETAILED_WORKPLAN.md]
+### Completed Deliverables
+- ✅ StatementTemplate class for loading JSON templates
+- ✅ Corporate P&L template (16 line items)
+- ✅ Corporate BS template (time-series formulas)
+- ✅ Insurance P&L template (industry-specific)
+- ✅ Line item parsing with formulas and dependencies
+- ✅ Validation rules support
+- ✅ Calculation order via dependency graph
+- ✅ Full test coverage (18 tests)
+
+---
+
+## M3: Formula Evaluator & Dependencies ✅
+**Status:** COMPLETED
+**Effort:** 8-10 days
+
+### Completed Deliverables
+- ✅ Recursive descent parser for formulas
+- ✅ Arithmetic operations (+, -, *, /, parentheses)
+- ✅ Functions: SUM, AVG, MIN, MAX, IF
+- ✅ Custom function support (TAX_COMPUTE)
+- ✅ String literal parsing
+- ✅ Dependency extraction (finds variables in formulas)
+- ✅ DependencyGraph with topological sort
+- ✅ Value provider pattern (IValueProvider interface)
+- ✅ Full test coverage (25 tests)
+
+---
+
+## M4: P&L Engine ✅
+**Status:** COMPLETED
+**Effort:** 8-10 days
+
+### Completed Deliverables
+- ✅ PLEngine class for P&L calculations
+- ✅ DriverValueProvider for driver application
+- ✅ PLValueProvider for P&L line item references
+- ✅ TaxEngine with strategy pattern
+- ✅ Tax strategies: Flat, Progressive, Minimum
+- ✅ TAX_COMPUTE formula function
+- ✅ Single-period P&L calculation
+- ✅ Integration with FormulaEvaluator
+- ✅ Database result storage
+- ✅ Full test coverage (27 tests including integration)
+
+**See:** `docs/docu/STORY.md` for detailed M4 implementation journey
 
 ---
 
@@ -90,7 +145,28 @@ This implementation plan delivers a **production-ready financial modeling engine
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0]
+### Overview
+Calculate balance sheets for each period, linking to P&L results and handling time-series formulas.
+
+### Key Deliverables
+- [ ] BSEngine class (mirrors PLEngine pattern)
+- [ ] BSValueProvider for balance sheet line items
+- [ ] Time-series formula support (`CASH[t-1] + CF_NET`)
+- [ ] Asset calculations (Cash, AR, Inventory, PPE)
+- [ ] Liability calculations (AP, Debt)
+- [ ] Equity evolution (Retained Earnings roll-forward)
+- [ ] PPE schedule with depreciation
+- [ ] Working capital calculations (DSO/DIO/DPO-based)
+- [ ] Balance sheet identity validation (Assets = Liabilities + Equity)
+- [ ] Integration tests with PLEngine
+
+### Success Criteria
+- ✅ Balance sheet balances in all test cases
+- ✅ Time-series formulas work correctly
+- ✅ Links to P&L (retained earnings, depreciation)
+- ✅ 30+ unit tests
+
+**Detailed Plan:** See `docs/docu/M5_DETAILED_PLAN.md`
 
 ---
 
@@ -98,7 +174,26 @@ This implementation plan delivers a **production-ready financial modeling engine
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0]
+### Overview
+Calculate cash flow statements using indirect method, linking P&L and balance sheets.
+
+### Key Deliverables
+- [ ] CFEngine class
+- [ ] CFO calculation (NI + D&A - ΔNWC)
+- [ ] CFI calculation (CapEx, asset disposals)
+- [ ] CFF calculation (debt draws/repayments, dividends)
+- [ ] Cash reconciliation validation
+- [ ] Working capital change calculations
+- [ ] Link to BS opening/closing positions
+- [ ] Integration tests
+
+### Success Criteria
+- ✅ Cash reconciles: Cash[t] = Cash[t-1] + CF_NET
+- ✅ CFO correctly adjusts for non-cash items
+- ✅ Integration with P&L and BS engines
+- ✅ 20+ unit tests
+
+**Detailed Plan:** See `docs/docu/M5_DETAILED_PLAN.md`
 
 ---
 
@@ -106,15 +201,163 @@ This implementation plan delivers a **production-ready financial modeling engine
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0]
+### Overview
+Orchestrate multi-period calculations with policy enforcement and validation.
+
+### Key Deliverables
+- [ ] MultiPeriodRunner class
+- [ ] Period-by-period execution loop
+- [ ] State propagation (closing BS → opening BS)
+- [ ] Policy solvers:
+  - Funding policy (cash/debt management)
+  - Working capital policy (DSO/DIO/DPO targets)
+  - Dividend policy (payout ratios)
+  - CapEx policy (maintenance + growth)
+- [ ] Convergence checking for iterative solvers
+- [ ] ScenarioEngine (top-level orchestration)
+- [ ] Run metadata and audit trails
+- [ ] Integration tests (full scenarios)
+
+### Success Criteria
+- ✅ 120-period scenario completes in <5 seconds
+- ✅ Balance sheet balances every period
+- ✅ Cash reconciles every period
+- ✅ Policy constraints enforced
+- ✅ 50+ integration tests covering full scenarios
+
+**Detailed Plan:** See `docs/docu/M5_DETAILED_PLAN.md`
 
 ---
 
-## M8: Carbon Accounting Templates & Engine
+## M8: Carbon Accounting Templates & Engine + MAC Curves
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0]
+### Overview
+Add carbon accounting with Scope 1/2/3 emissions tracking and Marginal Abatement Cost (MAC) curve generation for decarbonization planning.
+
+### Key Deliverables
+
+#### 1. Carbon Accounting Engine
+- [ ] Schema update: Add 'carbon' to statement_type
+- [ ] carbon_result table (mirrors pl_result structure)
+- [ ] Carbon statement templates:
+  - CORP_CARBON_001 (Corporate)
+  - MFG_CARBON_001 (Manufacturing)
+  - AIRLINE_CARBON_001 (Airline)
+- [ ] CarbonEngine class:
+  - Load carbon templates
+  - Calculate emissions in dependency order
+  - Link to financial P&L (Scope 3 = COGS × intensity)
+  - Reference financial lines: `"base_value_source": "pl:COGS"`
+- [ ] Carbon drivers:
+  - Emission factors (fuel_carbon_factor, electricity_intensity)
+  - Management actions (renewable_energy_pct, efficiency_improvement)
+- [ ] Entity breakdown support (division, geography, product)
+
+#### 2. Transition Levers & MAC Curve Generation ⭐
+- [ ] Schema: `transition_lever` table
+  - lever_id, name, description
+  - abatement_potential_tco2 (tons of CO₂ reduced)
+  - cost_per_tco2 ($/tCO₂)
+  - capex_required, opex_impact
+  - implementation_period
+  - json_financial_impacts (links to P&L/BS drivers)
+- [ ] MACCurveEngine class:
+  - Load transition levers
+  - For each lever:
+    1. Run scenario WITHOUT lever (baseline emissions)
+    2. Run scenario WITH lever activated
+    3. Calculate emissions reduction (ΔtCO₂)
+    4. Calculate NPV of costs
+    5. Compute cost per ton ($/tCO₂)
+  - Sort levers by cost per ton
+  - Generate MAC curve data points
+- [ ] Lever types:
+  - Energy efficiency (LED lighting, insulation)
+  - Fuel switching (coal → natural gas → renewables)
+  - Process improvements (waste reduction)
+  - Carbon capture (CCS technology)
+  - Offsets (reforestation, carbon credits)
+- [ ] Financial impact modeling:
+  - CapEx for lever implementation
+  - OpEx changes (energy savings vs. tech costs)
+  - Revenue impacts (product pricing, demand)
+
+#### 3. API Endpoints
+- [ ] GET /api/v1/carbon/results/{scenario_id}
+- [ ] GET /api/v1/carbon/breakdown (by scope/entity)
+- [ ] POST /api/v1/transition-levers (define lever)
+- [ ] POST /api/v1/mac-curve/generate (run MAC analysis)
+- [ ] GET /api/v1/mac-curve/results/{analysis_id}
+
+#### 4. Dashboard Integration
+- [ ] Carbon emissions chart (Scope 1/2/3 breakdown)
+- [ ] Emissions intensity metrics (tCO₂/revenue)
+- [ ] **MAC curve visualization** (waterfall chart)
+  - X-axis: Cumulative abatement potential (tCO₂)
+  - Y-axis: Cost per ton ($/tCO₂)
+  - Bars: Individual levers
+  - Target line: Net zero goal
+- [ ] Lever comparison table
+- [ ] Optimal lever selection tool
+
+### Example MAC Curve Scenario
+```json
+{
+  "scenario_id": 25,
+  "baseline_emissions": 100000,
+  "target_reduction": 50000,
+  "levers": [
+    {
+      "lever_id": 1,
+      "name": "LED Lighting",
+      "abatement_tco2": 500,
+      "cost_per_tco2": -50,  // Negative = saves money
+      "capex": 100000,
+      "opex_annual_savings": 75000
+    },
+    {
+      "lever_id": 2,
+      "name": "Solar Panels",
+      "abatement_tco2": 5000,
+      "cost_per_tco2": 20,
+      "capex": 500000,
+      "opex_annual_savings": 50000
+    },
+    {
+      "lever_id": 3,
+      "name": "Carbon Capture",
+      "abatement_tco2": 30000,
+      "cost_per_tco2": 150,
+      "capex": 10000000,
+      "opex_annual_cost": 500000
+    }
+  ]
+}
+```
+
+### Success Criteria
+- ✅ carbon_result table stores Scope 1/2/3 emissions
+- ✅ 3 carbon templates functional
+- ✅ CarbonEngine calculates emissions correctly
+- ✅ Carbon links to financial results
+- ✅ MAC curve correctly ranks levers by cost/ton
+- ✅ MAC curve identifies optimal path to target
+- ✅ Financial impacts of levers flow through to P&L/BS
+- ✅ Dashboard visualizes MAC curve interactively
+- ✅ User can select levers and see combined impact
+
+### Key Files
+- `data/migrations/003_carbon_accounting.sql`
+- `engine/include/carbon/carbon_engine.h`
+- `engine/include/carbon/transition_lever.h`
+- `engine/include/carbon/mac_curve_engine.h`
+- `engine/src/carbon/carbon_engine.cpp`
+- `engine/src/carbon/mac_curve_engine.cpp`
+- `engine/tests/test_carbon_engine.cpp`
+- `engine/tests/test_mac_curve.cpp`
+- `web/src/components/charts/MACCurveChart.jsx`
 
 ---
 
@@ -314,7 +557,27 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0, just renumbered from M9]
+### Overview
+HTTP server with REST endpoints using Crow framework for scenario execution and result retrieval.
+
+### Key Deliverables
+- [ ] Crow web server setup
+- [ ] Core API endpoints:
+  - GET /api/scenarios (list scenarios)
+  - POST /api/runs (create run)
+  - GET /api/runs/{id}/status
+  - GET /api/runs/{id}/results
+- [ ] WebSocket for live progress updates
+- [ ] JWT authentication
+- [ ] CORS configuration
+- [ ] Static file serving
+- [ ] Background job queue for async execution
+
+### Success Criteria
+- ✅ API responds with correct JSON
+- ✅ Can trigger and monitor scenario runs
+- ✅ P95 latency <200ms for reads
+- ✅ 30+ API integration tests
 
 ---
 
@@ -322,7 +585,23 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0, just renumbered from M10]
+### Overview
+Visual editor for creating and modifying financial statement templates without writing JSON.
+
+### Key Deliverables
+- [ ] Template line item editor
+- [ ] Formula builder with autocomplete
+- [ ] Dependency visualizer
+- [ ] Validation rule editor
+- [ ] Template preview
+- [ ] Save/load templates
+- [ ] Template versioning
+
+### Success Criteria
+- ✅ User can create template without JSON knowledge
+- ✅ Formula autocomplete works
+- ✅ Real-time validation
+- ✅ Templates exportable/importable
 
 ---
 
@@ -330,7 +609,22 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0, just renumbered from M11]
+### Overview
+LLM-powered assistant for scenario configuration and data mapping.
+
+### Key Deliverables
+- [ ] Claude API integration
+- [ ] Natural language scenario creation
+- [ ] Data mapping assistant
+- [ ] Formula suggestion
+- [ ] Validation error explanation
+- [ ] Documentation Q&A
+
+### Success Criteria
+- ✅ AI can create valid scenarios from descriptions
+- ✅ Data mapping >80% accurate
+- ✅ Users can ask questions about results
+- ✅ Cost per query <$0.10
 
 ---
 
@@ -338,7 +632,24 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0, just renumbered from M12]
+### Overview
+Interactive dashboard with ECharts visualizations and smooth animations.
+
+### Key Deliverables
+- [ ] Main dashboard with KPI cards
+- [ ] P&L waterfall chart
+- [ ] BS stacked area chart
+- [ ] CF bridge chart
+- [ ] Scenario comparison view
+- [ ] Drill-down tables
+- [ ] Export to PNG/CSV
+- [ ] PWA support for iPad
+
+### Success Criteria
+- ✅ All charts interactive
+- ✅ Lighthouse score >90
+- ✅ Works on iPad
+- ✅ Smooth animations <60fps
 
 ---
 
@@ -579,7 +890,26 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 **Status:** PENDING
 **Effort:** 8-10 days
 
-[Content unchanged from v5.0, just renumbered from M14]
+### Overview
+Data import/export and AWS Lightsail deployment.
+
+### Key Deliverables
+- [ ] CSV loader with validation
+- [ ] CSV export (all result tables)
+- [ ] Excel export (multi-sheet)
+- [ ] JSON export for API
+- [ ] Bulk insert optimization
+- [ ] AWS Lightsail setup
+- [ ] CI/CD pipeline
+- [ ] Monitoring and logging
+- [ ] Backup strategy
+
+### Success Criteria
+- ✅ 10K row CSV loads in <2 seconds
+- ✅ Round-trip CSV export/import works
+- ✅ Deployed to Lightsail with SSL
+- ✅ Automated backups configured
+- ✅ Monitoring dashboards live
 
 ---
 
@@ -587,24 +917,101 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 
 ---
 
-## M16-M19: Portfolio Features
-**Status:** PENDING (Phase B)
-
-[Content unchanged from v5.0, just renumbered from M15-M18]
-
----
-
-## M20: Nested Portfolio Stochastic ⭐ REFOCUSED
+## M16: Portfolio Data Model & Entity Positions
 **Status:** PENDING (Phase B)
 **Effort:** 8-10 days
 
 ### Overview
-**Key Change:** This milestone is now ONLY about nested portfolio stochastic features. All correlation matrix support is already in M14.
+Data model for portfolios of financial instruments with position tracking.
+
+### Key Deliverables
+- [ ] Portfolio schema (portfolio, position tables)
+- [ ] Position types (bonds, loans, equities)
+- [ ] Ownership tracking
+- [ ] Hierarchical entities (parent owns children)
+- [ ] Position valuation hooks
+
+### Success Criteria
+- ✅ Can model bank loan portfolio
+- ✅ Can model insurance investment portfolio
+- ✅ Nested entity relationships work
+
+---
+
+## M17: Nested Scenario Execution (Recursive Engine)
+**Status:** PENDING (Phase B)
+**Effort:** 8-10 days
+
+### Overview
+Recursive scenario runner for portfolio positions.
+
+### Key Deliverables
+- [ ] Recursive scenario runner
+- [ ] Parent-child scenario linking
+- [ ] Position valuation from scenarios
+- [ ] Consolidation logic
+- [ ] Credit event modeling
+
+### Success Criteria
+- ✅ Bank scenario triggers borrower scenarios
+- ✅ Valuation aggregates correctly
+- ✅ Performance acceptable for 100-position portfolio
+
+---
+
+## M18: Valuation Methods (Market/DCF/Comparable)
+**Status:** PENDING (Phase B)
+**Effort:** 8-10 days
+
+### Overview
+Multiple valuation approaches for portfolio positions.
+
+### Key Deliverables
+- [ ] Market valuation (mark-to-market)
+- [ ] DCF valuation
+- [ ] Comparable company analysis
+- [ ] Valuation method selector
+- [ ] Fair value hierarchy
+
+### Success Criteria
+- ✅ 3 valuation methods implemented
+- ✅ User can choose valuation approach
+- ✅ Results reconcile with portfolio value
+
+---
+
+## M19: Merton Model & Credit Risk Integration
+**Status:** PENDING (Phase B)
+**Effort:** 8-10 days
+
+### Overview
+Credit risk modeling using Merton structural model.
+
+### Key Deliverables
+- [ ] Merton PD calculation
+- [ ] Distance to default
+- [ ] Credit rating mapping
+- [ ] Portfolio VaR
+- [ ] Expected loss calculation
+
+### Success Criteria
+- ✅ Merton PD matches rating agencies
+- ✅ Portfolio VaR calculated
+- ✅ Credit concentrations identified
+
+---
+
+## M20: Nested Portfolio Stochastic (Multi-Entity Monte Carlo) ⭐
+**Status:** PENDING (Phase B)
+**Effort:** 8-10 days
+
+### Overview
+Nested stochastic scenarios across portfolio entities.
 
 **M14 delivered:** Correlated sampling, time-varying correlations, full Monte Carlo
 **M20 adds:** Nested stochastic scenarios across portfolio entities
 
-### Deliverables
+### Key Deliverables
 - [ ] StochasticPortfolioRunner
   - Run Monte Carlo for parent (e.g., bank)
   - For each iteration, trigger nested stochastic scenarios for portfolio positions
@@ -624,14 +1031,27 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 - ✅ Cross-entity correlations work
 - ✅ Parallel execution scales
 
-[Detailed content similar to v5.0 M19]
-
 ---
 
 ## M21: Portfolio Dashboard & Advanced Features
 **Status:** PENDING (Phase B)
+**Effort:** 8-10 days
 
-[Content unchanged from v5.0 M20, just renumbered]
+### Overview
+Portfolio-specific visualizations and advanced analytics.
+
+### Key Deliverables
+- [ ] Portfolio composition charts
+- [ ] Credit risk heatmap
+- [ ] Concentration analysis
+- [ ] Stress testing UI
+- [ ] VaR contribution breakdown
+- [ ] Portfolio rebalancing tools
+
+### Success Criteria
+- ✅ All portfolio metrics visualized
+- ✅ Risk analytics interactive
+- ✅ Supports 1000+ position portfolios
 
 ---
 
@@ -661,8 +1081,8 @@ The **Physical Risk Module** transforms physical perils (climate/natural hazards
 
 ---
 
-**Document Version:** 6.0 (Physical Risk + Full Correlation Support)
+**Document Version:** 6.1 (Complete High-Level Plan + MAC Curves)
 **Last Updated:** 2025-10-11
-**Status:** M1 ✅ M2 ✅ M3 ✅ M4-M21 PENDING
-**Current Phase:** Phase A (M4 next)
-**Next Review:** After M8 (Carbon + Physical Risk complete)
+**Status:** M1 ✅ M2 ✅ M3 ✅ M4 ✅ M5-M21 PENDING
+**Current Phase:** Phase A (M5 next)
+**Next Review:** After M8 (Carbon + MAC + Physical Risk complete)
