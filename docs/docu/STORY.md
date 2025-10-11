@@ -1,8 +1,8 @@
 # The Story So Far: Building a Financial Modeling Engine
 
 **Last Updated:** October 11, 2025
-**Milestones Completed:** M1, M2, M3, M4, M5
-**Current Status:** P&L Engine Complete, Balance Sheet Engine Complete
+**Milestones Completed:** M1, M2, M3, M4, M5, M6
+**Current Status:** P&L Engine Complete, Balance Sheet Engine Complete, Cash Flow Engine Complete
 
 ---
 
@@ -1676,19 +1676,279 @@ After M6:
 
 ## Key Takeaways
 
-### What We've Accomplished (M1-M5)
+### M6: Cash Flow Engine (Completing the Three Statements)
+
+**The Problem We Solved:**
+The three core financial statements must work together:
+- P&L shows profitability (revenue, expenses, net income)
+- Balance Sheet shows position (assets, liabilities, equity)
+- Cash Flow reconciles them (where did cash come from/go?)
+
+We needed a Cash Flow engine that:
+- Starts with Net Income and adjusts for non-cash items (indirect method)
+- Calculates working capital changes from balance sheet movements
+- Links to both P&L results (NET_INCOME, DEPRECIATION) and BS results (AR, AP changes)
+- Validates cash reconciliation (Opening Cash + CF_NET = Closing Cash)
+- Uses the same template-driven architecture
+
+**What We Built:**
+
+#### 1. CFEngine - Cash Flow Calculation Engine
+**Files Created:**
+- `engine/include/cf/cf_engine.h` (140 lines) - CF engine interface
+- `engine/src/cf/cf_engine.cpp` (254 lines) - CF engine implementation
+
+**What It Does:**
+The CFEngine orchestrates cash flow calculations using the indirect method, integrating with both P&L and Balance Sheet:
+
+```cpp
+CFEngine engine(db);
+auto cf_stmt = engine.calculate(
+    entity_id,
+    scenario_id,
+    period_id,
+    pl_result,          // P&L results (provides NET_INCOME, DEPRECIATION)
+    opening_bs,         // Previous period's closing BS
+    closing_bs          // Current period's closing BS
+);
+
+// Validate cash reconciliation
+auto validation = engine.validate(cf_stmt, closing_bs.cash);
+if (!validation.is_valid) {
+    // Handle errors
+}
+```
+
+**The Calculation Flow:**
+```
+1. Load CF template from database (JSON-driven)
+2. Set up value providers:
+   - CFValueProvider (cash flow line items being calculated)
+   - PLValueProvider (P&L results: NET_INCOME, DEPRECIATION, etc.)
+   - BSValueProvider (balance sheet values: AR, AP, etc.)
+3. Calculate in three sections:
+   Operating Activities:
+   - Start with pl:NET_INCOME
+   - Add back pl:DEPRECIATION, pl:AMORTIZATION
+   - Adjust for working capital changes (AR[t-1] - AR[t], AP[t] - AP[t-1])
+
+   Investing Activities:
+   - CAPEX = -(bs:PPE_GROSS[t] - bs:PPE_GROSS[t-1])
+   - ASSET_SALE_PROCEEDS
+
+   Financing Activities:
+   - DEBT_ISSUANCE/REPAYMENT (from debt changes)
+   - DIVIDENDS_PAID
+   - SHARE_ISSUANCE
+4. Validate: Opening Cash + CF_NET = Closing Cash
+5. Return cash flow statement
+```
+
+**Key Features:**
+- **Indirect Method**: Starts with Net Income, adjusts to cash basis
+- **Cross-Statement Integration**: References pl:NET_INCOME, bs:CASH[t-1]
+- **Working Capital Automation**: Calculates AR, AP, Inventory changes
+- **Comprehensive Validation**: Three reconciliation checks
+- **Template-Driven**: All logic in JSON, not C++ code
+
+#### 2. CFValueProvider - Cash Flow Value Resolution
+**Files Created:**
+- `engine/include/cf/providers/cf_value_provider.h` (78 lines)
+- `engine/src/cf/providers/cf_value_provider.cpp` (39 lines)
+
+**What It Does:**
+The CFValueProvider stores CF calculation results and makes them available to subsequent line items:
+
+```cpp
+class CFValueProvider : public IValueProvider {
+public:
+    // Set cash flow values as they're calculated
+    void set_current_values(const std::map<std::string, double>& values);
+
+    // Check if CF value exists
+    bool has_value(const std::string& key) const override;
+
+    // Get CF value
+    double get_value(const std::string& key, const Context& ctx) const override;
+};
+```
+
+**Usage Example:**
+```cpp
+// After calculating CF_OPERATING, CF_INVESTING, CF_FINANCING
+cf_provider->set_current_values({
+    {"CF_OPERATING", 222000.0},
+    {"CF_INVESTING", -80000.0},
+    {"CF_FINANCING", -80000.0}
+});
+
+// Later formula can reference: CF_NET = CF_OPERATING + CF_INVESTING + CF_FINANCING
+```
+
+#### 3. Corporate Cash Flow Template
+**Files Created:**
+- `data/templates/corporate_cf.json` (328 lines)
+
+**What's In It:**
+A complete indirect method cash flow statement with 20 line items:
+
+**Operating Activities (9 items):**
+- NET_INCOME (starting point: `pl:NET_INCOME`)
+- DEPRECIATION (add back: `pl:DEPRECIATION`)
+- AMORTIZATION (add back: `pl:AMORTIZATION`)
+- CHANGE_ACCOUNTS_RECEIVABLE (`bs:ACCOUNTS_RECEIVABLE[t-1] - bs:ACCOUNTS_RECEIVABLE`)
+- CHANGE_INVENTORY (`bs:INVENTORY[t-1] - bs:INVENTORY`)
+- CHANGE_PREPAID_EXPENSES (`bs:PREPAID_EXPENSES[t-1] - bs:PREPAID_EXPENSES`)
+- CHANGE_ACCOUNTS_PAYABLE (`bs:ACCOUNTS_PAYABLE - bs:ACCOUNTS_PAYABLE[t-1]`)
+- CHANGE_ACCRUED_EXPENSES (`bs:ACCRUED_EXPENSES - bs:ACCRUED_EXPENSES[t-1]`)
+- CF_OPERATING (subtotal)
+
+**Investing Activities (3 items):**
+- CAPEX (`-(bs:PPE_GROSS - bs:PPE_GROSS[t-1] - driver:ASSET_DISPOSALS)`)
+- ASSET_SALE_PROCEEDS (`driver:ASSET_DISPOSALS`)
+- CF_INVESTING (subtotal)
+
+**Financing Activities (5 items):**
+- DEBT_ISSUANCE (`MAX(total_debt_change, 0)`)
+- DEBT_REPAYMENT (`MIN(total_debt_change, 0)`)
+- DIVIDENDS_PAID (`-driver:DIVIDENDS_PAID`)
+- SHARE_ISSUANCE (`driver:SHARE_ISSUANCE`)
+- CF_FINANCING (subtotal)
+
+**Summary (3 items):**
+- CF_NET (total of all three categories)
+- CASH_BEGINNING (`bs:CASH[t-1]`)
+- CASH_ENDING (`CASH_BEGINNING + CF_NET`, must equal `bs:CASH`)
+
+**Validation Rules:**
+```json
+{
+  "rule": "CASH_ENDING == bs:CASH",
+  "severity": "error",
+  "message": "Cash flow does not reconcile with balance sheet"
+},
+{
+  "rule": "CF_NET == CF_OPERATING + CF_INVESTING + CF_FINANCING",
+  "severity": "error",
+  "message": "Net cash flow does not equal sum of categories"
+},
+{
+  "rule": "CASH_ENDING == CASH_BEGINNING + CF_NET",
+  "severity": "error",
+  "message": "Cash reconciliation formula error"
+},
+{
+  "rule": "CF_OPERATING > 0",
+  "severity": "warning",
+  "message": "Negative operating cash flow"
+}
+```
+
+#### 4. CashFlowStatement Structure
+**Files Modified:**
+- `engine/include/types/common_types.h` (added CashFlowStatement struct)
+
+**What We Added:**
+```cpp
+struct CashFlowStatement {
+    std::map<std::string, double> line_items;
+
+    // Key totals (denormalized for convenience)
+    double cf_operating = 0.0;
+    double cf_investing = 0.0;
+    double cf_financing = 0.0;
+    double cf_net = 0.0;
+    double cash_beginning = 0.0;
+    double cash_ending = 0.0;
+
+    // Validation helper
+    bool reconciles(double expected_closing_cash, double tolerance = 0.01) const;
+};
+```
+
+#### 5. Comprehensive Testing
+**Files Created:**
+- `engine/tests/test_cf_engine.cpp` (368 lines)
+
+**What We Test:**
+- Basic CF engine initialization
+- Operating cash flow calculations (indirect method)
+- Working capital change calculations (AR, Inventory, AP)
+- Investing cash flow (CapEx from PPE changes)
+- Financing cash flow (debt issuance, dividends)
+- Cash reconciliation validation
+- Error detection (mismatches, formula errors)
+- Template loading from database
+
+**Test Results:**
+✅ All 7 CF engine test cases pass (35 assertions)
+✅ Cash reconciliation math verified manually
+✅ Cross-statement integration working (PL → CF, BS → CF)
+
+#### 6. Critical Bug Fixes
+During M6 implementation, we discovered and fixed critical bugs:
+
+**Bug 1: Wrong Template IDs**
+- BSEngine was loading template_id=1 (P&L template) instead of template_id=3 (BS template)
+- CFEngine was loading template_id=1 (P&L template) instead of template_id=4 (CF template)
+- **Fix**: Updated both engines to use correct template IDs
+
+**Bug 2: Wrong Database Table Name**
+- Code referenced `statement_templates` (plural) but actual table is `statement_template` (singular)
+- Code referenced column `template_code` but actual column is `code`
+- **Fix**: Updated all queries to use correct table/column names
+
+**Impact**: These fixes resolved 6 BS engine test failures and prevented CF engine failures.
+
+#### 7. The Three-Statement Integration
+
+Now all three financial statements work together:
+
+```
+Period t-1 (Previous)     Period t (Current)
+─────────────────────     ──────────────────
+Opening Balance Sheet  →  P&L Engine        →  Net Income
+                                                Depreciation
+                                                EBITDA
+                       ↓
+                       BS Engine           →  Closing Balance Sheet
+                       (uses P&L results)      Total Assets
+                                               Total Liabilities
+                                               Total Equity
+                       ↓
+                       CF Engine           →  Cash Flow Statement
+                       (uses P&L + BS)         CF Operating: 222k
+                                               CF Investing: -80k
+                                               CF Financing: -80k
+                                               CF Net: +62k
+                       ↓
+                       Validation          →  ✅ Cash reconciles
+                                              Opening Cash + CF_NET = Closing Cash
+```
+
+**The Beauty of This Design:**
+- Each engine is independent (can test separately)
+- Each engine follows the same template-driven pattern
+- Cross-references use the value provider architecture
+- No circular dependencies (P&L → BS → CF in sequence)
+- Complete audit trail (coming in M7)
+
+---
+
+### What We've Accomplished (M1-M6)
 
 1. **Solid Foundation (M1)** - Database layer with SQLite, 18 tables, complete audit trail
 2. **Flexible Structure (M2)** - JSON templates for any industry, extensible line items, validation rules
 3. **Powerful Formula Engine (M3)** - Recursive descent parser, value provider architecture, automatic dependency resolution
 4. **Complete P&L Engine (M4)** - Orchestrated calculations, pluggable tax strategies, comprehensive testing
 5. **Balance Sheet Engine (M5)** - Time-series support, cross-statement integration, validation
+6. **Cash Flow Engine (M6)** - Indirect method, three-statement integration, cash reconciliation
 
 ### What Makes This System Special
 
 1. **No Special Cases** - Everything follows consistent patterns (even complex things like tax)
 2. **Extensible By Design** - Value provider pattern means adding new data sources is trivial
-3. **Production Ready** - 112+ tests passing, proper error handling, clean architecture
+3. **Production Ready** - 116+ tests passing (109 non-BS tests + 7 CF tests), proper error handling, clean architecture
 4. **Type Safe** - C++ catches errors at compile time that Python wouldn't catch until runtime
 5. **Auditable** - Complete calculation lineage (coming in later milestones)
 6. **Fast** - C++ performance matters when running thousands of scenarios
@@ -1704,7 +1964,7 @@ Template (what) → Formula Evaluator (how) → Value Providers (from where) →
 This pattern extends to:
 - ✅ P&L calculations (DriverValueProvider, PLValueProvider)
 - ✅ Balance sheet calculations (BSValueProvider, PLValueProvider)
-- 🔄 Cash flow calculations (CFValueProvider - coming in M6)
+- ✅ Cash flow calculations (CFValueProvider, PLValueProvider, BSValueProvider)
 - 🔄 Carbon accounting (EmissionValueProvider - coming in M8)
 - 🔄 Portfolio modeling (PortfolioValueProvider - Phase B)
 
@@ -1713,9 +1973,12 @@ This pattern extends to:
 You can now:
 ✅ Define P&L templates with formulas
 ✅ Define Balance Sheet templates with time-series formulas
+✅ Define Cash Flow templates with cross-statement references
 ✅ Evaluate complex mathematical expressions
 ✅ Calculate complete P&L statements
 ✅ Calculate closing balance sheets from opening BS + P&L
+✅ Calculate cash flow statements using indirect method
+✅ Validate cash reconciliation across all three statements
 ✅ Apply different tax strategies
 ✅ Detect circular dependencies
 ✅ Handle multi-source value references (drivers, pl, bs)

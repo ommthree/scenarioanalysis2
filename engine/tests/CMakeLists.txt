@@ -21,6 +21,7 @@ set(TEST_SOURCES
     test_dependency_graph.cpp
     test_pl_engine.cpp
     test_bs_engine.cpp
+    test_cf_engine.cpp
     test_tax_strategies.cpp
     test_integration.cpp
 )
@@ -52,6 +53,7 @@ add_test(NAME FormulaTests COMMAND run_tests "[formula]" WORKING_DIRECTORY ${CMA
 add_test(NAME DependencyTests COMMAND run_tests "[dependency]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME BSEngineTests COMMAND run_tests "[bs]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME CFEngineTests COMMAND run_tests "[cf_engine]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME IntegrationTests COMMAND run_tests "[integration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 

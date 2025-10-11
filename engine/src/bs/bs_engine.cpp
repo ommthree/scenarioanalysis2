@@ -44,8 +44,8 @@ BalanceSheet BSEngine::calculate(
     populate_pl_values(pl_result);
 
     // Load balance sheet template
-    // For now, assume template_id = 1 (will be configurable later)
-    auto tmpl = load_template(1);
+    // For now, assume template_id = 3 (CORP_BS_001)
+    auto tmpl = load_template(3);
     if (!tmpl) {
         throw std::runtime_error("BSEngine: failed to load BS template");
     }
@@ -165,7 +165,7 @@ double BSEngine::calculate_line_item(
 std::unique_ptr<core::StatementTemplate> BSEngine::load_template(int template_id) {
     // Query template from database
     std::ostringstream query;
-    query << "SELECT template_code FROM statement_templates WHERE template_id = " << template_id;
+    query << "SELECT code FROM statement_template WHERE template_id = " << template_id;
 
     finmodel::ParamMap params;
     auto result = db_->execute_query(query.str(), params);

@@ -26,6 +26,29 @@ struct BSEngineFixture {
         db = DatabaseFactory::create_sqlite("../data/database/finmodel.db");
         engine = std::make_unique<BSEngine>(db);
     }
+
+    // Helper: Add default CF values to PL result (for BS tests without CF)
+    // NOTE: This is a temporary workaround until BS and CF engines are properly integrated
+    void add_default_cf_values(PLResult& pl_result) {
+        // Provide zero CF values so CASH formula doesn't fail
+        pl_result.line_items["CF_OPERATING"] = 0.0;
+        pl_result.line_items["CF_INVESTING"] = 0.0;
+        pl_result.line_items["CF_FINANCING"] = 0.0;
+    }
+
+    // Helper: Add default driver values (for BS tests without drivers)
+    // NOTE: This is a temporary workaround until driver system is properly implemented
+    void add_default_driver_values(PLResult& pl_result) {
+        // Working capital drivers (in days)
+        pl_result.line_items["DSO"] = 30.0;  // Days Sales Outstanding
+        pl_result.line_items["DIO"] = 45.0;  // Days Inventory Outstanding
+        pl_result.line_items["DPO"] = 30.0;  // Days Payable Outstanding
+        pl_result.line_items["DAYS_IN_PERIOD"] = 365.0;
+
+        // Other drivers
+        pl_result.line_items["CAPEX_PCT_REVENUE"] = 0.05;
+        pl_result.line_items["DIVIDENDS_PAID"] = 0.0;
+    }
 };
 
 // ============================================================================
@@ -63,6 +86,10 @@ TEST_CASE_METHOD(BSEngineFixture, "BSEngine calculates simple balance sheet", "[
     pl_result.revenue = 5000000.0;
     pl_result.ebitda = 500000.0;
     pl_result.net_income = 210000.0;
+
+    // Add CF and driver values (temporary workarounds for BS-only testing)
+    add_default_cf_values(pl_result);
+    add_default_driver_values(pl_result);
 
     // Calculate closing balance sheet
     EntityID entity_id = "ENT001";
@@ -105,6 +132,9 @@ TEST_CASE_METHOD(BSEngineFixture, "BSEngine handles time-series formulas", "[bs]
     pl_result.line_items["DEPRECIATION"] = 75000.0;
     pl_result.net_income = 150000.0;
 
+    add_default_cf_values(pl_result);
+    add_default_driver_values(pl_result);
+
     auto closing_bs = engine->calculate(
         "ENT001",
         1,
@@ -137,6 +167,9 @@ TEST_CASE_METHOD(BSEngineFixture, "BSEngine calculates working capital correctly
     pl_result.line_items["COGS"] = 7200000.0;       // 7.2M
     pl_result.line_items["NET_INCOME"] = 600000.0;
     pl_result.revenue = 12000000.0;
+
+    add_default_cf_values(pl_result);
+    add_default_driver_values(pl_result);
 
     auto closing_bs = engine->calculate(
         "ENT001",
@@ -231,6 +264,9 @@ TEST_CASE_METHOD(BSEngineFixture, "BSEngine uses P&L values correctly", "[bs][en
     pl_result.net_income = 250000.0;
     pl_result.revenue = 5000000.0;
 
+    add_default_cf_values(pl_result);
+    add_default_driver_values(pl_result);
+
     auto closing_bs = engine->calculate(
         "ENT001",
         1,
@@ -258,6 +294,9 @@ TEST_CASE_METHOD(BSEngineFixture, "BSEngine uses P&L values correctly", "[bs][en
 TEST_CASE_METHOD(BSEngineFixture, "BSEngine throws on invalid template", "[bs][engine][error]") {
     BalanceSheet opening_bs;
     PLResult pl_result;
+
+    add_default_cf_values(pl_result);
+    add_default_driver_values(pl_result);
 
     // This should fail because we're trying to use a non-existent template
     // In real code, template_id would be configurable
@@ -317,6 +356,9 @@ TEST_CASE_METHOD(BSEngineFixture, "BSEngine full period calculation", "[bs][engi
     pl_result.revenue = 15000000.0;
     pl_result.ebitda = 3000000.0;
     pl_result.net_income = 1500000.0;
+
+    add_default_cf_values(pl_result);
+    add_default_driver_values(pl_result);
 
     // Calculate Year 1 closing BS
     auto closing_bs = engine->calculate(

@@ -102,4 +102,29 @@ struct ValidationResult {
     }
 };
 
+/**
+ * @brief Cash flow statement result
+ */
+struct CashFlowStatement {
+    std::map<std::string, double> line_items;
+
+    // Key totals (denormalized for convenience)
+    double cf_operating = 0.0;
+    double cf_investing = 0.0;
+    double cf_financing = 0.0;
+    double cf_net = 0.0;
+    double cash_beginning = 0.0;
+    double cash_ending = 0.0;
+
+    /**
+     * @brief Validate cash reconciliation
+     * @param expected_closing_cash Cash from balance sheet
+     * @param tolerance Maximum allowed difference
+     * @return True if cash reconciles
+     */
+    bool reconciles(double expected_closing_cash, double tolerance = 0.01) const {
+        return std::abs(cash_ending - expected_closing_cash) < tolerance;
+    }
+};
+
 } // namespace finmodel
