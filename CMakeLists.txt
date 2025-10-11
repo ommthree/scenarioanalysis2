@@ -90,6 +90,10 @@ add_executable(init_database scripts/init_database.cpp)
 target_link_libraries(init_database PRIVATE engine_lib)
 target_include_directories(init_database PRIVATE ${CMAKE_SOURCE_DIR}/engine/include)
 
+add_executable(insert_templates scripts/insert_templates.cpp)
+target_link_libraries(insert_templates PRIVATE engine_lib)
+target_include_directories(insert_templates PRIVATE ${CMAKE_SOURCE_DIR}/engine/include)
+
 # Install targets
 install(TARGETS scenario_engine
     RUNTIME DESTINATION bin

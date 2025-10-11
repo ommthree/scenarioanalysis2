@@ -376,6 +376,75 @@ CREATE TABLE IF NOT EXISTS calculation_lineage (
 CREATE INDEX idx_lineage_result ON calculation_lineage(result_type, result_id);
 CREATE INDEX idx_lineage_line_item ON calculation_lineage(line_item_code);
 
+-- -----------------------------------------------------
+-- Run Result Link: Connects runs to their output results
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS run_result (
+    run_id INTEGER NOT NULL,
+    result_type TEXT NOT NULL CHECK (result_type IN ('pl', 'bs', 'cf')),
+    result_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (run_id) REFERENCES run_log(run_id) ON DELETE CASCADE,
+    PRIMARY KEY (run_id, result_type, result_id)
+);
+
+CREATE INDEX idx_run_result_run ON run_result(run_id);
+CREATE INDEX idx_run_result_type ON run_result(result_type, result_id);
+
+-- -----------------------------------------------------
+-- Run Input Snapshot: Archives input data for each run
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS run_input_snapshot (
+    snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    input_type TEXT NOT NULL CHECK (input_type IN (
+        'scenario_config',      -- Scenario definition
+        'driver_values',        -- Driver adjustments
+        'opening_balance_sheet',-- Opening BS
+        'policy_config',        -- Funding/CapEx/WC policies
+        'template',             -- Statement template used
+        'base_data'             -- Base P&L data
+    )),
+    data_source TEXT,           -- 'database', 'csv', 'api', etc.
+    json_data TEXT NOT NULL,    -- Complete input data as JSON
+    file_hash TEXT,             -- SHA256 hash for file inputs
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (run_id) REFERENCES run_log(run_id) ON DELETE CASCADE,
+    CHECK (json_valid(json_data))
+);
+
+CREATE INDEX idx_run_input_run ON run_input_snapshot(run_id);
+CREATE INDEX idx_run_input_type ON run_input_snapshot(input_type);
+
+-- -----------------------------------------------------
+-- Run Output Snapshot: Archives output data for each run
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS run_output_snapshot (
+    snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    output_type TEXT NOT NULL CHECK (output_type IN (
+        'pl_summary',           -- P&L summary across all periods
+        'bs_summary',           -- BS summary
+        'cf_summary',           -- CF summary
+        'kpi_summary',          -- Key KPIs
+        'validation_report',    -- Validation results
+        'convergence_log'       -- Iteration convergence data
+    )),
+    json_data TEXT NOT NULL,    -- Complete output data as JSON
+    format TEXT NOT NULL DEFAULT 'json' CHECK (format IN ('json', 'csv', 'parquet')),
+    file_path TEXT,             -- If exported to file
+    file_size_bytes INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    FOREIGN KEY (run_id) REFERENCES run_log(run_id) ON DELETE CASCADE,
+    CHECK (json_valid(json_data))
+);
+
+CREATE INDEX idx_run_output_run ON run_output_snapshot(run_id);
+CREATE INDEX idx_run_output_type ON run_output_snapshot(output_type);
+
 -- =====================================================
 -- VIEWS FOR COMMON QUERIES
 -- =====================================================

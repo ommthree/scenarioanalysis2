@@ -16,6 +16,7 @@ endif()
 # Test sources
 set(TEST_SOURCES
     test_database.cpp
+    test_statement_template.cpp
     test_formula_evaluator.cpp
     test_pl_engine.cpp
     test_tax_strategies.cpp
@@ -43,6 +44,7 @@ add_test(NAME AllTests COMMAND run_tests)
 
 # Individual test registration (optional)
 add_test(NAME DatabaseTests COMMAND run_tests "[database]")
+add_test(NAME TemplateTests COMMAND run_tests "[template]")
 add_test(NAME FormulaTests COMMAND run_tests "[formula]")
 add_test(NAME PLEngineTests COMMAND run_tests "[pl_engine]")
 add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]")

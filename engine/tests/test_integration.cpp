@@ -1,1 +1,2 @@
-// TODO: Implement (M1/M2)
+// Placeholder test file for M10+
+// Integration tests will be implemented in later milestones

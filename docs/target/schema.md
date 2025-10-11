@@ -464,6 +464,119 @@ entity_id=1 → dimension_name="region", dimension_value="Northeast"
 
 ---
 
+### `run_result`
+**Purpose:** Links run_log to calculated results for reproducibility
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `run_id` | INTEGER | FOREIGN KEY → run_log(run_id) | Run reference |
+| `result_type` | TEXT | CHECK IN ('pl', 'bs', 'cf') | Result table type |
+| `result_id` | INTEGER | NOT NULL | Foreign key to result table (pl_result, bs_result, cf_result) |
+| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 timestamp |
+
+**Primary Key:** `(run_id, result_type, result_id)`
+
+**Indexes:**
+- `idx_run_result_run` on `run_id`
+- `idx_run_result_type_id` on `result_type, result_id`
+
+**Purpose:**
+This table creates a many-to-many relationship between runs and their output results. When a run executes, every P&L, Balance Sheet, and Cash Flow result generated gets recorded here, enabling:
+- Complete traceability: "Which run generated this result?"
+- Reproducibility: "What were all the outputs from run #42?"
+- Cleanup: CASCADE delete removes orphaned results when runs are purged
+
+---
+
+### `run_input_snapshot`
+**Purpose:** Archives all input data used in each run for full reproducibility
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `snapshot_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `run_id` | INTEGER | FOREIGN KEY → run_log(run_id) | Run reference |
+| `input_type` | TEXT | CHECK IN ('scenario_config', 'driver_values', 'opening_balance_sheet', 'policy_config', 'template', 'base_data') | Type of input data |
+| `data_source` | TEXT | | Original file path or table reference (e.g., "data/inputs/scenario_base.json") |
+| `json_data` | TEXT | NOT NULL | Full JSON snapshot of input data |
+| `file_hash` | TEXT | | SHA256 hash for file-based inputs to detect changes |
+| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 timestamp |
+
+**Indexes:**
+- `idx_run_input_run` on `run_id`
+- `idx_run_input_type` on `input_type`
+
+**Input Types:**
+- `scenario_config`: Complete scenario definition with driver adjustments
+- `driver_values`: All driver baseline values used
+- `opening_balance_sheet`: Starting balance sheet for the projection
+- `policy_config`: Funding, CapEx, and WC policies applied
+- `template`: Statement templates (P&L, BS, CF structures)
+- `base_data`: Any historical data or external inputs
+
+**Example Usage:**
+```sql
+-- Archive scenario config when run starts
+INSERT INTO run_input_snapshot (run_id, input_type, data_source, json_data, file_hash)
+VALUES (123, 'scenario_config', 'data/scenarios/stress_test.json',
+        '{"code":"STRESS","drivers":[...]}',
+        'a7b3c2d1...');
+
+-- Retrieve all inputs for a historical run
+SELECT input_type, json_data, file_hash
+FROM run_input_snapshot
+WHERE run_id = 42
+ORDER BY input_type;
+```
+
+---
+
+### `run_output_snapshot`
+**Purpose:** Archives summary outputs and reports for each run
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `snapshot_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `run_id` | INTEGER | FOREIGN KEY → run_log(run_id) | Run reference |
+| `output_type` | TEXT | CHECK IN ('pl_summary', 'bs_summary', 'cf_summary', 'kpi_summary', 'validation_report', 'convergence_log') | Type of output data |
+| `json_data` | TEXT | NOT NULL | Summary data in JSON format |
+| `format` | TEXT | NOT NULL, DEFAULT 'json' | Output format (json, csv, html for reports) |
+| `file_path` | TEXT | | Optional: Path if exported to file (e.g., "exports/run_123_pl.xlsx") |
+| `file_size_bytes` | INTEGER | | File size if exported |
+| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 timestamp |
+
+**Indexes:**
+- `idx_run_output_run` on `run_id`
+- `idx_run_output_type` on `output_type`
+
+**Output Types:**
+- `pl_summary`: Aggregated P&L across periods (e.g., annual totals, CAGR)
+- `bs_summary`: Key balance sheet metrics (leverage ratios, working capital)
+- `cf_summary`: Cash flow summaries (free cash flow, cumulative cash)
+- `kpi_summary`: Calculated KPIs (ROE, ROIC, debt/equity, interest coverage)
+- `validation_report`: Balance check results, constraint violations
+- `convergence_log`: Iterative calculation convergence details (for circular references)
+
+**Example Usage:**
+```sql
+-- Archive P&L summary when run completes
+INSERT INTO run_output_snapshot (run_id, output_type, json_data)
+VALUES (123, 'pl_summary',
+        '{"total_revenue":15000000,"avg_ebitda_margin":0.23,"net_income_final":2100000}');
+
+-- Archive validation report
+INSERT INTO run_output_snapshot (run_id, output_type, json_data)
+VALUES (123, 'validation_report',
+        '{"balance_checks":{"all_passed":true},"constraint_violations":[]}');
+
+-- Retrieve all outputs for a historical run
+SELECT output_type, json_data, created_at
+FROM run_output_snapshot
+WHERE run_id = 42
+ORDER BY output_type;
+```
+
+---
+
 ### `schema_version`
 **Purpose:** Tracks database schema migrations
 
@@ -546,57 +659,190 @@ entity_id=1 → dimension_name="region", dimension_value="Northeast"
 ┌─────────────┐
 │  scenario   │───┐
 └─────────────┘   │
-                  ├──→ pl_result ──→ calculation_lineage
-┌─────────────┐   │
-│   period    │───┤
-└─────────────┘   │
-                  ├──→ bs_result
-┌─────────────┐   │
-│   entity    │───┘
-└─────────────┘   │
-      │           └──→ cf_result
-      │
-      └──→ granularity_mapping
+                  ├──→ pl_result ──┐
+┌─────────────┐   │                │
+│   period    │───┤                ├──→ calculation_lineage
+└─────────────┘   │                │
+                  ├──→ bs_result ──┤
+┌─────────────┐   │                │
+│   entity    │───┘                │
+└─────────────┘   │                │
+      │           └──→ cf_result ──┘
+      │                    │
+      │                    └──→ run_result
+      │                              │
+      └──→ granularity_mapping       │
       └──→ credit_exposure ──→ credit_result
-
-┌──────────────────┐
-│ statement_       │
-│   template       │
-└──────────────────┘
-
-┌─────────────┐
-│   driver    │
-└─────────────┘
-
-┌──────────────────┐
+                                     │
+┌──────────────────┐                 │
+│ statement_       │                 │
+│   template       │                 │
+└──────────────────┘                 │
+                                     │
+┌─────────────┐                      │
+│   driver    │                      │
+└─────────────┘                      │
+                                     │
+┌──────────────────┐                 │
 │ transition_      │──→ mac_curve_result
-│   lever          │
-└──────────────────┘
-
-┌──────────────────┐
-│ carbon_          │
-│   emissions      │
-└──────────────────┘
-
-┌──────────────────┐
-│ funding_policy   │
-│ capex_policy     │
-│ wc_policy        │
-└──────────────────┘
-
-┌──────────────────┐
-│ aggregation_     │
-│   rule           │
-└──────────────────┘
-
-┌──────────────────┐
-│ run_log          │
+│   lever          │                 │
+└──────────────────┘                 │
+                                     │
+┌──────────────────┐                 │
+│ carbon_          │                 │
+│   emissions      │                 │
+└──────────────────┘                 │
+                                     │
+┌──────────────────┐                 │
+│ funding_policy   │                 │
+│ capex_policy     │                 │
+│ wc_policy        │                 │
+└──────────────────┘                 │
+                                     │
+┌──────────────────┐                 │
+│ aggregation_     │                 │
+│   rule           │                 │
+└──────────────────┘                 │
+                                     │
+┌──────────────────┐                 │
+│ run_log          │←────────────────┘
+│                  │
+│  ├──→ run_result (links to pl/bs/cf_result)
+│  │
+│  ├──→ run_input_snapshot (archives all inputs)
+│  │
+│  └──→ run_output_snapshot (archives summaries)
 └──────────────────┘
 
 ┌──────────────────┐
 │ schema_version   │
 └──────────────────┘
 ```
+
+---
+
+## Archiving & Reproducibility Workflow
+
+The archiving system ensures complete reproducibility of any historical run through three linked tables: `run_result`, `run_input_snapshot`, and `run_output_snapshot`.
+
+### Run Lifecycle
+
+```
+1. RUN START
+   ├─ INSERT INTO run_log (status='running', json_config=...)
+   ├─ run_id generated
+   │
+2. ARCHIVE INPUTS
+   ├─ INSERT INTO run_input_snapshot (run_id, input_type='scenario_config', json_data=...)
+   ├─ INSERT INTO run_input_snapshot (run_id, input_type='driver_values', json_data=...)
+   ├─ INSERT INTO run_input_snapshot (run_id, input_type='opening_balance_sheet', json_data=...)
+   ├─ INSERT INTO run_input_snapshot (run_id, input_type='policy_config', json_data=...)
+   ├─ INSERT INTO run_input_snapshot (run_id, input_type='template', json_data=...)
+   └─ INSERT INTO run_input_snapshot (run_id, input_type='base_data', json_data=...)
+   │
+3. EXECUTE CALCULATIONS
+   ├─ Generate pl_result records
+   ├─ Generate bs_result records
+   ├─ Generate cf_result records
+   └─ Generate calculation_lineage records
+   │
+4. LINK RESULTS TO RUN
+   ├─ INSERT INTO run_result (run_id, result_type='pl', result_id=...)
+   ├─ INSERT INTO run_result (run_id, result_type='bs', result_id=...)
+   └─ INSERT INTO run_result (run_id, result_type='cf', result_id=...)
+   │
+5. ARCHIVE OUTPUTS
+   ├─ INSERT INTO run_output_snapshot (run_id, output_type='pl_summary', json_data=...)
+   ├─ INSERT INTO run_output_snapshot (run_id, output_type='bs_summary', json_data=...)
+   ├─ INSERT INTO run_output_snapshot (run_id, output_type='cf_summary', json_data=...)
+   ├─ INSERT INTO run_output_snapshot (run_id, output_type='kpi_summary', json_data=...)
+   ├─ INSERT INTO run_output_snapshot (run_id, output_type='validation_report', json_data=...)
+   └─ INSERT INTO run_output_snapshot (run_id, output_type='convergence_log', json_data=...)
+   │
+6. RUN COMPLETE
+   └─ UPDATE run_log SET status='completed', completed_at=NOW()
+```
+
+### Reproducing a Historical Run
+
+To fully reproduce run #42:
+
+```sql
+-- 1. Get run metadata
+SELECT scenario_id, started_at, json_config
+FROM run_log
+WHERE run_id = 42;
+
+-- 2. Retrieve all inputs
+SELECT input_type, data_source, json_data, file_hash
+FROM run_input_snapshot
+WHERE run_id = 42
+ORDER BY input_type;
+
+-- 3. Get all results generated
+SELECT result_type, result_id
+FROM run_result
+WHERE run_id = 42;
+
+-- 4. Retrieve detailed P&L results
+SELECT p.*
+FROM pl_result p
+INNER JOIN run_result rr ON rr.result_id = p.result_id AND rr.result_type = 'pl'
+WHERE rr.run_id = 42
+ORDER BY p.period_id;
+
+-- 5. Get output summaries
+SELECT output_type, json_data, created_at
+FROM run_output_snapshot
+WHERE run_id = 42
+ORDER BY output_type;
+
+-- 6. Verify calculation lineage
+SELECT cl.*
+FROM calculation_lineage cl
+INNER JOIN run_result rr ON rr.result_id = cl.result_id AND rr.result_type = cl.result_type
+WHERE rr.run_id = 42;
+```
+
+### Data Retention Policies
+
+The CASCADE delete on foreign keys enables clean data retention:
+
+```sql
+-- Delete all run data (inputs, outputs, results, lineage)
+-- Single command cascades through all related tables
+DELETE FROM run_log WHERE run_id = 42;
+
+-- Archive runs older than 1 year (keep only summary snapshots)
+DELETE FROM run_log
+WHERE status = 'completed'
+  AND completed_at < date('now', '-1 year');
+
+-- Selective cleanup: keep input snapshots, delete detailed results
+DELETE FROM run_result WHERE run_id IN (
+  SELECT run_id FROM run_log
+  WHERE completed_at < date('now', '-90 days')
+);
+```
+
+### File Hash Verification
+
+Input snapshots track file hashes to detect configuration drift:
+
+```sql
+-- Check if input files have changed since run #42
+SELECT
+  ris.input_type,
+  ris.data_source,
+  ris.file_hash AS original_hash,
+  -- Compare with current file hash (computed by application)
+  ris.created_at
+FROM run_input_snapshot ris
+WHERE ris.run_id = 42
+  AND ris.file_hash IS NOT NULL;
+```
+
+If hashes differ, the run cannot be exactly reproduced unless original files are archived separately (e.g., in S3 with versioning).
 
 ---
 

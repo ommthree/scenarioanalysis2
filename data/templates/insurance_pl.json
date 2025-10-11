@@ -1,0 +1,436 @@
+{
+  "template_code": "INS_PL_001",
+  "template_name": "Insurance P&L Statement",
+  "statement_type": "PL",
+  "industry": "INSURANCE",
+  "description": "Insurance company profit & loss with premiums, claims, underwriting, and investment income",
+  "version": "1.0.0",
+  "line_items": [
+    {
+      "code": "GROSS_WRITTEN_PREMIUM",
+      "display_name": "Gross Written Premium",
+      "level": 1,
+      "formula": null,
+      "base_value_source": "driver:GWP_BASE",
+      "driver_applicable": true,
+      "driver_code": "GWP_GROWTH",
+      "category": "revenue",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "REINSURANCE_CEDED",
+      "display_name": "Reinsurance Ceded",
+      "level": 2,
+      "formula": "GROSS_WRITTEN_PREMIUM * REINSURANCE_CEDED_RATE",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "REINSURANCE_CEDED_RATE",
+      "category": "revenue_adj",
+      "is_computed": true,
+      "dependencies": ["GROSS_WRITTEN_PREMIUM"]
+    },
+    {
+      "code": "NET_WRITTEN_PREMIUM",
+      "display_name": "Net Written Premium",
+      "level": 1,
+      "formula": "GROSS_WRITTEN_PREMIUM - REINSURANCE_CEDED",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["GROSS_WRITTEN_PREMIUM", "REINSURANCE_CEDED"]
+    },
+    {
+      "code": "CHANGE_IN_UNEARNED_PREMIUM",
+      "display_name": "Change in Unearned Premium Reserve",
+      "level": 2,
+      "formula": "NET_WRITTEN_PREMIUM * UNEARNED_PREMIUM_FACTOR",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "UNEARNED_PREMIUM_FACTOR",
+      "category": "reserve_change",
+      "is_computed": true,
+      "dependencies": ["NET_WRITTEN_PREMIUM"]
+    },
+    {
+      "code": "NET_EARNED_PREMIUM",
+      "display_name": "Net Earned Premium",
+      "level": 1,
+      "formula": "NET_WRITTEN_PREMIUM - CHANGE_IN_UNEARNED_PREMIUM",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["NET_WRITTEN_PREMIUM", "CHANGE_IN_UNEARNED_PREMIUM"]
+    },
+    {
+      "code": "GROSS_CLAIMS_INCURRED",
+      "display_name": "Gross Claims Incurred",
+      "level": 2,
+      "formula": "NET_EARNED_PREMIUM * LOSS_RATIO",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "LOSS_RATIO",
+      "category": "claims",
+      "is_computed": true,
+      "dependencies": ["NET_EARNED_PREMIUM"]
+    },
+    {
+      "code": "REINSURANCE_RECOVERIES",
+      "display_name": "Reinsurance Recoveries",
+      "level": 2,
+      "formula": "GROSS_CLAIMS_INCURRED * REINSURANCE_RECOVERY_RATE",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "REINSURANCE_RECOVERY_RATE",
+      "category": "claims_adj",
+      "is_computed": true,
+      "dependencies": ["GROSS_CLAIMS_INCURRED"]
+    },
+    {
+      "code": "NET_CLAIMS_INCURRED",
+      "display_name": "Net Claims Incurred",
+      "level": 1,
+      "formula": "GROSS_CLAIMS_INCURRED - REINSURANCE_RECOVERIES",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["GROSS_CLAIMS_INCURRED", "REINSURANCE_RECOVERIES"]
+    },
+    {
+      "code": "CLAIMS_HANDLING_EXPENSES",
+      "display_name": "Claims Handling Expenses",
+      "level": 2,
+      "formula": "NET_CLAIMS_INCURRED * CLAIMS_HANDLING_RATE",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "CLAIMS_HANDLING_RATE",
+      "category": "expenses",
+      "is_computed": true,
+      "dependencies": ["NET_CLAIMS_INCURRED"]
+    },
+    {
+      "code": "TOTAL_CLAIMS_COST",
+      "display_name": "Total Claims Cost",
+      "level": 1,
+      "formula": "NET_CLAIMS_INCURRED + CLAIMS_HANDLING_EXPENSES",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["NET_CLAIMS_INCURRED", "CLAIMS_HANDLING_EXPENSES"]
+    },
+    {
+      "code": "ACQUISITION_COSTS",
+      "display_name": "Acquisition Costs (Commissions)",
+      "level": 2,
+      "formula": "GROSS_WRITTEN_PREMIUM * COMMISSION_RATE",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "COMMISSION_RATE",
+      "category": "expenses",
+      "is_computed": true,
+      "dependencies": ["GROSS_WRITTEN_PREMIUM"]
+    },
+    {
+      "code": "ADMINISTRATIVE_EXPENSES",
+      "display_name": "Administrative Expenses",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:ADMIN_EXPENSES_BASE",
+      "driver_applicable": true,
+      "driver_code": "ADMIN_EXPENSES_GROWTH",
+      "category": "expenses",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "OTHER_UNDERWRITING_EXPENSES",
+      "display_name": "Other Underwriting Expenses",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:OTHER_UW_EXPENSES_BASE",
+      "driver_applicable": true,
+      "driver_code": "OTHER_UW_EXPENSES_GROWTH",
+      "category": "expenses",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "TOTAL_EXPENSES",
+      "display_name": "Total Operating Expenses",
+      "level": 1,
+      "formula": "ACQUISITION_COSTS + ADMINISTRATIVE_EXPENSES + OTHER_UNDERWRITING_EXPENSES",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["ACQUISITION_COSTS", "ADMINISTRATIVE_EXPENSES", "OTHER_UNDERWRITING_EXPENSES"]
+    },
+    {
+      "code": "UNDERWRITING_RESULT",
+      "display_name": "Underwriting Result",
+      "level": 1,
+      "formula": "NET_EARNED_PREMIUM - TOTAL_CLAIMS_COST - TOTAL_EXPENSES",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["NET_EARNED_PREMIUM", "TOTAL_CLAIMS_COST", "TOTAL_EXPENSES"]
+    },
+    {
+      "code": "INVESTMENT_INCOME",
+      "display_name": "Investment Income",
+      "level": 2,
+      "formula": "INVESTMENT_ASSETS[t-1] * INVESTMENT_YIELD",
+      "base_value_source": "bs:INVESTMENT_ASSETS",
+      "driver_applicable": true,
+      "driver_code": "INVESTMENT_YIELD",
+      "category": "investment",
+      "is_computed": true,
+      "dependencies": []
+    },
+    {
+      "code": "REALIZED_GAINS_LOSSES",
+      "display_name": "Realized Gains/Losses",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:REALIZED_GL_BASE",
+      "driver_applicable": true,
+      "driver_code": "REALIZED_GL_MULTIPLIER",
+      "category": "investment",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "INVESTMENT_EXPENSES",
+      "display_name": "Investment Management Expenses",
+      "level": 2,
+      "formula": "INVESTMENT_ASSETS[t-1] * INVESTMENT_EXPENSE_RATE",
+      "base_value_source": "bs:INVESTMENT_ASSETS",
+      "driver_applicable": true,
+      "driver_code": "INVESTMENT_EXPENSE_RATE",
+      "category": "investment",
+      "is_computed": true,
+      "dependencies": []
+    },
+    {
+      "code": "NET_INVESTMENT_RESULT",
+      "display_name": "Net Investment Result",
+      "level": 1,
+      "formula": "INVESTMENT_INCOME + REALIZED_GAINS_LOSSES - INVESTMENT_EXPENSES",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["INVESTMENT_INCOME", "REALIZED_GAINS_LOSSES", "INVESTMENT_EXPENSES"]
+    },
+    {
+      "code": "OTHER_INCOME",
+      "display_name": "Other Income",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:OTHER_INCOME_BASE",
+      "driver_applicable": true,
+      "driver_code": "OTHER_INCOME_GROWTH",
+      "category": "other",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "OTHER_EXPENSES",
+      "display_name": "Other Expenses",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:OTHER_EXPENSES_BASE",
+      "driver_applicable": true,
+      "driver_code": "OTHER_EXPENSES_GROWTH",
+      "category": "other",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "OPERATING_PROFIT",
+      "display_name": "Operating Profit",
+      "level": 1,
+      "formula": "UNDERWRITING_RESULT + NET_INVESTMENT_RESULT + OTHER_INCOME - OTHER_EXPENSES",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["UNDERWRITING_RESULT", "NET_INVESTMENT_RESULT", "OTHER_INCOME", "OTHER_EXPENSES"]
+    },
+    {
+      "code": "INTEREST_EXPENSE",
+      "display_name": "Interest Expense",
+      "level": 2,
+      "formula": "DEBT[t-1] * INTEREST_RATE_DEBT",
+      "base_value_source": "bs:DEBT",
+      "driver_applicable": true,
+      "driver_code": "INTEREST_RATE_DEBT",
+      "category": "financial",
+      "is_computed": true,
+      "dependencies": []
+    },
+    {
+      "code": "PROFIT_BEFORE_TAX",
+      "display_name": "Profit Before Tax",
+      "level": 1,
+      "formula": "OPERATING_PROFIT - INTEREST_EXPENSE",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["OPERATING_PROFIT", "INTEREST_EXPENSE"]
+    },
+    {
+      "code": "TAX_EXPENSE",
+      "display_name": "Income Tax Expense",
+      "level": 2,
+      "formula": "MAX(PROFIT_BEFORE_TAX, 0) * TAX_RATE",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "TAX_RATE",
+      "category": "tax",
+      "is_computed": true,
+      "dependencies": ["PROFIT_BEFORE_TAX"]
+    },
+    {
+      "code": "NET_PROFIT",
+      "display_name": "Net Profit",
+      "level": 1,
+      "formula": "PROFIT_BEFORE_TAX - TAX_EXPENSE",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "bottom_line",
+      "is_computed": true,
+      "dependencies": ["PROFIT_BEFORE_TAX", "TAX_EXPENSE"]
+    }
+  ],
+  "denormalized_columns": [
+    "GROSS_WRITTEN_PREMIUM",
+    "NET_WRITTEN_PREMIUM",
+    "NET_EARNED_PREMIUM",
+    "NET_CLAIMS_INCURRED",
+    "UNDERWRITING_RESULT",
+    "NET_INVESTMENT_RESULT",
+    "OPERATING_PROFIT",
+    "PROFIT_BEFORE_TAX",
+    "NET_PROFIT"
+  ],
+  "validation_rules": [
+    {
+      "rule_id": "INS001",
+      "rule": "GROSS_WRITTEN_PREMIUM > 0",
+      "severity": "error",
+      "message": "Gross written premium must be positive"
+    },
+    {
+      "rule_id": "INS002",
+      "rule": "REINSURANCE_CEDED >= 0",
+      "severity": "error",
+      "message": "Reinsurance ceded cannot be negative"
+    },
+    {
+      "rule_id": "INS003",
+      "rule": "NET_WRITTEN_PREMIUM == GROSS_WRITTEN_PREMIUM - REINSURANCE_CEDED",
+      "severity": "error",
+      "message": "Net written premium calculation mismatch"
+    },
+    {
+      "rule_id": "INS004",
+      "rule": "NET_EARNED_PREMIUM == NET_WRITTEN_PREMIUM - CHANGE_IN_UNEARNED_PREMIUM",
+      "severity": "error",
+      "message": "Net earned premium calculation mismatch"
+    },
+    {
+      "rule_id": "INS005",
+      "rule": "GROSS_CLAIMS_INCURRED >= 0",
+      "severity": "error",
+      "message": "Gross claims incurred cannot be negative"
+    },
+    {
+      "rule_id": "INS006",
+      "rule": "NET_CLAIMS_INCURRED >= 0",
+      "severity": "error",
+      "message": "Net claims incurred cannot be negative"
+    },
+    {
+      "rule_id": "INS007",
+      "rule": "NET_PROFIT == PROFIT_BEFORE_TAX - TAX_EXPENSE",
+      "severity": "error",
+      "message": "Net profit calculation mismatch"
+    },
+    {
+      "rule_id": "INS008",
+      "rule": "TAX_EXPENSE >= 0",
+      "severity": "error",
+      "message": "Tax expense cannot be negative"
+    },
+    {
+      "rule_id": "INS009",
+      "rule": "LOSS_RATIO >= 0.30 AND LOSS_RATIO <= 1.20",
+      "severity": "warning",
+      "message": "Loss ratio outside normal range (30%-120%)"
+    },
+    {
+      "rule_id": "INS010",
+      "rule": "COMBINED_RATIO <= 1.10",
+      "severity": "warning",
+      "message": "Combined ratio above 110% - underwriting unprofitable"
+    }
+  ],
+  "calculation_order": [
+    "GROSS_WRITTEN_PREMIUM",
+    "REINSURANCE_CEDED",
+    "NET_WRITTEN_PREMIUM",
+    "CHANGE_IN_UNEARNED_PREMIUM",
+    "NET_EARNED_PREMIUM",
+    "GROSS_CLAIMS_INCURRED",
+    "REINSURANCE_RECOVERIES",
+    "NET_CLAIMS_INCURRED",
+    "CLAIMS_HANDLING_EXPENSES",
+    "TOTAL_CLAIMS_COST",
+    "ACQUISITION_COSTS",
+    "ADMINISTRATIVE_EXPENSES",
+    "OTHER_UNDERWRITING_EXPENSES",
+    "TOTAL_EXPENSES",
+    "UNDERWRITING_RESULT",
+    "INVESTMENT_INCOME",
+    "REALIZED_GAINS_LOSSES",
+    "INVESTMENT_EXPENSES",
+    "NET_INVESTMENT_RESULT",
+    "OTHER_INCOME",
+    "OTHER_EXPENSES",
+    "OPERATING_PROFIT",
+    "INTEREST_EXPENSE",
+    "PROFIT_BEFORE_TAX",
+    "TAX_EXPENSE",
+    "NET_PROFIT"
+  ],
+  "metadata": {
+    "created_by": "System",
+    "created_at": "2025-10-10",
+    "last_modified": "2025-10-10",
+    "supports_multi_currency": false,
+    "supports_consolidation": true,
+    "default_frequency": "monthly",
+    "industry_specific_metrics": {
+      "combined_ratio": "(TOTAL_CLAIMS_COST + TOTAL_EXPENSES) / NET_EARNED_PREMIUM",
+      "loss_ratio": "NET_CLAIMS_INCURRED / NET_EARNED_PREMIUM",
+      "expense_ratio": "TOTAL_EXPENSES / NET_EARNED_PREMIUM"
+    }
+  }
+}

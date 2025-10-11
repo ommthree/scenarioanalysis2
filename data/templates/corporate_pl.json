@@ -1,0 +1,280 @@
+{
+  "template_code": "CORP_PL_001",
+  "template_name": "Corporate P&L Statement",
+  "statement_type": "PL",
+  "industry": "CORPORATE",
+  "description": "Standard corporate profit & loss statement with revenue, COGS, operating expenses, and tax",
+  "version": "1.0.0",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "formula": null,
+      "base_value_source": "driver:REVENUE_BASE",
+      "driver_applicable": true,
+      "driver_code": "REVENUE_GROWTH",
+      "category": "revenue",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "COGS",
+      "display_name": "Cost of Goods Sold",
+      "level": 1,
+      "formula": "REVENUE * COGS_MARGIN",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "COGS_MARGIN",
+      "category": "cost",
+      "is_computed": true,
+      "dependencies": ["REVENUE"]
+    },
+    {
+      "code": "GROSS_PROFIT",
+      "display_name": "Gross Profit",
+      "level": 1,
+      "formula": "REVENUE - COGS",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["REVENUE", "COGS"]
+    },
+    {
+      "code": "OPEX_PERSONNEL",
+      "display_name": "Personnel Expenses",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:OPEX_PERSONNEL_BASE",
+      "driver_applicable": true,
+      "driver_code": "OPEX_PERSONNEL_GROWTH",
+      "category": "opex",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "OPEX_MARKETING",
+      "display_name": "Marketing Expenses",
+      "level": 2,
+      "formula": "REVENUE * MARKETING_PCT",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "MARKETING_PCT",
+      "category": "opex",
+      "is_computed": true,
+      "dependencies": ["REVENUE"]
+    },
+    {
+      "code": "OPEX_OTHER",
+      "display_name": "Other Operating Expenses",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "driver:OPEX_OTHER_BASE",
+      "driver_applicable": true,
+      "driver_code": "OPEX_OTHER_GROWTH",
+      "category": "opex",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "TOTAL_OPEX",
+      "display_name": "Total Operating Expenses",
+      "level": 1,
+      "formula": "OPEX_PERSONNEL + OPEX_MARKETING + OPEX_OTHER",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["OPEX_PERSONNEL", "OPEX_MARKETING", "OPEX_OTHER"]
+    },
+    {
+      "code": "EBITDA",
+      "display_name": "EBITDA",
+      "level": 1,
+      "formula": "GROSS_PROFIT - TOTAL_OPEX",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["GROSS_PROFIT", "TOTAL_OPEX"]
+    },
+    {
+      "code": "DEPRECIATION",
+      "display_name": "Depreciation & Amortization",
+      "level": 2,
+      "formula": null,
+      "base_value_source": "bs:PPE_NET",
+      "driver_applicable": true,
+      "driver_code": "DEPRECIATION_RATE",
+      "category": "non_cash",
+      "is_computed": false,
+      "dependencies": []
+    },
+    {
+      "code": "EBIT",
+      "display_name": "EBIT (Operating Income)",
+      "level": 1,
+      "formula": "EBITDA - DEPRECIATION",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["EBITDA", "DEPRECIATION"]
+    },
+    {
+      "code": "INTEREST_INCOME",
+      "display_name": "Interest Income",
+      "level": 2,
+      "formula": "CASH[t-1] * INTEREST_RATE_CASH",
+      "base_value_source": "bs:CASH",
+      "driver_applicable": true,
+      "driver_code": "INTEREST_RATE_CASH",
+      "category": "financial",
+      "is_computed": true,
+      "dependencies": []
+    },
+    {
+      "code": "INTEREST_EXPENSE",
+      "display_name": "Interest Expense",
+      "level": 2,
+      "formula": "DEBT[t-1] * INTEREST_RATE_DEBT",
+      "base_value_source": "bs:DEBT",
+      "driver_applicable": true,
+      "driver_code": "INTEREST_RATE_DEBT",
+      "category": "financial",
+      "is_computed": true,
+      "dependencies": []
+    },
+    {
+      "code": "NET_FINANCIAL_RESULT",
+      "display_name": "Net Financial Result",
+      "level": 1,
+      "formula": "INTEREST_INCOME - INTEREST_EXPENSE",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["INTEREST_INCOME", "INTEREST_EXPENSE"]
+    },
+    {
+      "code": "EBT",
+      "display_name": "Earnings Before Tax",
+      "level": 1,
+      "formula": "EBIT + NET_FINANCIAL_RESULT",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "subtotal",
+      "is_computed": true,
+      "dependencies": ["EBIT", "NET_FINANCIAL_RESULT"]
+    },
+    {
+      "code": "TAX_EXPENSE",
+      "display_name": "Income Tax Expense",
+      "level": 2,
+      "formula": "MAX(EBT, 0) * TAX_RATE",
+      "base_value_source": null,
+      "driver_applicable": true,
+      "driver_code": "TAX_RATE",
+      "category": "tax",
+      "is_computed": true,
+      "dependencies": ["EBT"]
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "formula": "EBT - TAX_EXPENSE",
+      "base_value_source": null,
+      "driver_applicable": false,
+      "driver_code": null,
+      "category": "bottom_line",
+      "is_computed": true,
+      "dependencies": ["EBT", "TAX_EXPENSE"]
+    }
+  ],
+  "denormalized_columns": [
+    "REVENUE",
+    "GROSS_PROFIT",
+    "EBITDA",
+    "EBIT",
+    "EBT",
+    "NET_INCOME"
+  ],
+  "validation_rules": [
+    {
+      "rule_id": "PL001",
+      "rule": "REVENUE > 0",
+      "severity": "error",
+      "message": "Revenue must be positive"
+    },
+    {
+      "rule_id": "PL002",
+      "rule": "COGS >= 0",
+      "severity": "error",
+      "message": "COGS cannot be negative"
+    },
+    {
+      "rule_id": "PL003",
+      "rule": "GROSS_PROFIT == REVENUE - COGS",
+      "severity": "error",
+      "message": "Gross profit calculation mismatch"
+    },
+    {
+      "rule_id": "PL004",
+      "rule": "TOTAL_OPEX >= 0",
+      "severity": "error",
+      "message": "Operating expenses cannot be negative"
+    },
+    {
+      "rule_id": "PL005",
+      "rule": "NET_INCOME == EBT - TAX_EXPENSE",
+      "severity": "error",
+      "message": "Net income calculation mismatch"
+    },
+    {
+      "rule_id": "PL006",
+      "rule": "TAX_EXPENSE >= 0",
+      "severity": "error",
+      "message": "Tax expense cannot be negative"
+    },
+    {
+      "rule_id": "PL007",
+      "rule": "EBITDA / REVENUE >= -0.5 AND EBITDA / REVENUE <= 1.0",
+      "severity": "warning",
+      "message": "EBITDA margin outside normal range"
+    }
+  ],
+  "calculation_order": [
+    "REVENUE",
+    "COGS",
+    "GROSS_PROFIT",
+    "OPEX_PERSONNEL",
+    "OPEX_MARKETING",
+    "OPEX_OTHER",
+    "TOTAL_OPEX",
+    "EBITDA",
+    "DEPRECIATION",
+    "EBIT",
+    "INTEREST_INCOME",
+    "INTEREST_EXPENSE",
+    "NET_FINANCIAL_RESULT",
+    "EBT",
+    "TAX_EXPENSE",
+    "NET_INCOME"
+  ],
+  "metadata": {
+    "created_by": "System",
+    "created_at": "2025-10-10",
+    "last_modified": "2025-10-10",
+    "supports_multi_currency": false,
+    "supports_consolidation": true,
+    "default_frequency": "monthly"
+  }
+}
