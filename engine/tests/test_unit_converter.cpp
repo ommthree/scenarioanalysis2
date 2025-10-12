@@ -5,17 +5,18 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "database/sqlite_database.h"
+#include "database/database_factory.h"
 #include "fx/fx_provider.h"
 #include "core/unit_converter.h"
 
 using Catch::Approx;
+using namespace finmodel;
 using namespace finmodel::core;
 using namespace finmodel::database;
 using namespace finmodel::fx;
 
 TEST_CASE("UnitConverter - Static conversions (carbon)", "[unit][static][carbon]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("Base unit to base unit") {
@@ -42,7 +43,7 @@ TEST_CASE("UnitConverter - Static conversions (carbon)", "[unit][static][carbon]
 }
 
 TEST_CASE("UnitConverter - Static conversions (mass)", "[unit][static][mass]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("Grams to kilograms") {
@@ -63,7 +64,7 @@ TEST_CASE("UnitConverter - Static conversions (mass)", "[unit][static][mass]") {
 }
 
 TEST_CASE("UnitConverter - Static conversions (energy)", "[unit][static][energy]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("MWh to kWh") {
@@ -84,7 +85,7 @@ TEST_CASE("UnitConverter - Static conversions (energy)", "[unit][static][energy]
 }
 
 TEST_CASE("UnitConverter - Round-trip conversions", "[unit][roundtrip]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("kgCO2e round-trip") {
@@ -110,7 +111,7 @@ TEST_CASE("UnitConverter - Round-trip conversions", "[unit][roundtrip]") {
 }
 
 TEST_CASE("UnitConverter - Direct conversion (same category)", "[unit][convert]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("kgCO2e to MtCO2e") {
@@ -120,8 +121,8 @@ TEST_CASE("UnitConverter - Direct conversion (same category)", "[unit][convert]"
     }
 
     SECTION("MWh to GWh") {
-        REQUIRE(converter.convert(1000.0, "MWh", "GWh") == Approx(0.001));
-        REQUIRE(converter.convert(5000.0, "MWh", "GWh") == Approx(0.005));
+        REQUIRE(converter.convert(1000.0, "MWh", "GWh") == Approx(1.0));  // 1000 MWh = 1 GWh
+        REQUIRE(converter.convert(5000.0, "MWh", "GWh") == Approx(5.0));  // 5000 MWh = 5 GWh
     }
 
     SECTION("t to kg (mass)") {
@@ -131,7 +132,7 @@ TEST_CASE("UnitConverter - Direct conversion (same category)", "[unit][convert]"
 }
 
 TEST_CASE("UnitConverter - Validation and error handling", "[unit][error]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("Unknown unit code") {
@@ -166,7 +167,7 @@ TEST_CASE("UnitConverter - Validation and error handling", "[unit][error]") {
 }
 
 TEST_CASE("UnitConverter - Metadata queries", "[unit][metadata]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);
 
     SECTION("Display symbols") {
@@ -194,21 +195,21 @@ TEST_CASE("UnitConverter - Metadata queries", "[unit][metadata]") {
 }
 
 TEST_CASE("UnitConverter - Time-varying (currency) with FXProvider", "[unit][time-varying][fx]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
 
     // Create FXProvider with test data
     auto fx_provider = std::make_shared<FXProvider>(db);
 
-    // Insert test FX rates
+    // Insert test FX rates (using scenario_id = 1)
     db->execute_update(R"(
-        INSERT OR REPLACE INTO fx_rate (from_currency, to_currency, period_id, start_date, rate)
+        INSERT OR REPLACE INTO fx_rate (scenario_id, from_currency, to_currency, period_id, rate)
         VALUES
-        ('USD', 'EUR', 1, NULL, 0.85),
-        ('USD', 'EUR', 2, NULL, 0.87),
-        ('USD', 'EUR', 3, NULL, 0.88),
-        ('GBP', 'EUR', 1, NULL, 1.15),
-        ('GBP', 'EUR', 2, NULL, 1.16),
-        ('GBP', 'EUR', 3, NULL, 1.17)
+        (1, 'USD', 'EUR', 1, 0.85),
+        (1, 'USD', 'EUR', 2, 0.87),
+        (1, 'USD', 'EUR', 3, 0.88),
+        (1, 'GBP', 'EUR', 1, 1.15),
+        (1, 'GBP', 'EUR', 2, 1.16),
+        (1, 'GBP', 'EUR', 3, 1.17)
     )", {});
 
     UnitConverter converter(db, fx_provider);
@@ -262,7 +263,7 @@ TEST_CASE("UnitConverter - Time-varying (currency) with FXProvider", "[unit][tim
 }
 
 TEST_CASE("UnitConverter - Error: No FXProvider for time-varying", "[unit][error][fx]") {
-    auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+    auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
     UnitConverter converter(db, nullptr);  // No FX provider
 
     SECTION("Should throw when converting time-varying without FXProvider") {
@@ -274,7 +275,7 @@ TEST_CASE("UnitConverter - Error: No FXProvider for time-varying", "[unit][error
 
 // Benchmark tests commented out - require Catch2 benchmark support
 // TEST_CASE("UnitConverter - Performance (static conversions)", "[unit][performance][!benchmark]") {
-//     auto db = std::make_shared<SQLiteDatabase>("data/database/finmodel.db");
+//     auto db = DatabaseFactory::create_sqlite("data/database/finmodel.db");
 //     UnitConverter converter(db, nullptr);
 //
 //     BENCHMARK("Convert kgCO2e to base (cached)") {
