@@ -81,6 +81,17 @@ bool StatementTemplate::update_line_item_formula(const std::string& code, const 
     }
     line_items_[it->second].formula = new_formula;
     line_items_[it->second].is_computed = true;  // Mark as computed when formula is set
+
+    // Automatically recompute calculation order since dependencies may have changed
+    try {
+        compute_calculation_order();
+    } catch (const std::exception& e) {
+        // If calculation order fails (e.g., circular dependency), rollback the formula change
+        line_items_[it->second].formula = std::nullopt;
+        line_items_[it->second].is_computed = false;
+        throw;  // Re-throw the exception
+    }
+
     return true;
 }
 

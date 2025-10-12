@@ -41,8 +41,10 @@ UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
 
     // Register providers with evaluator
     // Order matters: try more specific providers first
-    providers_.push_back(driver_provider_.get());      // Scenario drivers
-    providers_.push_back(statement_provider_.get());   // Financial statement values
+    // Register providers with evaluator
+    // Order: drivers first for "driver:XXX" syntax, then statement values for "XXX" references
+    providers_.push_back(driver_provider_.get());      // Scenario drivers (with driver: prefix)
+    providers_.push_back(statement_provider_.get());   // Financial statement values (calculated)
 }
 
 UnifiedResult UnifiedEngine::calculate(

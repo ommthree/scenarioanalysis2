@@ -269,8 +269,12 @@ bool ActionEngine::apply_transformation(
     // Update the line item formula
     template_ptr->update_line_item_formula(line_item_code, new_formula);
 
-    // Clear base_value_source so driver provider doesn't override the formula
-    template_ptr->clear_base_value_source(line_item_code);
+    // NOTE: We intentionally do NOT clear base_value_source here.
+    // Keeping base_value_source allows the formula to reference driver codes directly.
+    // For example: formula = "REVENUE + FLOOD_BI_FACTORY_ZRH" where both are drivers.
+    // The base_value_source ensures REVENUE is mapped in line_item_to_driver_map,
+    // allowing the formula evaluator to resolve it via DriverValueProvider.
+    // template_ptr->clear_base_value_source(line_item_code);  // COMMENTED OUT
 
     return true;
 }

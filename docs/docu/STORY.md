@@ -1993,25 +1993,333 @@ We now have a complete single-period financial statement calculation system! P&L
 
 ---
 
-### M7-M8: Management Actions & Carbon Accounting (The Sustainability Module)
+### M7-M8: Unified Engine & Driver Syntax Revolution
 
 **Last Updated:** October 12, 2025
-**Status:** ✅ Milestone 8 Complete!
+**Status:** ✅ M8.5 Complete! UnifiedEngine + Physical Risk + Management Actions
 
 **The Problem We Solved:**
-Companies need to model sustainability initiatives:
-- What's the financial impact of LED retrofits, solar panels, process improvements?
-- When should actions trigger based on business conditions (profitability, emissions)?
-- What's the cost per ton of CO2 abated (MAC curves)?
-- How do we run all 2^N combinations of possible actions efficiently?
 
-We needed an extensible system for:
-- **Management Actions**: Capital projects that transform financial formulas and reduce emissions
-- **Conditional Triggers**: Actions that activate based on business conditions
-- **Carbon Accounting**: Parallel emissions tracking (Scope 1/2/3) alongside financials
-- **MAC Analysis**: Cost-effectiveness ranking of abatement actions
+**Architecture Challenge:**
+We had three separate engines (P&L, BS, CF) with duplicated logic and complex cross-references. We consolidated into a **UnifiedEngine** that handles all statement types in one calculation pass.
+
+**Driver Reference Ambiguity:**
+When a formula said `REVENUE`, did it mean:
+- The scenario driver value (input from scenario_drivers table)?
+- The calculated line item value (computed from formulas)?
+
+This ambiguity caused:
+- Circular dependencies (e.g., `REVENUE = driver:REVENUE + driver:FLOOD_BI` broke because REVENUE referenced itself)
+- Provider order dependencies (which provider should answer first?)
+- Unpredictable behavior (same code, different results based on provider order)
+
+**Physical Risk Integration:**
+Climate perils need to flow seamlessly into financial formulas:
+- Flood damage → driver → P&L impact
+- Physical risk drivers use special entity_id = 'PHYSICAL_RISK' to apply globally
 
 **What We Built:**
+
+#### 1. UnifiedEngine - Single Engine for All Statements
+
+**Files Created:**
+- `engine/include/unified/unified_engine.h` (189 lines)
+- `engine/src/unified/unified_engine.cpp` (300 lines)
+- `engine/include/unified/providers/driver_value_provider.h` (145 lines)
+- `engine/src/unified/providers/driver_value_provider.cpp` (220 lines)
+
+**What It Does:**
+Replaces separate PLEngine, BSEngine, CFEngine with one unified calculation flow:
+
+```cpp
+UnifiedEngine engine(db);
+auto result = engine.calculate(
+    entity_id,
+    scenario_id,
+    period_id,
+    opening_bs,
+    "TEST_UNIFIED_L10"  // Template handles P&L + BS + CF + Carbon
+);
+
+// Result contains ALL statement types:
+double revenue = result.get_value("REVENUE");               // P&L
+double cash = result.get_value("CASH");                     // Balance Sheet
+double cf_operating = result.get_value("CF_OPERATING");    // Cash Flow
+double scope1 = result.get_value("SCOPE1_EMISSIONS");      // Carbon
+```
+
+**Key Benefits:**
+- ✅ Single calculation pass (no need to run 3 engines sequentially)
+- ✅ Automatic cross-statement references (P&L → BS → CF)
+- ✅ Unified template structure (all sections in one JSON)
+- ✅ Consistent provider chain for all calculations
+- ✅ Simpler testing (one engine to validate)
+
+#### 2. Explicit Driver Syntax - `driver:XXX` Prefix
+
+**The Problem:**
+```cpp
+// Formula: REVENUE - COGS
+// Q: Is "REVENUE" the driver value or the calculated value?
+// A: Depends on provider order! (Ambiguous and fragile)
+```
+
+**The Solution:**
+Explicit `driver:` prefix to distinguish driver lookups from calculated values:
+
+```cpp
+// Explicit driver reference (fetch from scenario_drivers table)
+"driver:REVENUE"                    // Always fetches from drivers
+"driver:FLOOD_BI_FACTORY_ZRH"      // Physical risk driver
+
+// Bare reference (fetch calculated value)
+"REVENUE"                           // Calculated line item value
+"GROSS_PROFIT"                      // Another line item
+
+// Example formulas:
+"driver:REVENUE + driver:FLOOD_BI"  // Sum two driver values
+"REVENUE - COGS"                     // Use calculated values
+```
+
+**Implementation Changes:**
+
+**DriverValueProvider - Dual Mode Handling:**
+```cpp
+bool DriverValueProvider::has_value(const std::string& key) const {
+    // Case 1: Explicit driver: prefix (used in formulas)
+    if (key.length() > 7 && key.substr(0, 7) == "driver:") {
+        std::string driver_code = key.substr(7);
+        return driver_cache_.find(driver_code) != driver_cache_.end();
+    }
+
+    // Case 2: Bare line item code (used for base_value_source mapping)
+    // Only respond if this line item has NO formula (pure driver-sourced)
+    auto it = line_item_to_driver_map_.find(key);
+    if (it == line_item_to_driver_map_.end()) {
+        return false;  // No mapping, not our responsibility
+    }
+
+    std::string driver_code = it->second;
+    return driver_cache_.find(driver_code) != driver_cache_.end();
+}
+```
+
+**Formula Evaluator - Skip driver: in Dependencies:**
+```cpp
+// In extract_dependencies():
+std::string identifier = read_identifier();
+
+// Skip "driver:" references - they're not true dependencies
+// driver:REVENUE doesn't depend on REVENUE line item
+if (identifier.length() > 7 && identifier.substr(0, 7) == "driver:") {
+    continue;  // Skip, not a dependency
+}
+
+// For bare identifiers, add to dependency graph
+deps_set.insert(identifier);
+```
+
+**Template Mapping - Only for Non-Formula Line Items:**
+```cpp
+void DriverValueProvider::load_template_mappings(const std::string& template_code) {
+    // Parse template JSON
+    auto json = nlohmann::json::parse(json_str);
+
+    for (const auto& item : json["line_items"]) {
+        std::string line_item_code = item["code"].get<std::string>();
+
+        // CRITICAL: Only map line items WITHOUT formulas
+        bool has_formula = item.contains("formula") && !item["formula"].is_null() &&
+                         !item["formula"].get<std::string>().empty();
+
+        if (has_formula) {
+            continue;  // Has formula → will be calculated, not driver-sourced
+        }
+
+        // No formula → map to driver
+        if (item.contains("base_value_source")) {
+            std::string base_value_source = item["base_value_source"].get<std::string>();
+            if (base_value_source.substr(0, 7) == "driver:") {
+                std::string driver_code = base_value_source.substr(7);
+                line_item_to_driver_map_[line_item_code] = driver_code;
+            }
+        }
+    }
+}
+```
+
+**Why This Design is Brilliant:**
+
+✅ **No Circular Dependencies**
+```cpp
+// This formula is now legal:
+REVENUE.formula = "driver:REVENUE + driver:FLOOD_BI_FACTORY_ZRH"
+
+// REVENUE line item references driver:REVENUE (from drivers table)
+// NOT REVENUE line item (calculated value)
+// → No circular dependency!
+```
+
+✅ **Provider Order Doesn't Matter**
+```cpp
+// Old way (order-dependent):
+providers_ = {driver_provider, statement_provider};  // driver first
+// vs
+providers_ = {statement_provider, driver_provider};  // statement first
+// → Different results! Fragile!
+
+// New way (order-independent):
+providers_ = {driver_provider, statement_provider};  // driver first is conventional
+// driver_provider only answers "driver:XXX" and mapped bare names
+// statement_provider answers calculated line item names
+// → No overlap, no ambiguity!
+```
+
+✅ **Clear Semantics**
+```cpp
+"driver:REVENUE"          // Unambiguous: fetch from drivers
+"REVENUE"                 // Unambiguous: calculated value (or mapped driver if no formula)
+```
+
+✅ **Hybrid Line Items Supported**
+```cpp
+// A line item can have BOTH formula AND base_value_source:
+{
+  "code": "REVENUE",
+  "formula": "driver:REVENUE + driver:FLOOD_BI",
+  "base_value_source": "driver:REVENUE"  // Preserved but not used (formula takes precedence)
+}
+```
+
+#### 3. Physical Risk Integration
+
+**Files Used:**
+- `engine/include/physical/physical_risk_engine.h`
+- `engine/src/physical/physical_risk_engine.cpp`
+- `engine/tests/test_level18_physical_risk_basics.cpp` (100% passing, 4/4 tests)
+- `engine/tests/test_level19_physical_risk_integration.cpp` (100% passing, 4/4 tests)
+
+**Database Schema:**
+```sql
+-- Physical risk drivers use special entity_id
+INSERT INTO scenario_drivers
+(entity_id, scenario_id, period_id, driver_code, value, unit_code)
+VALUES
+('PHYSICAL_RISK', 42, 1, 'FLOOD_BI_FACTORY_ZRH', 5068493.0, 'CHF'),
+('PHYSICAL_RISK', 42, 1, 'FLOOD_INVENTORY_FACTORY_ZRH', 5000000.0, 'CHF');
+```
+
+**DriverValueProvider Enhancement:**
+```cpp
+void DriverValueProvider::load_drivers() const {
+    // Query drivers for BOTH specific entity AND global physical risk drivers
+    std::ostringstream query;
+    query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
+          << "WHERE (entity_id = :entity_id OR entity_id = 'PHYSICAL_RISK') "  // ← Key change
+          << "AND scenario_id = :scenario_id "
+          << "AND period_id = :period_id";
+
+    // Physical risk drivers now available to all entities!
+}
+```
+
+**Management Action Formula Override:**
+```cpp
+// ActionEngine applies formula override for physical risk scenarios:
+Transformation revenue_transform;
+revenue_transform.line_item_code = "REVENUE";
+revenue_transform.transformation_type = "formula_override";
+revenue_transform.new_formula = "driver:REVENUE + driver:FLOOD_BI_FACTORY_ZRH";
+
+Transformation cogs_transform;
+cogs_transform.line_item_code = "COST_OF_GOODS_SOLD";
+cogs_transform.transformation_type = "formula_override";
+cogs_transform.new_formula = "driver:COST_OF_GOODS_SOLD - driver:FLOOD_INVENTORY_FACTORY_ZRH";
+
+// Applied to template via ActionEngine
+action_engine.apply_actions_to_template(template_ptr, {revenue_transform, cogs_transform}, period_id);
+```
+
+**Level 19 Test Results:**
+```
+Base Scenario:
+  REVENUE:            100,000,000 CHF
+  COGS:                60,000,000 CHF
+  GROSS_PROFIT:        40,000,000 CHF
+  NET_INCOME:          30,000,000 CHF
+
+Flood Scenario (formula overrides applied):
+  REVENUE:             94,931,507 CHF  (100M - 5.07M BI loss)
+  COGS:                65,000,000 CHF  (60M + 5M inventory loss)
+  GROSS_PROFIT:        29,931,507 CHF  (40M → 29.9M, -25.17%)
+  NET_INCOME:          19,931,507 CHF  (30M → 19.9M, -33.56%)
+
+Physical Risk Detail CSV Export:
+  Asset: FACTORY_ZRH
+  Peril: FLOOD
+  Distance: 0 km (direct hit)
+  Intensity: 1.5
+  PPE Loss:        25,000,000 CHF
+  Inventory Loss:   5,000,000 CHF
+  BI Loss:          5,068,493 CHF
+  Total Loss:      35,068,493 CHF
+```
+
+#### 4. Management Actions & Carbon Accounting (Inherited from M8)
+
+**Management Actions:**
+- Template transformation framework (formula_override, multiply, add)
+- Conditional triggers (CONDITIONAL, TIMED, UNCONDITIONAL)
+- Multi-action scenarios (2^N combinations via ScenarioGenerator)
+- Sticky/non-sticky trigger evaluation
+
+**Carbon Accounting:**
+- Scope 1/2/3 emissions tracking
+- Carbon pricing & cost calculation
+- Allowances and offsets management
+- Financial integration (carbon costs in P&L)
+
+**Unit Conversion System:**
+- 33 units across 6 categories (CARBON, CURRENCY, MASS, ENERGY, VOLUME, DISTANCE)
+- Static conversions (kg↔t↔lb) cached for performance
+- Time-varying FX conversions via FXProvider integration
+- Bidirectional conversion support
+
+---
+
+### Key Technical Achievements (M7-M8.5)
+
+**1. UnifiedEngine Architecture**
+- Replaced 3 separate engines with 1 unified engine
+- Single calculation pass handles all statement types
+- Consistent provider chain throughout
+
+**2. Explicit Driver Syntax**
+- `driver:XXX` prefix eliminates ambiguity
+- No circular dependencies possible
+- Provider order doesn't matter
+- Clear semantic distinction
+
+**3. Physical Risk Integration**
+- Peril → Damage → Driver → Formula flow complete
+- Global physical risk drivers (entity_id = 'PHYSICAL_RISK')
+- Seamless integration with management actions
+- CSV exports for validation
+
+**4. Template Mapping Logic**
+- Only line items WITHOUT formulas get mapped to drivers
+- Line items WITH formulas are always calculated
+- Preserves base_value_source for audit trail
+- Auto-recomputes calculation order on formula changes
+
+**5. Dependency Graph Refinement**
+- `driver:` prefixed references skipped in dependency extraction
+- No false dependencies between driver refs and line items
+- Supports hybrid line items (formula + base_value_source)
+
+---
+
+### M8: Three-Part Sustainability System
 
 #### M8 Overview: Three-Part System
 

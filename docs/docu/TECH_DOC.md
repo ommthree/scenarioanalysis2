@@ -165,6 +165,136 @@ CREATE TABLE management_action (
 
 ## Formula Engine
 
+### Driver Syntax Semantics
+
+**Critical Design Decision:** Explicit `driver:` prefix for driver references
+
+**The Problem:**
+Before the `driver:` prefix, formulas had ambiguous variable references:
+```cpp
+// Formula: REVENUE - COGS
+// Question: Is "REVENUE" the driver value or the calculated line item value?
+// Answer: Depends on provider order! (Fragile and error-prone)
+```
+
+**The Solution:**
+```cpp
+// Explicit driver reference (always fetches from scenario_drivers table)
+"driver:REVENUE"                    // Unambiguous: from drivers
+"driver:FLOOD_BI_FACTORY_ZRH"      // Physical risk driver
+
+// Bare reference (always references calculated line item value)
+"REVENUE"                           // Unambiguous: calculated value
+"GROSS_PROFIT"                      // Another line item
+
+// Example formulas:
+"driver:REVENUE + driver:FLOOD_BI"  // Sum two drivers
+"REVENUE - COGS"                     // Use calculated values
+"driver:REVENUE + driver:FLOOD_BI_FACTORY_ZRH"  // Physical risk formula
+```
+
+**Key Benefits:**
+
+✅ **No Circular Dependencies**
+```cpp
+// This formula is now legal:
+line_item.code = "REVENUE"
+line_item.formula = "driver:REVENUE + driver:FLOOD_BI_FACTORY_ZRH"
+
+// Explanation:
+// - REVENUE line item has a formula
+// - Formula references driver:REVENUE (from scenario_drivers)
+// - NOT referring to REVENUE line item itself
+// - No circular dependency!
+```
+
+✅ **Provider Order Independence**
+```cpp
+// Provider order no longer matters:
+providers_ = {driver_provider, statement_provider};
+
+// driver_provider answers:
+//   - "driver:XXX" (explicit driver references)
+//   - Bare names ONLY if line item has NO formula (via line_item_to_driver_map)
+//
+// statement_provider answers:
+//   - Bare names (calculated line item values)
+//
+// No overlap → no ambiguity!
+```
+
+✅ **Clear Semantics**
+- `driver:REVENUE` → Always fetches from scenario_drivers table
+- `REVENUE` → Always returns calculated line item value (or mapped driver if no formula)
+
+### Identifier Parsing
+
+The formula parser includes `:` in identifier parsing to support `driver:XXX` syntax:
+
+```cpp
+std::string FormulaEvaluator::read_identifier() {
+    std::string result;
+    // Allow alphanumeric AND colon character
+    while (pos_ < formula_.length() && (is_alnum(formula_[pos_]) || formula_[pos_] == ':')) {
+        result += formula_[pos_++];
+    }
+    return result;
+}
+```
+
+**Examples of valid identifiers:**
+- `REVENUE` (bare reference)
+- `driver:REVENUE` (driver reference)
+- `driver:FLOOD_BI_FACTORY_ZRH` (physical risk driver)
+- `pl:NET_INCOME` (P&L cross-reference)
+- `bs:CASH` (Balance sheet cross-reference)
+
+### Dependency Extraction
+
+`driver:` prefixed references are **skipped** in dependency extraction:
+
+```cpp
+std::set<std::string> FormulaEvaluator::extract_dependencies(const std::string& formula) {
+    std::set<std::string> deps_set;
+
+    // Parse formula and extract identifiers
+    std::string identifier = read_identifier();
+
+    // Skip "driver:" references - they're not true dependencies
+    // driver:REVENUE doesn't depend on REVENUE line item!
+    if (identifier.length() > 7 && identifier.substr(0, 7) == "driver:") {
+        continue;  // Skip, not a line item dependency
+    }
+
+    // Skip other provider prefixes (pl:, bs:, cf:, etc.)
+    if (identifier.find(':') != std::string::npos) {
+        continue;  // Cross-statement reference, not a local dependency
+    }
+
+    // For time-shifted references, add [t-1] suffix
+    if (is_time_shifted) {
+        deps_set.insert(identifier + "[t-1]");
+    } else {
+        deps_set.insert(identifier);
+    }
+
+    return deps_set;
+}
+```
+
+**Why this matters:**
+```cpp
+// Formula: "driver:REVENUE + driver:FLOOD_BI"
+// Dependencies extracted: [] (empty!)
+// → No dependencies on line items
+// → Can be calculated immediately (no need to wait for REVENUE line item)
+
+// Formula: "REVENUE - COGS"
+// Dependencies extracted: ["REVENUE", "COGS"]
+// → Must calculate REVENUE and COGS first
+// → Correct calculation order enforced
+```
+
 ### Recursive Descent Parser
 
 The formula evaluator uses a **recursive descent parser** to handle operator precedence:
@@ -223,16 +353,144 @@ public:
 
 **Current Providers:**
 
-**DriverValueProvider** - Scenario inputs
+**DriverValueProvider** - Scenario inputs with dual-mode handling
 ```cpp
-// Handles: scenario:REVENUE_GROWTH
-bool has_value(const std::string& code) const {
-    return code.find("scenario:") == 0;
+// Handles:
+//   1. Explicit driver: prefix (e.g., "driver:REVENUE", "driver:FLOOD_BI")
+//   2. Bare line item codes that map to drivers (only if line item has NO formula)
+
+bool DriverValueProvider::has_value(const std::string& key) const {
+    // Load cache if needed
+    if (!cache_loaded_) {
+        load_drivers();
+    }
+
+    // Case 1: Explicit driver: prefix (used in formulas)
+    // This is used when formulas explicitly say "driver:REVENUE"
+    if (key.length() > 7 && key.substr(0, 7) == "driver:") {
+        std::string driver_code = key.substr(7);
+        return driver_cache_.find(driver_code) != driver_cache_.end();
+    }
+
+    // Case 2: Bare line item code (used for base_value_source mapping)
+    // This is used when line item has NO formula and base_value_source = "driver:XXX"
+    // Only respond if this line item is in our mapping AND has NO formula
+    auto it = line_item_to_driver_map_.find(key);
+    if (it == line_item_to_driver_map_.end()) {
+        return false;  // No mapping, not our responsibility
+    }
+
+    // Check if the mapped driver exists in cache
+    std::string driver_code = it->second;
+    return driver_cache_.find(driver_code) != driver_cache_.end();
 }
 
-double get_value(const std::string& code, const Context& ctx) const {
-    std::string driver_code = code.substr(9);  // Remove "scenario:"
-    return driver_cache_[driver_code][ctx.period_id];
+double DriverValueProvider::get_value(const std::string& key, const Context& ctx) const {
+    if (!cache_loaded_) {
+        load_drivers();
+    }
+
+    std::string driver_code;
+
+    // Case 1: Explicit driver: prefix
+    if (key.length() > 7 && key.substr(0, 7) == "driver:") {
+        driver_code = key.substr(7);
+    }
+    // Case 2: Bare line item code (resolve via mapping)
+    else {
+        driver_code = resolve_driver_code(key);
+    }
+
+    // Look up driver in cache
+    auto it = driver_cache_.find(driver_code);
+    if (it == driver_cache_.end()) {
+        throw std::runtime_error("DriverValueProvider: driver not found: " + driver_code);
+    }
+
+    return it->second;
+}
+```
+
+**Template Mapping Logic:**
+```cpp
+void DriverValueProvider::load_template_mappings(const std::string& template_code) {
+    line_item_to_driver_map_.clear();
+
+    // Query template JSON from database
+    auto result_set = db_->execute_query(
+        "SELECT json_structure FROM statement_template WHERE code = :template_code",
+        {{"template_code", template_code}}
+    );
+
+    if (!result_set || !result_set->next()) {
+        // Template not found - OK, just means no mappings to load
+        return;
+    }
+
+    std::string json_str = result_set->get_string(0);
+    auto json = nlohmann::json::parse(json_str);
+
+    // Build mapping from base_value_source
+    for (const auto& item : json["line_items"]) {
+        std::string line_item_code = item["code"].get<std::string>();
+
+        // CRITICAL: Only create mappings for line items WITHOUT formulas
+        // If a line item has a formula, it will be calculated, not fetched from drivers
+        bool has_formula = item.contains("formula") && !item["formula"].is_null() &&
+                         !item["formula"].get<std::string>().empty();
+
+        if (has_formula) {
+            continue;  // Line item has formula, will be calculated
+        }
+
+        // No formula → map to driver
+        if (item.contains("base_value_source") && !item["base_value_source"].is_null()) {
+            std::string base_value_source = item["base_value_source"].get<std::string>();
+
+            // Parse base_value_source format: "driver:DRIVER_CODE"
+            if (base_value_source.substr(0, 7) == "driver:") {
+                std::string driver_code = base_value_source.substr(7);
+                line_item_to_driver_map_[line_item_code] = driver_code;
+            }
+        }
+    }
+}
+```
+
+**Physical Risk Drivers:**
+```cpp
+void DriverValueProvider::load_drivers() const {
+    driver_cache_.clear();
+
+    // Query drivers for BOTH the specified entity AND global physical risk drivers
+    // Physical risk drivers use entity_id = 'PHYSICAL_RISK' and apply to all entities
+    std::ostringstream query;
+    query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
+          << "WHERE (entity_id = :entity_id OR entity_id = 'PHYSICAL_RISK') "
+          << "AND scenario_id = :scenario_id "
+          << "AND period_id = :period_id";
+
+    ParamMap params;
+    params["entity_id"] = entity_id_;
+    params["scenario_id"] = scenario_id_;
+    params["period_id"] = period_id_;
+
+    auto result_set = db_->execute_query(query.str(), params);
+
+    while (result_set && result_set->next()) {
+        std::string driver_code = result_set->get_string(0);
+        double value = result_set->get_double(1);
+        std::string unit_code = result_set->get_string(2);
+
+        // Convert to base unit if unit converter is available
+        if (unit_converter_) {
+            value = unit_converter_->to_base_unit(value, unit_code, period_id_);
+        }
+
+        driver_cache_[driver_code] = value;
+    }
+
+    cache_loaded_ = true;
 }
 ```
 
@@ -456,6 +714,240 @@ struct Context {
 - `period_id`: Which time period (1-12 for months, 1-10 for years)
 - `scenario_id`: Which scenario (BASE, PESSIMISTIC, OPTIMISTIC)
 - `time_index`: For time-series (`t-1` references use `time_index - 1`)
+
+---
+
+## UnifiedEngine Architecture
+
+### Consolidation of Statement Engines
+
+**Before (M1-M6):**
+- Separate PLEngine, BSEngine, CFEngine
+- Sequential execution (P&L → BS → CF)
+- Duplicated provider setup logic
+- Complex cross-statement references
+
+**After (M7-M8):**
+- Single UnifiedEngine handles all statement types
+- Single calculation pass
+- Unified template structure
+- Consistent provider chain
+
+### UnifiedEngine Implementation
+
+```cpp
+class UnifiedEngine {
+public:
+    UnifiedEngine(std::shared_ptr<database::IDatabase> db);
+
+    UnifiedResult calculate(
+        const EntityID& entity_id,
+        ScenarioID scenario_id,
+        PeriodID period_id,
+        const BalanceSheet& opening_bs,
+        const std::string& template_code
+    );
+
+private:
+    std::shared_ptr<database::IDatabase> db_;
+    std::unique_ptr<DriverValueProvider> driver_provider_;
+    std::unique_ptr<bs::StatementValueProvider> statement_provider_;
+    std::unique_ptr<ValidationRuleEngine> validation_engine_;
+    core::FormulaEvaluator evaluator_;
+    std::vector<core::IValueProvider*> providers_;
+    std::map<std::string, double> current_values_;
+};
+```
+
+### Unified Template Structure
+
+Templates now combine all statement types in one JSON:
+
+```json
+{
+  "code": "TEST_UNIFIED_L10",
+  "name": "Unified Statement with Carbon",
+  "statement_type": "unified",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "section": "pl",
+      "formula": null,
+      "base_value_source": "driver:REVENUE"
+    },
+    {
+      "code": "GROSS_PROFIT",
+      "section": "pl",
+      "formula": "REVENUE - COST_OF_GOODS_SOLD"
+    },
+    {
+      "code": "CASH",
+      "section": "bs",
+      "formula": "CASH[t-1] + CF_NET"
+    },
+    {
+      "code": "CF_OPERATING",
+      "section": "cf",
+      "formula": "NET_INCOME + DEPRECIATION - CHANGE_WORKING_CAPITAL"
+    },
+    {
+      "code": "SCOPE1_EMISSIONS",
+      "section": "carbon",
+      "formula": null,
+      "base_value_source": "driver:SCOPE1_EMISSIONS",
+      "unit": "tCO2e"
+    }
+  ]
+}
+```
+
+### Unified Calculation Flow
+
+```cpp
+UnifiedResult UnifiedEngine::calculate(
+    const EntityID& entity_id,
+    ScenarioID scenario_id,
+    PeriodID period_id,
+    const BalanceSheet& opening_bs,
+    const std::string& template_code
+) {
+    UnifiedResult result;
+    result.success = true;
+
+    // 1. Set context for value providers
+    driver_provider_->set_context(entity_id, scenario_id, period_id);
+    statement_provider_->set_context(entity_id, scenario_id);
+
+    // 2. Load driver mappings from template
+    driver_provider_->load_template_mappings(template_code);
+
+    // 3. Populate opening balance sheet values
+    populate_opening_values(opening_bs);
+
+    // 4. Load unified template
+    auto tmpl = core::StatementTemplate::load_from_database(db_.get(), template_code);
+
+    // 5. Compute calculation order from dependencies
+    tmpl->compute_calculation_order();
+
+    // 6. Create context for this calculation
+    core::Context ctx(scenario_id, period_id, entity_id_hash);
+
+    // 7. Calculate line items in dependency order
+    const auto& calc_order = tmpl->get_calculation_order();
+    for (const auto& code : calc_order) {
+        auto line_item = tmpl->get_line_item(code);
+
+        // Calculate value using formula or provider lookup
+        double value = calculate_line_item(code, line_item->formula, line_item->sign_convention, ctx);
+
+        // Store in result
+        result.line_items[code] = value;
+        current_values_[code] = value;
+
+        // Update statement provider so subsequent formulas can reference this
+        statement_provider_->set_current_values(current_values_);
+    }
+
+    // 8. Validate result using data-driven rules
+    auto validation = validate(result, template_code, ctx);
+    if (!validation.is_valid) {
+        result.success = false;
+        result.errors = validation.errors;
+    }
+
+    return result;
+}
+```
+
+### Extract Methods for Backward Compatibility
+
+```cpp
+// UnifiedResult can extract specific statement types
+PLResult UnifiedResult::extract_pl_result() const;
+BalanceSheet UnifiedResult::extract_balance_sheet() const;
+CashFlowStatement UnifiedResult::extract_cash_flow() const;
+std::map<std::string, double> UnifiedResult::extract_carbon_result() const;
+```
+
+---
+
+## Physical Risk Integration
+
+### Global Physical Risk Drivers
+
+Physical risk drivers use a special `entity_id = 'PHYSICAL_RISK'` to apply globally:
+
+```sql
+-- Regular entity driver
+INSERT INTO scenario_drivers
+(entity_id, scenario_id, period_id, driver_code, value, unit_code)
+VALUES
+('COMPANY_XYZ', 42, 1, 'REVENUE', 100000000.0, 'CHF');
+
+-- Physical risk driver (applies to ALL entities)
+INSERT INTO scenario_drivers
+(entity_id, scenario_id, period_id, driver_code, value, unit_code)
+VALUES
+('PHYSICAL_RISK', 42, 1, 'FLOOD_BI_FACTORY_ZRH', 5068493.0, 'CHF'),
+('PHYSICAL_RISK', 42, 1, 'FLOOD_INVENTORY_FACTORY_ZRH', 5000000.0, 'CHF');
+```
+
+### DriverValueProvider Query
+
+```cpp
+// Query includes BOTH entity-specific AND global physical risk drivers
+std::ostringstream query;
+query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
+      << "WHERE (entity_id = :entity_id OR entity_id = 'PHYSICAL_RISK') "
+      << "AND scenario_id = :scenario_id "
+      << "AND period_id = :period_id";
+```
+
+### Formula Override for Physical Risk
+
+Physical risk impacts are modeled using ActionEngine formula overrides:
+
+```cpp
+// Transform REVENUE to include business interruption loss
+Transformation revenue_transform;
+revenue_transform.line_item_code = "REVENUE";
+revenue_transform.transformation_type = "formula_override";
+revenue_transform.new_formula = "driver:REVENUE + driver:FLOOD_BI_FACTORY_ZRH";
+
+// Transform COGS to reflect inventory loss
+Transformation cogs_transform;
+cogs_transform.line_item_code = "COST_OF_GOODS_SOLD";
+cogs_transform.transformation_type = "formula_override";
+cogs_transform.new_formula = "driver:COST_OF_GOODS_SOLD - driver:FLOOD_INVENTORY_FACTORY_ZRH";
+
+// Apply transformations
+action_engine.apply_actions_to_template(template_ptr, {revenue_transform, cogs_transform}, period_id);
+```
+
+### Physical Risk Test Results (Level 19)
+
+**Base Scenario:**
+```
+REVENUE:        100,000,000 CHF
+COGS:            60,000,000 CHF
+GROSS_PROFIT:    40,000,000 CHF
+NET_INCOME:      30,000,000 CHF
+```
+
+**Flood Scenario:**
+```
+REVENUE:         94,931,507 CHF  (100M - 5.07M BI loss)
+COGS:            65,000,000 CHF  (60M + 5M inventory loss)
+GROSS_PROFIT:    29,931,507 CHF  (-25.17% impact)
+NET_INCOME:      19,931,507 CHF  (-33.56% impact)
+```
+
+**Physical Risk Detail Export (CSV):**
+```csv
+Asset,Peril_Type,Distance_km,Intensity,PPE_Loss_CHF,Inventory_Loss_CHF,BI_Loss_CHF,Total_Loss_CHF
+FACTORY_ZRH,FLOOD,0,1.5,25000000,5000000,5068493,35068493
+```
 
 ---
 
