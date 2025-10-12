@@ -5,6 +5,7 @@
 
 #include "core/unit_converter.h"
 #include "database/idatabase.h"
+#include "database/result_set.h"
 #include "fx/fx_provider.h"
 #include <stdexcept>
 #include <sstream>
@@ -39,25 +40,25 @@ void UnitConverter::load_unit_definitions() {
         ORDER BY unit_category, unit_code
     )";
 
-    auto results = db_->execute_query(query);
+    auto result_set = db_->execute_query(query, {});
 
-    for (const auto& row : results) {
+    while (result_set->next()) {
         UnitDefinition def;
-        def.unit_code = std::get<std::string>(row.at("unit_code"));
-        def.unit_name = std::get<std::string>(row.at("unit_name"));
-        def.unit_category = std::get<std::string>(row.at("unit_category"));
-        def.conversion_type = std::get<std::string>(row.at("conversion_type"));
+        def.unit_code = result_set->get_string("unit_code");
+        def.unit_name = result_set->get_string("unit_name");
+        def.unit_category = result_set->get_string("unit_category");
+        def.conversion_type = result_set->get_string("conversion_type");
 
         // Static conversion factor (NULL for time-varying)
-        if (row.at("static_conversion_factor").index() != std::variant_npos) {
-            def.static_conversion_factor = std::get<double>(row.at("static_conversion_factor"));
+        if (!result_set->is_null("static_conversion_factor")) {
+            def.static_conversion_factor = result_set->get_double("static_conversion_factor");
         } else {
             def.static_conversion_factor = 0.0;  // Not used for time-varying
         }
 
-        def.base_unit_code = std::get<std::string>(row.at("base_unit_code"));
-        def.display_symbol = std::get<std::string>(row.at("display_symbol"));
-        def.description = std::get<std::string>(row.at("description"));
+        def.base_unit_code = result_set->get_string("base_unit_code");
+        def.display_symbol = result_set->get_string("display_symbol");
+        def.description = result_set->get_string("description");
 
         // Store definition
         unit_definitions_[def.unit_code] = def;

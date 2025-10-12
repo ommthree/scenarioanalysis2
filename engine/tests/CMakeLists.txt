@@ -29,6 +29,7 @@ set(TEST_SOURCES
     test_tax_strategies.cpp
     test_period_runner.cpp
     test_fx_provider.cpp
+    test_unit_converter.cpp
     test_level1.cpp
     test_level2.cpp
     test_level3.cpp
@@ -75,6 +76,7 @@ add_test(NAME DependencyTests COMMAND run_tests "[dependency]" WORKING_DIRECTORY
 add_test(NAME TaxStrategyTests COMMAND run_tests "[tax]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME OrchestrationTests COMMAND run_tests "[orchestration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME FXProviderTests COMMAND run_tests "[fx]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME UnitConverterTests COMMAND run_tests "[unit]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level1Tests COMMAND run_tests "[level1]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level2Tests COMMAND run_tests "[level2]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level3Tests COMMAND run_tests "[level3]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
