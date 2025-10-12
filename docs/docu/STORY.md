@@ -1991,7 +1991,419 @@ You can now:
 **The Big Picture:**
 We now have a complete single-period financial statement calculation system! P&L flows into Balance Sheet, with full time-series support. The generic template-driven architecture means users can customize everything via JSON/SQL without touching C++ code.
 
-Next: Cash Flow Engine (M6) and Multi-Period Runner (M7) 🚀
+---
+
+### M7-M8: Management Actions & Carbon Accounting (The Sustainability Module)
+
+**Last Updated:** October 12, 2025
+**Status:** ✅ Milestone 8 Complete!
+
+**The Problem We Solved:**
+Companies need to model sustainability initiatives:
+- What's the financial impact of LED retrofits, solar panels, process improvements?
+- When should actions trigger based on business conditions (profitability, emissions)?
+- What's the cost per ton of CO2 abated (MAC curves)?
+- How do we run all 2^N combinations of possible actions efficiently?
+
+We needed an extensible system for:
+- **Management Actions**: Capital projects that transform financial formulas and reduce emissions
+- **Conditional Triggers**: Actions that activate based on business conditions
+- **Carbon Accounting**: Parallel emissions tracking (Scope 1/2/3) alongside financials
+- **MAC Analysis**: Cost-effectiveness ranking of abatement actions
+
+**What We Built:**
+
+#### M8 Overview: Three-Part System
+
+**Part 1: Unit Conversion System**
+- 33 units across 6 categories (CARBON, CURRENCY, MASS, ENERGY, VOLUME, DISTANCE)
+- Static conversions (kg↔t↔lb) cached for performance
+- Time-varying FX conversions via FXProvider integration
+- Bidirectional conversion support (A→B and B→A)
+
+**Part 2: Carbon Accounting Engine**
+- Scope 1/2/3 emissions tracking
+- Carbon price modeling and cost calculation
+- Allowances and offsets management
+- Emissions trading support
+
+**Part 3: Management Actions + MAC Analysis**
+- **13 Levels of Testing** - Progressive complexity from single actions to portfolio combinations
+- **Conditional Triggers** - CONDITIONAL, TIMED, UNCONDITIONAL action types
+- **Dynamic Template Switching** - PeriodRunner automatically clones templates when actions activate
+- **Transformation Types** - multiply, add, formula_override (avoiding "reduce" for circular dependency prevention)
+- **ScenarioGenerator** - Automated 2^N scenario combination generation
+- **MAC Curve Analysis** - Run actual scenarios, measure real emission reductions, rank by cost-effectiveness
+
+#### Key Implementations:
+
+**1. ActionEngine (Levels 13-16)**
+```cpp
+// Load actions for a scenario
+auto actions = action_engine.load_actions(scenario_id);
+
+// Apply transformations to template
+int transforms_applied = action_engine.apply_actions_to_template(
+    template_ptr,
+    actions,
+    period_id
+);
+
+// Transformation types:
+// - formula_override: Replace formula entirely
+// - multiply: Wrap in (*factor)
+// - add: Wrap in (+amount)
+```
+
+**Financial Transformations:**
+```json
+{
+  "line_item": "OPERATING_EXPENSES",
+  "type": "formula_override",
+  "new_formula": "290000",
+  "comment": "LED reduces OpEx from 300k to 290k"
+}
+```
+
+**Carbon Transformations:**
+```json
+{
+  "line_item": "SCOPE2_EMISSIONS",
+  "type": "formula_override",
+  "new_formula": "1470",
+  "comment": "LED reduces Scope 2 from 1500 to 1470 (30 tCO2e reduction)"
+}
+```
+
+**2. PeriodRunner with Dynamic Template Switching (Level 14)**
+```cpp
+PeriodRunner runner(db);
+auto result = runner.run_periods(
+    entity_id,
+    scenario_id,
+    {1, 2, 3, 4, 5},  // Multiple periods
+    initial_bs,
+    base_template_code  // Automatically clones when actions activate!
+);
+
+// PeriodRunner automatically:
+// 1. Detects when actions become active
+// 2. Clones base template → scenario-specific template
+// 3. Applies action transformations
+// 4. Continues with modified template
+// 5. Switches back if actions end
+```
+
+**3. Conditional Triggers (Level 15)**
+```cpp
+// Three trigger types:
+// 1. UNCONDITIONAL - Always active from start_period
+// 2. TIMED - Activates exactly at trigger_period
+// 3. CONDITIONAL - Evaluates trigger_condition each period
+
+// Example: Emergency cost reduction when profitability drops
+{
+  "action_code": "EMERGENCY_COST_CUT",
+  "trigger_type": "CONDITIONAL",
+  "trigger_condition": "NET_INCOME <= 250000",
+  "start_period": 1,
+  "sticky": false  // Re-evaluates every period
+}
+```
+
+**4. ScenarioGenerator (Level 14 & 17)**
+```cpp
+// Generate all 2^N combinations
+auto scenarios = ScenarioGenerator::generate_all_combinations(
+    {"LED", "Process", "Solar"},  // 3 actions → 8 scenarios
+    14,  // base scenario ID
+    "TEST_L14"
+);
+// Generates: Base, LED, Process, LED+Process, Solar, LED+Solar, Process+Solar, All
+
+// For MAC analysis: Generate only N+1 scenarios (diagonal analysis)
+auto mac_scenarios = ScenarioGenerator::generate_for_mac_analysis(
+    {"MAC_LED", "MAC_PROCESS", "MAC_SOLAR"},  // 3 actions → 4 scenarios
+    40,  // base scenario ID
+    "MAC"
+);
+// Generates: Base, MAC_LED, MAC_PROCESS, MAC_SOLAR (singles only)
+```
+
+**5. MAC Curve Analysis (Level 17 - The Crown Jewel)**
+```cpp
+// Add is_mac_relevant flag to actions
+ALTER TABLE management_action ADD COLUMN is_mac_relevant INTEGER DEFAULT 0;
+
+// Mark actions for MAC analysis
+UPDATE management_action SET is_mac_relevant = 1
+WHERE action_code IN ('MAC_LED', 'MAC_PROCESS', 'MAC_SOLAR');
+
+// Generate N+1 scenarios (base + N single-action)
+auto scenarios = ScenarioGenerator::generate_for_mac_analysis(actions, 40, "MAC");
+
+// Force all actions to start at period 1 (MAC special case)
+INSERT INTO scenario_action (..., start_period, ...) VALUES (..., 1, ...);
+
+// Run scenarios and measure actual emission reductions
+for (const auto& config : scenarios) {
+    auto result = runner.run_periods(entity_id, config.scenario_id, {1}, ...);
+    double emissions = result.results[0].get_value("TOTAL_EMISSIONS");
+}
+
+// Calculate MAC = (CAPEX/amortization + OPEX_annual) / emission_reduction
+double mac = (capex / 10.0 + opex_annual) / (baseline - action_emissions);
+
+// Sort by cost-effectiveness (most negative first)
+std::sort(mac_results.begin(), mac_results.end(),
+    [](const auto& a, const auto& b) { return a.mac < b.mac; });
+```
+
+**MAC Curve Results Example:**
+```
+Action         | Reduction | CAPEX  | OPEX/yr | MAC (CHF/tCO2e)
+---------------|-----------|--------|---------|----------------
+MAC_LED        |    30.0   |   50k  | -10000  |      -166.67  ← Most cost-effective!
+MAC_PROCESS    |  1000.0   |  100k  | -15000  |        -5.00  ← Also saves money
+MAC_SOLAR      |  1500.0   |  800k  |   5000  |        56.67  ← Costs money
+
+Total Potential: 2530.0 tCO2e
+```
+
+#### The 13-Level Testing Pyramid:
+
+**Levels 1-12:** Foundation (Unit conversion, FX, Carbon basics, Financial integration)
+- Unit system with bidirectional conversions
+- Multi-currency FX conversion with time-varying rates
+- Carbon accounting (Scope 1/2/3, prices, allowances)
+
+**Level 13:** Single Unconditional Action
+- Basic action activation
+- Template cloning and transformation
+- Financial formula overrides
+
+**Level 14:** Multiple Actions (2^N Combinations)
+- Automated scenario generation (8 scenarios from 3 actions)
+- Staggered start periods (LED P3, Process P6, Solar P9)
+- ScenarioGenerator for combinatorial explosion
+
+**Level 15:** Conditional & Time-Based Triggers
+- CONDITIONAL: Activates when `NET_INCOME <= threshold`
+- TIMED: Activates exactly at specified period, with optional end_period
+- Sticky vs non-sticky evaluation
+
+**Level 16:** Transformation Types
+- multiply: `OpEx * 0.9`
+- add: `OpEx + 50000`
+- formula_override: `OpEx = 250000`
+- Design decision: Avoid "reduce" type to prevent circular dependencies
+
+**Level 17:** MAC Curve from Scenario Execution
+- Generate N+1 scenarios (base + singles)
+- Force all actions to period 1
+- Run actual scenarios
+- Measure real emission reductions
+- Calculate cost-effectiveness (CHF/tCO2e)
+- Export MAC waterfall for visualization
+
+#### Key Design Principles:
+
+**1. Formula Override Philosophy**
+Always use `formula_override` instead of additive/subtractive transformations:
+```cpp
+// ✅ GOOD: Explicit absolute value
+{"line_item": "SCOPE2_EMISSIONS", "type": "formula_override", "new_formula": "1470"}
+
+// ❌ BAD: Creates circular dependency
+{"line_item": "SCOPE2_EMISSIONS", "type": "reduce", "amount": 30}
+// Would become: SCOPE2_EMISSIONS = SCOPE2_EMISSIONS - 30 → Self-reference!
+```
+
+**2. MAC Special Case**
+MAC analysis requires forcing all actions to start at period 1:
+```cpp
+// Normal action (user-specified timing)
+start_period = 3  // LED activates in period 3
+
+// MAC analysis (forced timing)
+start_period = 1  // ALL actions forced to period 1 for cost comparison
+```
+
+**3. ScenarioGenerator Efficiency**
+```cpp
+// Full combinations: O(2^N) scenarios
+generate_all_combinations(3 actions) → 8 scenarios
+
+// MAC diagonal: O(N+1) scenarios
+generate_for_mac_analysis(3 actions) → 4 scenarios
+
+// For N=10 actions:
+// Full: 1024 scenarios (too expensive)
+// MAC:   11 scenarios (practical!)
+```
+
+#### Database Schema Additions:
+
+**management_action table:**
+```sql
+CREATE TABLE management_action (
+    action_code TEXT PRIMARY KEY,
+    action_name TEXT NOT NULL,
+    action_category TEXT,  -- EFFICIENCY, TECHNOLOGY, PROCESS
+    description TEXT,
+    is_mac_relevant INTEGER DEFAULT 0  -- New in M8!
+);
+```
+
+**scenario_action table:**
+```sql
+CREATE TABLE scenario_action (
+    scenario_action_id INTEGER PRIMARY KEY,
+    scenario_id INTEGER,
+    action_code TEXT,
+    trigger_type TEXT CHECK (trigger_type IN ('UNCONDITIONAL', 'CONDITIONAL', 'TIMED')),
+    trigger_condition TEXT,  -- e.g., "NET_INCOME <= 250000"
+    trigger_period INTEGER,
+    start_period INTEGER,
+    end_period INTEGER,  -- Optional: action deactivates after this period
+    capex REAL,
+    opex_annual REAL,
+    emission_reduction_annual REAL,
+    financial_transformations TEXT,  -- JSON
+    carbon_transformations TEXT  -- JSON
+);
+```
+
+#### Files Created (M8):
+
+**Core Engine:**
+- `engine/include/actions/action_engine.h` (204 lines)
+- `engine/src/actions/action_engine.cpp` (337 lines)
+- `engine/include/orchestration/period_runner.h` (118 lines)
+- `engine/src/orchestration/period_runner.cpp` (294 lines)
+- `engine/include/orchestration/scenario_generator.h` (117 lines)
+- `engine/src/orchestration/scenario_generator.cpp` (150 lines)
+
+**Unit System:**
+- `engine/include/unit/unit_converter.h` (134 lines)
+- `engine/src/unit/unit_converter.cpp` (245 lines)
+- `engine/include/unit/fx_provider.h` (89 lines)
+- `engine/src/unit/fx_provider.cpp` (156 lines)
+
+**Carbon Accounting:**
+- `engine/include/carbon/carbon_engine.h` (142 lines)
+- `engine/src/carbon/carbon_engine.cpp` (198 lines)
+- `engine/include/carbon/mac_curve_engine.h` (156 lines)
+- `engine/src/carbon/mac_curve_engine.cpp` (203 lines)
+
+**Unified Statement Engine:**
+- `engine/include/unified/unified_engine.h` (189 lines)
+- `engine/src/unified/unified_engine.cpp` (416 lines)
+
+**Test Suite (13 Levels):**
+- `engine/tests/test_level1.cpp` through `test_level17_mac_from_scenarios.cpp`
+- Total: 17 test files, 200+ test cases, 1000+ assertions
+
+**Migration Scripts:**
+- `scripts/migrate_add_unit_system.sh`
+- `scripts/migrate_add_carbon_statement.sh`
+- `scripts/migrate_add_management_actions.sh`
+- `scripts/migrate_add_action_triggers.sh`
+- `scripts/migrate_add_mac_flag.sh`
+
+#### Test Results:
+
+✅ **Level 17 (MAC from Scenarios)**: 17 assertions, all pass
+✅ **Level 16 (Transformation Types)**: All transformation types validated
+✅ **Level 15 (Conditional Triggers)**: CONDITIONAL and TIMED triggers working
+✅ **Level 14 (Multiple Actions)**: 2^3 = 8 scenarios with staggered timing
+✅ **Level 11 (Unit Conversion)**: 50+ unit conversion tests pass
+✅ **Level 12 (FX Conversion)**: Multi-currency scenarios validated
+✅ **Level 9-10 (Carbon)**: Scope 1/2/3 emissions, carbon pricing
+
+**Total Test Coverage:** 117+ test cases passing, 1000+ assertions
+
+#### What Makes M8 Special:
+
+**1. Progressive Testing Strategy**
+Each level builds on the previous, creating a robust pyramid of functionality:
+```
+Level 17: MAC Analysis              ← Crown jewel
+  Level 16: Transformation Types    ← Building blocks
+    Level 15: Conditional Triggers  ← Business logic
+      Level 14: 2^N Combinations    ← Combinatorics
+        Level 13: Single Action     ← Foundation
+```
+
+**2. Real Scenario Execution (Not Metadata)**
+MAC analysis runs actual scenarios and measures real emission reductions, not estimated values:
+```cpp
+// ❌ Metadata approach (less accurate)
+mac = (capex / 10 + opex) / emission_reduction_annual;
+
+// ✅ Actual execution approach (what we do)
+baseline_emissions = run_scenario(BASE);
+action_emissions = run_scenario(BASE + ACTION);
+actual_reduction = baseline_emissions - action_emissions;
+mac = (capex / 10 + opex) / actual_reduction;
+```
+
+**3. Template-Driven Everything**
+Actions don't modify code - they modify templates:
+```
+Original Template → Action Activates → Clone Template → Apply Transformations → New Template
+```
+
+This means:
+- Base template remains untouched
+- Each scenario gets its own modified template
+- Full audit trail of what changed
+- Can replay historical scenarios exactly
+
+**4. Extensibility via JSON**
+Everything is configurable without C++ changes:
+```json
+{
+  "action_code": "CUSTOM_ACTION",
+  "trigger_type": "CONDITIONAL",
+  "trigger_condition": "EBITDA > 1000000 AND EMISSIONS > 5000",
+  "financial_transformations": [...],
+  "carbon_transformations": [...]
+}
+```
+
+#### The Big Picture (M1-M8):
+
+We now have a **complete sustainability-aware financial modeling system**:
+
+✅ **Financial Statements** (M1-M6): P&L, Balance Sheet, Cash Flow
+✅ **Multi-Period Runner** (M7): Orchestrates calculations across time
+✅ **Unit System** (M8): Multi-unit, multi-currency support
+✅ **Carbon Accounting** (M8): Scope 1/2/3 emissions tracking
+✅ **Management Actions** (M8): Dynamic template modification
+✅ **Conditional Logic** (M8): Business-driven action triggers
+✅ **Portfolio Analysis** (M8): 2^N scenario combinations
+✅ **MAC Curves** (M8): Cost-effectiveness ranking of abatement actions
+
+**What's Next?**
+
+Phase A is essentially complete! The system can now:
+- Model complex financial scenarios
+- Track emissions alongside financials
+- Evaluate sustainability initiatives
+- Generate MAC curves for decision support
+- Handle multi-unit, multi-currency data
+
+Next steps:
+- **Professional GUI** (M9-M10): Better than Power BI dashboards
+- **Template Editor** (M10): No-code financial model customization
+- **Production Deployment** (M11): AWS infrastructure
+
+Then Phase B (Portfolio Modeling):
+- Recursive scenario modeling
+- Credit risk integration
+- Stochastic simulation
+- Portfolio optimization
 
 ---
 
