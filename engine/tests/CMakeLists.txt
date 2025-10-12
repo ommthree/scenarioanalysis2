@@ -46,6 +46,7 @@ set(TEST_SOURCES
     test_level14_multiple_actions.cpp
     test_level15_conditional_triggers.cpp
     test_level16_transformation_types.cpp
+    test_level17_mac_from_scenarios.cpp
     test_scenario_generator.cpp
     test_carbon.cpp
     test_mac_curves.cpp
@@ -104,6 +105,7 @@ add_test(NAME Level13Tests COMMAND run_tests "[level13]" WORKING_DIRECTORY ${CMA
 add_test(NAME Level14Tests COMMAND run_tests "[level14]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level15Tests COMMAND run_tests "[level15]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level16Tests COMMAND run_tests "[level16]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level17Tests COMMAND run_tests "[level17]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME CarbonTests COMMAND run_tests "[carbon]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME MACCurveTests COMMAND run_tests "[mac]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME IntegrationTests COMMAND run_tests "[integration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

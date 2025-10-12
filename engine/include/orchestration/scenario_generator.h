@@ -76,6 +76,26 @@ public:
      */
     static int count_scenarios(int num_actions);
 
+    /**
+     * @brief Generate scenarios for MAC analysis (only single-action scenarios)
+     * @param action_codes List of action codes to analyze
+     * @param base_scenario_id Starting scenario ID
+     * @param base_code_prefix Prefix for scenario codes
+     * @return Vector of N+1 scenarios (base + N single-action scenarios)
+     *
+     * For MAC analysis, we only need:
+     * - 1 base scenario (no actions)
+     * - N scenarios with exactly one action each
+     *
+     * This avoids generating 2^N scenarios when we only need N+1.
+     * All actions will be configured to start at period 1 for MAC analysis.
+     */
+    static std::vector<ScenarioConfig> generate_for_mac_analysis(
+        const std::vector<std::string>& action_codes,
+        int base_scenario_id,
+        const std::string& base_code_prefix = "MAC_SCENARIO"
+    );
+
 private:
     /**
      * @brief Generate scenario name from active actions

@@ -77,6 +77,43 @@ int ScenarioGenerator::count_scenarios(int num_actions) {
     return 1 << num_actions;  // 2^num_actions
 }
 
+std::vector<ScenarioConfig> ScenarioGenerator::generate_for_mac_analysis(
+    const std::vector<std::string>& action_codes,
+    int base_scenario_id,
+    const std::string& base_code_prefix
+) {
+    std::vector<ScenarioConfig> scenarios;
+
+    // Scenario 0: Base (no actions)
+    ScenarioConfig base_config;
+    base_config.scenario_id = base_scenario_id;
+    base_config.code = base_code_prefix + "_BASE";
+    base_config.name = "Base";
+    base_config.description = "Baseline scenario with no actions (MAC reference)";
+    for (const auto& action_code : action_codes) {
+        base_config.action_flags[action_code] = false;
+    }
+    scenarios.push_back(base_config);
+
+    // Scenarios 1..N: One action each
+    for (size_t i = 0; i < action_codes.size(); i++) {
+        ScenarioConfig config;
+        config.scenario_id = base_scenario_id + 1 + i;
+        config.code = base_code_prefix + "_" + action_codes[i];
+        config.name = action_codes[i];
+        config.description = "MAC analysis: " + action_codes[i] + " only";
+
+        // Only this action is active
+        for (size_t j = 0; j < action_codes.size(); j++) {
+            config.action_flags[action_codes[j]] = (i == j);
+        }
+
+        scenarios.push_back(config);
+    }
+
+    return scenarios;
+}
+
 std::string ScenarioGenerator::generate_name(const std::vector<std::string>& active_actions) {
     if (active_actions.empty()) {
         return "Base";
