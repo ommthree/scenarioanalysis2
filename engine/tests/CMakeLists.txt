@@ -38,6 +38,17 @@ set(TEST_SOURCES
     test_level6.cpp
     test_level7.cpp
     test_level8.cpp
+    test_level9_carbon_basics.cpp
+    test_level10_carbon_financial.cpp
+    test_level11_unit_conversion.cpp
+    test_level12_fx_conversion.cpp
+    test_level13_single_action.cpp
+    test_level14_multiple_actions.cpp
+    test_level15_conditional_triggers.cpp
+    test_level16_transformation_types.cpp
+    test_scenario_generator.cpp
+    test_carbon.cpp
+    test_mac_curves.cpp
     test_integration.cpp
 )
 
@@ -85,6 +96,16 @@ add_test(NAME Level5Tests COMMAND run_tests "[level5]" WORKING_DIRECTORY ${CMAKE
 add_test(NAME Level6Tests COMMAND run_tests "[level6]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level7Tests COMMAND run_tests "[level7]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME Level8Tests COMMAND run_tests "[level8]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level9Tests COMMAND run_tests "[level9]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level10Tests COMMAND run_tests "[level10]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level11Tests COMMAND run_tests "[level11]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level12Tests COMMAND run_tests "[level12]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level13Tests COMMAND run_tests "[level13]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level14Tests COMMAND run_tests "[level14]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level15Tests COMMAND run_tests "[level15]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME Level16Tests COMMAND run_tests "[level16]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME CarbonTests COMMAND run_tests "[carbon]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+add_test(NAME MACCurveTests COMMAND run_tests "[mac]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME IntegrationTests COMMAND run_tests "[integration]" WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Coverage (optional)

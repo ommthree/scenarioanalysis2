@@ -81,6 +81,15 @@ public:
     void set_opening_values(const std::map<std::string, double>& opening_values);
 
     /**
+     * @brief Set previous period values from unified result (all statements)
+     * @param prior_values Map of line item code → value from all statements
+     *
+     * This allows [t-1] references to work for ANY statement type (P&L, BS, CF, Carbon).
+     * Replaces set_opening_values for unified multi-statement calculations.
+     */
+    void set_prior_period_values(const std::map<std::string, double>& prior_values);
+
+    /**
      * @brief Set context for database lookups
      * @param entity_id Entity identifier
      * @param scenario_id Scenario identifier

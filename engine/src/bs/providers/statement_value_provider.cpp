@@ -29,6 +29,11 @@ void StatementValueProvider::set_opening_values(const std::map<std::string, doub
     opening_values_ = opening_values;
 }
 
+void StatementValueProvider::set_prior_period_values(const std::map<std::string, double>& prior_values) {
+    // Merge into opening_values_ to support [t-1] references for all statement types
+    opening_values_ = prior_values;
+}
+
 void StatementValueProvider::set_context(const EntityID& entity_id, ScenarioID scenario_id) {
     entity_id_ = entity_id;
     scenario_id_ = scenario_id;

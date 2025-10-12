@@ -97,6 +97,26 @@ public:
     );
 
     /**
+     * @brief Serialize template to JSON string
+     * @return JSON representation of template
+     */
+    std::string to_json() const;
+
+    /**
+     * @brief Save template to database
+     * @param db Database connection
+     * @throws std::runtime_error on database errors
+     */
+    void save_to_database(finmodel::database::IDatabase* db);
+
+    /**
+     * @brief Clone this template with a new code
+     * @param new_code New template code
+     * @return Cloned template (not yet saved to database)
+     */
+    std::unique_ptr<StatementTemplate> clone(const std::string& new_code) const;
+
+    /**
      * @brief Get template code
      */
     const std::string& get_template_code() const { return template_code_; }
@@ -137,6 +157,21 @@ public:
      * @return Pointer to line item, or nullptr if not found
      */
     const LineItem* get_line_item(const std::string& code) const;
+
+    /**
+     * @brief Update formula for a line item (for template transformations)
+     * @param code Line item code
+     * @param new_formula New formula string
+     * @return true if line item found and updated
+     */
+    bool update_line_item_formula(const std::string& code, const std::string& new_formula);
+
+    /**
+     * @brief Clear base_value_source for a line item (converts driver-based to computed)
+     * @param code Line item code
+     * @return true if line item found and updated
+     */
+    bool clear_base_value_source(const std::string& code);
 
     /**
      * @brief Get calculation order (ordered list of line item codes)

@@ -10,11 +10,22 @@
 #include "database/result_set.h"
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <iostream>
 
 using json = nlohmann::json;
 
 namespace finmodel {
 namespace core {
+
+// Helper function for sign convention to string conversion
+static std::string sign_convention_to_string(SignConvention conv) {
+    switch (conv) {
+        case SignConvention::POSITIVE: return "positive";
+        case SignConvention::NEGATIVE: return "negative";
+        case SignConvention::NEUTRAL: return "neutral";
+        default: return "neutral";
+    }
+}
 
 std::unique_ptr<StatementTemplate> StatementTemplate::load_from_database(
     finmodel::database::IDatabase* db,
@@ -61,6 +72,25 @@ const LineItem* StatementTemplate::get_line_item(const std::string& code) const 
         return nullptr;
     }
     return &line_items_[it->second];
+}
+
+bool StatementTemplate::update_line_item_formula(const std::string& code, const std::string& new_formula) {
+    auto it = line_item_index_.find(code);
+    if (it == line_item_index_.end()) {
+        return false;
+    }
+    line_items_[it->second].formula = new_formula;
+    line_items_[it->second].is_computed = true;  // Mark as computed when formula is set
+    return true;
+}
+
+bool StatementTemplate::clear_base_value_source(const std::string& code) {
+    auto it = line_item_index_.find(code);
+    if (it == line_item_index_.end()) {
+        return false;
+    }
+    line_items_[it->second].base_value_source = std::nullopt;
+    return true;
 }
 
 void StatementTemplate::compute_calculation_order() {
@@ -217,6 +247,135 @@ void StatementTemplate::parse_json(const std::string& json_content) {
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Error parsing template JSON: ") + e.what());
     }
+}
+
+std::string StatementTemplate::to_json() const {
+    json j;
+
+    // Metadata
+    j["template_code"] = template_code_;
+    j["template_name"] = template_name_;
+    j["statement_type"] = statement_type_;
+    j["industry"] = industry_;
+    j["version"] = version_;
+    j["description"] = description_;
+
+    // Line items
+    json line_items_array = json::array();
+    for (const auto& item : line_items_) {
+        json item_json;
+        item_json["code"] = item.code;
+        item_json["display_name"] = item.display_name;
+        item_json["level"] = item.level;
+        item_json["driver_applicable"] = item.driver_applicable;
+        item_json["category"] = item.category;
+        item_json["is_computed"] = item.is_computed;
+
+        if (item.formula.has_value()) {
+            item_json["formula"] = item.formula.value();
+        }
+
+        if (item.base_value_source.has_value()) {
+            item_json["base_value_source"] = item.base_value_source.value();
+        }
+
+        if (item.driver_code.has_value()) {
+            item_json["driver_code"] = item.driver_code.value();
+        }
+
+        if (!item.dependencies.empty()) {
+            item_json["dependencies"] = item.dependencies;
+        }
+
+        // Sign convention
+        item_json["sign_convention"] = sign_convention_to_string(item.sign_convention);
+
+        line_items_array.push_back(item_json);
+    }
+    j["line_items"] = line_items_array;
+
+    // Validation rules (if any)
+    if (!validation_rules_.empty()) {
+        json rules_array = json::array();
+        for (const auto& rule : validation_rules_) {
+            json rule_json;
+            rule_json["rule_id"] = rule.rule_id;
+            rule_json["rule"] = rule.rule;
+            rule_json["severity"] = rule.severity;
+            rule_json["message"] = rule.message;
+            rules_array.push_back(rule_json);
+        }
+        j["validation_rules"] = rules_array;
+    }
+
+    return j.dump(2);  // Pretty print with 2-space indent
+}
+
+void StatementTemplate::save_to_database(finmodel::database::IDatabase* db) {
+    if (!db) {
+        throw std::runtime_error("Database pointer is null");
+    }
+
+    std::string json_str = to_json();
+
+    // Check if template already exists
+    auto check_result = db->execute_query(
+        "SELECT template_id FROM statement_template WHERE code = :code",
+        {{"code", template_code_}}
+    );
+
+    if (check_result->next()) {
+        // Update existing template
+        db->execute_update(
+            "UPDATE statement_template SET "
+            "json_structure = :json, "
+            "statement_type = :statement_type, "
+            "industry = :industry, "
+            "version = :version, "
+            "updated_at = datetime('now') "
+            "WHERE code = :code",
+            {
+                {"json", json_str},
+                {"statement_type", statement_type_},
+                {"industry", industry_},
+                {"version", version_},
+                {"code", template_code_}
+            }
+        );
+    } else {
+        // Insert new template
+        db->execute_update(
+            "INSERT INTO statement_template "
+            "(code, statement_type, industry, version, json_structure) "
+            "VALUES (:code, :statement_type, :industry, :version, :json)",
+            {
+                {"code", template_code_},
+                {"statement_type", statement_type_},
+                {"industry", industry_},
+                {"version", version_},
+                {"json", json_str}
+            }
+        );
+    }
+}
+
+std::unique_ptr<StatementTemplate> StatementTemplate::clone(const std::string& new_code) const {
+    // Serialize this template to JSON
+    std::string json_str = to_json();
+
+    // Parse it back
+    json j = json::parse(json_str);
+
+    // Change the template code
+    j["template_code"] = new_code;
+
+    // Optionally update the name to reflect it's a clone
+    if (j.contains("template_name")) {
+        j["template_name"] = j["template_name"].get<std::string>() + " (Clone: " + new_code + ")";
+    }
+
+    // Create new template from modified JSON
+    return load_from_json(j.dump());
 }
 
 } // namespace core

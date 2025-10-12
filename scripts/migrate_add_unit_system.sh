@@ -33,16 +33,17 @@ CREATE INDEX IF NOT EXISTS idx_unit_category ON unit_definition(unit_category);
 CREATE INDEX IF NOT EXISTS idx_conversion_type ON unit_definition(conversion_type);
 CREATE INDEX IF NOT EXISTS idx_unit_active ON unit_definition(is_active);
 
--- Add unit_code column to scenario_drivers (if not exists)
--- Check if column exists first
-SELECT CASE
-    WHEN COUNT(*) = 0 THEN 'ALTER TABLE scenario_drivers ADD COLUMN unit_code TEXT DEFAULT ''EUR'';'
-    ELSE 'SELECT ''Column already exists'';'
-END
-FROM pragma_table_info('scenario_drivers')
-WHERE name = 'unit_code';
-
 EOF
+
+echo "Adding unit_code column to scenario_drivers..."
+
+# Check if column exists, and add it if it doesn't
+sqlite3 "$DB_PATH" <<EOF
+-- Add unit_code column to scenario_drivers (if not exists)
+ALTER TABLE scenario_drivers ADD COLUMN unit_code TEXT DEFAULT 'CHF';
+EOF
+
+echo "  ✓ unit_code column added with default 'CHF'"
 
 echo "Populating unit definitions..."
 
@@ -69,24 +70,24 @@ INSERT OR IGNORE INTO unit_definition VALUES
  'Pounds of CO2 equivalent (US)', 1, datetime('now'));
 
 -- ============================================================================
--- CURRENCY UNITS (Base: EUR)
+-- CURRENCY UNITS (Base: CHF)
 -- ============================================================================
 
 INSERT OR IGNORE INTO unit_definition VALUES
-('EUR', 'Euro', 'CURRENCY', 'STATIC', 1.0, 'EUR', '€',
- 'Base currency - Euro', 1, datetime('now')),
+('CHF', 'Swiss Franc', 'CURRENCY', 'STATIC', 1.0, 'CHF', 'CHF',
+ 'Base currency - Swiss Franc', 1, datetime('now')),
 
-('USD', 'US Dollar', 'CURRENCY', 'TIME_VARYING', NULL, 'EUR', '\$',
+('EUR', 'Euro', 'CURRENCY', 'TIME_VARYING', NULL, 'CHF', '€',
+ 'Euro - requires FX rate lookup', 1, datetime('now')),
+
+('USD', 'US Dollar', 'CURRENCY', 'TIME_VARYING', NULL, 'CHF', '\$',
  'US Dollar - requires FX rate lookup', 1, datetime('now')),
 
-('GBP', 'British Pound', 'CURRENCY', 'TIME_VARYING', NULL, 'EUR', '£',
+('GBP', 'British Pound', 'CURRENCY', 'TIME_VARYING', NULL, 'CHF', '£',
  'British Pound - requires FX rate lookup', 1, datetime('now')),
 
-('JPY', 'Japanese Yen', 'CURRENCY', 'TIME_VARYING', NULL, 'EUR', '¥',
- 'Japanese Yen - requires FX rate lookup', 1, datetime('now')),
-
-('CHF', 'Swiss Franc', 'CURRENCY', 'TIME_VARYING', NULL, 'EUR', 'CHF',
- 'Swiss Franc - requires FX rate lookup', 1, datetime('now'));
+('JPY', 'Japanese Yen', 'CURRENCY', 'TIME_VARYING', NULL, 'CHF', '¥',
+ 'Japanese Yen - requires FX rate lookup', 1, datetime('now'));
 
 -- ============================================================================
 -- MASS UNITS (Base: kg)

@@ -26,13 +26,15 @@ namespace core {
  *
  * Grammar (Recursive Descent):
  * @code
- * expression → term (('+' | '-') term)*
- * term       → power (('*' | '/') power)*
- * power      → factor ('^' factor)?
- * factor     → number | '(' expression ')' | function | variable | unary_minus
- * function   → identifier '(' expression (',' expression)* ')'
- * variable   → identifier ('[' time_ref ']')?
- * time_ref   → 't' | 't-1' | 't-2' | 't+1'
+ * expression   → comparison
+ * comparison   → arithmetic (('<' | '<=' | '>' | '>=' | '==' | '!=') arithmetic)?
+ * arithmetic   → term (('+' | '-') term)*
+ * term         → power (('*' | '/') power)*
+ * power        → factor ('^' factor)?
+ * factor       → number | '(' expression ')' | function | variable | unary_minus
+ * function     → identifier '(' expression (',' expression)* ')'
+ * variable     → identifier ('[' time_ref ']')?
+ * time_ref     → 't' | 't-1' | 't-2' | 't+1'
  * @endcode
  *
  * Example Usage:
@@ -95,10 +97,22 @@ private:
     // ========================================================================
 
     /**
-     * @brief Parse addition/subtraction expression
-     * expression → term (('+' | '-') term)*
+     * @brief Parse top-level expression (delegates to comparison)
+     * expression → comparison
      */
     double parse_expression();
+
+    /**
+     * @brief Parse comparison expression
+     * comparison → arithmetic (('<' | '<=' | '>' | '>=' | '==' | '!=') arithmetic)?
+     */
+    double parse_comparison();
+
+    /**
+     * @brief Parse addition/subtraction expression
+     * arithmetic → term (('+' | '-') term)*
+     */
+    double parse_arithmetic();
 
     /**
      * @brief Parse multiplication/division term

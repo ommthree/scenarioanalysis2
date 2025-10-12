@@ -104,6 +104,22 @@ struct UnifiedResult {
      * @return Cash Flow statement structure
      */
     CashFlowStatement extract_cash_flow() const;
+
+    /**
+     * @brief Extract Carbon Statement result
+     * @return Map of carbon line items (code → value in tCO2e)
+     */
+    std::map<std::string, double> extract_carbon_result() const;
+
+    /**
+     * @brief Get all line item values (all statements)
+     * @return Map of all line item codes → values
+     *
+     * Used by PeriodRunner to roll forward ALL values (not just BS) for [t-1] references.
+     */
+    const std::map<std::string, double>& get_all_values() const {
+        return line_items;
+    }
 };
 
 /**
@@ -146,6 +162,15 @@ public:
      * @return Validation result with errors/warnings
      */
     ValidationResult validate(const UnifiedResult& result, const std::string& template_code, const core::Context& ctx);
+
+    /**
+     * @brief Set prior period values for [t-1] references (all statements)
+     * @param prior_values Map of line item code → value from previous period
+     *
+     * This allows formulas to reference ANY previous period value using [t-1] syntax,
+     * not just balance sheet items. Supports carbon rollforward: CARBON_ALLOWANCES_HELD[t-1]
+     */
+    void set_prior_period_values(const std::map<std::string, double>& prior_values);
 
 private:
     std::shared_ptr<database::IDatabase> db_;

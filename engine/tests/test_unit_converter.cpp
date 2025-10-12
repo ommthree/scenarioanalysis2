@@ -153,6 +153,7 @@ TEST_CASE("UnitConverter - Validation and error handling", "[unit][error]") {
     SECTION("Valid unit check") {
         REQUIRE(converter.is_valid_unit("tCO2e"));
         REQUIRE(converter.is_valid_unit("kgCO2e"));
+        REQUIRE(converter.is_valid_unit("CHF"));
         REQUIRE(converter.is_valid_unit("EUR"));
         REQUIRE_FALSE(converter.is_valid_unit("INVALID"));
     }
@@ -160,7 +161,8 @@ TEST_CASE("UnitConverter - Validation and error handling", "[unit][error]") {
     SECTION("Time-varying check") {
         REQUIRE_FALSE(converter.is_time_varying("tCO2e"));
         REQUIRE_FALSE(converter.is_time_varying("kgCO2e"));
-        REQUIRE_FALSE(converter.is_time_varying("EUR"));  // EUR is base, static
+        REQUIRE_FALSE(converter.is_time_varying("CHF"));  // CHF is base, static
+        REQUIRE(converter.is_time_varying("EUR"));
         REQUIRE(converter.is_time_varying("USD"));
         REQUIRE(converter.is_time_varying("GBP"));
     }
@@ -173,6 +175,7 @@ TEST_CASE("UnitConverter - Metadata queries", "[unit][metadata]") {
     SECTION("Display symbols") {
         REQUIRE(converter.get_display_symbol("tCO2e") == "tCO2e");
         REQUIRE(converter.get_display_symbol("kgCO2e") == "kg");
+        REQUIRE(converter.get_display_symbol("CHF") == "CHF");
         REQUIRE(converter.get_display_symbol("EUR") == "€");
         REQUIRE(converter.get_display_symbol("USD") == "$");
         REQUIRE(converter.get_display_symbol("GBP") == "£");
@@ -180,7 +183,7 @@ TEST_CASE("UnitConverter - Metadata queries", "[unit][metadata]") {
 
     SECTION("Base units by category") {
         REQUIRE(converter.get_base_unit("CARBON") == "tCO2e");
-        REQUIRE(converter.get_base_unit("CURRENCY") == "EUR");
+        REQUIRE(converter.get_base_unit("CURRENCY") == "CHF");
         REQUIRE(converter.get_base_unit("MASS") == "kg");
         REQUIRE(converter.get_base_unit("ENERGY") == "kWh");
     }
@@ -188,6 +191,7 @@ TEST_CASE("UnitConverter - Metadata queries", "[unit][metadata]") {
     SECTION("Unit category") {
         REQUIRE(converter.get_category("tCO2e") == "CARBON");
         REQUIRE(converter.get_category("kgCO2e") == "CARBON");
+        REQUIRE(converter.get_category("CHF") == "CURRENCY");
         REQUIRE(converter.get_category("EUR") == "CURRENCY");
         REQUIRE(converter.get_category("kg") == "MASS");
         REQUIRE(converter.get_category("MWh") == "ENERGY");
@@ -200,49 +204,62 @@ TEST_CASE("UnitConverter - Time-varying (currency) with FXProvider", "[unit][tim
     // Create FXProvider with test data
     auto fx_provider = std::make_shared<FXProvider>(db);
 
-    // Insert test FX rates (using scenario_id = 1)
+    // Insert test FX rates (using scenario_id = 1, base currency CHF)
     db->execute_update(R"(
         INSERT OR REPLACE INTO fx_rate (scenario_id, from_currency, to_currency, period_id, rate)
         VALUES
-        (1, 'USD', 'EUR', 1, 0.85),
-        (1, 'USD', 'EUR', 2, 0.87),
-        (1, 'USD', 'EUR', 3, 0.88),
-        (1, 'GBP', 'EUR', 1, 1.15),
-        (1, 'GBP', 'EUR', 2, 1.16),
-        (1, 'GBP', 'EUR', 3, 1.17)
+        (1, 'USD', 'CHF', 1, 0.92),
+        (1, 'USD', 'CHF', 2, 0.94),
+        (1, 'USD', 'CHF', 3, 0.95),
+        (1, 'EUR', 'CHF', 1, 1.08),
+        (1, 'EUR', 'CHF', 2, 1.09),
+        (1, 'EUR', 'CHF', 3, 1.10),
+        (1, 'GBP', 'CHF', 1, 1.25),
+        (1, 'GBP', 'CHF', 2, 1.26),
+        (1, 'GBP', 'CHF', 3, 1.27)
     )", {});
 
     UnitConverter converter(db, fx_provider);
 
-    SECTION("Base currency (EUR) - static") {
-        // EUR is base currency, should be static
-        REQUIRE(converter.to_base_unit(100.0, "EUR") == Approx(100.0));
-        REQUIRE_FALSE(converter.is_time_varying("EUR"));
+    SECTION("Base currency (CHF) - static") {
+        // CHF is base currency, should be static
+        REQUIRE(converter.to_base_unit(100.0, "CHF") == Approx(100.0));
+        REQUIRE_FALSE(converter.is_time_varying("CHF"));
     }
 
-    SECTION("USD to EUR - period 1") {
-        // $100 @ rate 0.85 = €85
-        REQUIRE(converter.to_base_unit(100.0, "USD", 1) == Approx(85.0));
+    SECTION("USD to CHF - period 1") {
+        // $100 @ rate 0.92 = CHF 92
+        REQUIRE(converter.to_base_unit(100.0, "USD", 1) == Approx(92.0));
     }
 
-    SECTION("USD to EUR - period 2 (rate changed)") {
-        // $100 @ rate 0.87 = €87
-        REQUIRE(converter.to_base_unit(100.0, "USD", 2) == Approx(87.0));
+    SECTION("USD to CHF - period 2 (rate changed)") {
+        // $100 @ rate 0.94 = CHF 94
+        REQUIRE(converter.to_base_unit(100.0, "USD", 2) == Approx(94.0));
     }
 
-    SECTION("USD to EUR - period 3") {
-        // $100 @ rate 0.88 = €88
-        REQUIRE(converter.to_base_unit(100.0, "USD", 3) == Approx(88.0));
+    SECTION("USD to CHF - period 3") {
+        // $100 @ rate 0.95 = CHF 95
+        REQUIRE(converter.to_base_unit(100.0, "USD", 3) == Approx(95.0));
     }
 
-    SECTION("GBP to EUR - period 1") {
-        // £100 @ rate 1.15 = €115
-        REQUIRE(converter.to_base_unit(100.0, "GBP", 1) == Approx(115.0));
+    SECTION("EUR to CHF - period 1") {
+        // €100 @ rate 1.08 = CHF 108
+        REQUIRE(converter.to_base_unit(100.0, "EUR", 1) == Approx(108.0));
     }
 
-    SECTION("GBP to EUR - period 2 (rate changed)") {
-        // £100 @ rate 1.16 = €116
-        REQUIRE(converter.to_base_unit(100.0, "GBP", 2) == Approx(116.0));
+    SECTION("EUR to CHF - period 2 (rate changed)") {
+        // €100 @ rate 1.09 = CHF 109
+        REQUIRE(converter.to_base_unit(100.0, "EUR", 2) == Approx(109.0));
+    }
+
+    SECTION("GBP to CHF - period 1") {
+        // £100 @ rate 1.25 = CHF 125
+        REQUIRE(converter.to_base_unit(100.0, "GBP", 1) == Approx(125.0));
+    }
+
+    SECTION("GBP to CHF - period 2 (rate changed)") {
+        // £100 @ rate 1.26 = CHF 126
+        REQUIRE(converter.to_base_unit(100.0, "GBP", 2) == Approx(126.0));
     }
 
     SECTION("Missing period_id for time-varying") {
@@ -253,12 +270,12 @@ TEST_CASE("UnitConverter - Time-varying (currency) with FXProvider", "[unit][tim
         );
     }
 
-    SECTION("From base unit (EUR to USD)") {
-        // €100 → USD in period 1: €100 / 0.85 = $117.647
-        REQUIRE(converter.from_base_unit(100.0, "USD", 1) == Approx(117.647).margin(0.001));
+    SECTION("From base unit (CHF to USD)") {
+        // CHF 100 → USD in period 1: CHF 100 / 0.92 = $108.696
+        REQUIRE(converter.from_base_unit(100.0, "USD", 1) == Approx(108.696).margin(0.001));
 
-        // €100 → USD in period 2: €100 / 0.87 = $114.943
-        REQUIRE(converter.from_base_unit(100.0, "USD", 2) == Approx(114.943).margin(0.001));
+        // CHF 100 → USD in period 2: CHF 100 / 0.94 = $106.383
+        REQUIRE(converter.from_base_unit(100.0, "USD", 2) == Approx(106.383).margin(0.001));
     }
 }
 

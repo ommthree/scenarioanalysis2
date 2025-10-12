@@ -8,6 +8,7 @@
 
 #include "core/ivalue_provider.h"
 #include "core/context.h"
+#include "core/unit_converter.h"
 #include "database/idatabase.h"
 #include "types/common_types.h"
 #include <memory>
@@ -40,8 +41,12 @@ public:
     /**
      * @brief Construct driver value provider
      * @param db Database interface for querying scenario_drivers
+     * @param unit_converter Unit converter for converting driver values to base units
      */
-    explicit DriverValueProvider(std::shared_ptr<database::IDatabase> db);
+    explicit DriverValueProvider(
+        std::shared_ptr<database::IDatabase> db,
+        std::shared_ptr<core::UnitConverter> unit_converter = nullptr
+    );
 
     /**
      * @brief Set context for driver lookups
@@ -78,11 +83,12 @@ public:
 
 private:
     std::shared_ptr<database::IDatabase> db_;
+    std::shared_ptr<core::UnitConverter> unit_converter_;
     EntityID entity_id_;
     ScenarioID scenario_id_;
     PeriodID period_id_;
 
-    // Cache: driver_code → value
+    // Cache: driver_code → value (in base units)
     mutable std::map<std::string, double> driver_cache_;
     mutable bool cache_loaded_;
 

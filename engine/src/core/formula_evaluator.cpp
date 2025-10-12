@@ -151,6 +151,51 @@ std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::strin
 // ============================================================================
 
 double FormulaEvaluator::parse_expression() {
+    return parse_comparison();
+}
+
+double FormulaEvaluator::parse_comparison() {
+    double left = parse_arithmetic();
+
+    skip_whitespace();
+    char c = peek();
+
+    // Check for comparison operators
+    if (c == '<' || c == '>' || c == '=' || c == '!') {
+        std::string op;
+        op += next();  // consume first character
+
+        // Check for two-character operators (<=, >=, ==, !=)
+        skip_whitespace();
+        if (peek() == '=') {
+            op += next();
+        }
+
+        double right = parse_arithmetic();
+
+        // Evaluate comparison (return 1.0 for true, 0.0 for false)
+        if (op == "<") {
+            return (left < right) ? 1.0 : 0.0;
+        } else if (op == "<=") {
+            return (left <= right) ? 1.0 : 0.0;
+        } else if (op == ">") {
+            return (left > right) ? 1.0 : 0.0;
+        } else if (op == ">=") {
+            return (left >= right) ? 1.0 : 0.0;
+        } else if (op == "==") {
+            return (left == right) ? 1.0 : 0.0;
+        } else if (op == "!=") {
+            return (left != right) ? 1.0 : 0.0;
+        } else if (op == "=") {
+            // Single '=' treated as comparison (not assignment)
+            return (left == right) ? 1.0 : 0.0;
+        }
+    }
+
+    return left;
+}
+
+double FormulaEvaluator::parse_arithmetic() {
     double result = parse_term();
 
     while (peek() == '+' || peek() == '-') {

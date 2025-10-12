@@ -5,6 +5,8 @@
 
 #include "unified/unified_engine.h"
 #include "database/result_set.h"
+#include "core/unit_converter.h"
+#include "fx/fx_provider.h"
 #include <stdexcept>
 #include <sstream>
 #include <cmath>
@@ -20,8 +22,14 @@ UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
         throw std::runtime_error("UnifiedEngine: null database pointer");
     }
 
+    // Create FX provider for time-varying currency conversions
+    auto fx_provider = std::make_shared<fx::FXProvider>(db_);
+
+    // Create unit converter with FX provider for driver value conversion
+    auto unit_converter = std::make_shared<core::UnitConverter>(db_, fx_provider);
+
     // Initialize value providers
-    driver_provider_ = std::make_unique<DriverValueProvider>(db_);
+    driver_provider_ = std::make_unique<DriverValueProvider>(db_, unit_converter);
     statement_provider_ = std::make_unique<bs::StatementValueProvider>(db_);
 
     // Initialize validation rule engine
@@ -244,6 +252,46 @@ CashFlowStatement UnifiedResult::extract_cash_flow() const {
     }
 
     return cf;
+}
+
+std::map<std::string, double> UnifiedResult::extract_carbon_result() const {
+    std::map<std::string, double> carbon_items;
+
+    // Extract all carbon-related line items
+    // Carbon line items typically start with SCOPE or contain EMISSIONS/CARBON
+    const std::vector<std::string> carbon_codes = {
+        // Scope 1
+        "SCOPE1_TOTAL", "SCOPE1_STATIONARY", "SCOPE1_MOBILE",
+        "SCOPE1_PROCESS", "SCOPE1_FUGITIVE",
+        // Scope 2
+        "SCOPE2_TOTAL", "SCOPE2_ELECTRICITY", "SCOPE2_STEAM",
+        // Scope 3
+        "SCOPE3_TOTAL", "SCOPE3_UPSTREAM", "SCOPE3_DOWNSTREAM", "SCOPE3_OTHER",
+        // Totals and calculations
+        "GROSS_EMISSIONS", "CARBON_REMOVALS", "CARBON_OFFSETS",
+        "NET_EMISSIONS", "EMISSIONS_INTENSITY_REVENUE", "BIOGENIC_EMISSIONS"
+    };
+
+    for (const auto& code : carbon_codes) {
+        if (has_value(code)) {
+            carbon_items[code] = get_value(code);
+        }
+    }
+
+    // Also copy any other items that weren't in the list
+    for (const auto& [code, value] : line_items) {
+        if (code.find("SCOPE") != std::string::npos ||
+            code.find("EMISSIONS") != std::string::npos ||
+            code.find("CARBON") != std::string::npos) {
+            carbon_items[code] = value;
+        }
+    }
+
+    return carbon_items;
+}
+
+void UnifiedEngine::set_prior_period_values(const std::map<std::string, double>& prior_values) {
+    statement_provider_->set_prior_period_values(prior_values);
 }
 
 } // namespace unified

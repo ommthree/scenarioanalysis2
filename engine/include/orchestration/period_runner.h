@@ -16,6 +16,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <set>
 #include <string>
 
 namespace finmodel {
@@ -136,6 +137,52 @@ public:
 private:
     std::shared_ptr<database::IDatabase> db_;
     std::unique_ptr<unified::UnifiedEngine> engine_;
+
+    // Track triggered conditional actions per scenario (sticky triggers)
+    std::map<ScenarioID, std::set<std::string>> triggered_actions_;
+
+    /**
+     * @brief Determine which template to use for a given period
+     * @param scenario_id Scenario identifier
+     * @param period_id Current period
+     * @param base_template_code Base template code (no actions)
+     * @param prior_values Prior period values for conditional evaluation
+     * @return Template code to use for this period
+     *
+     * This method:
+     * 1. Queries scenario_action for actions applicable to this period
+     * 2. Evaluates trigger conditions (for CONDITIONAL actions)
+     * 3. Determines active action set based on triggers + timing
+     * 4. Returns appropriate template code (creates if needed)
+     *
+     * Template naming convention:
+     * - Base: "TEMPLATE_NAME"
+     * - With actions: "TEMPLATE_NAME_S{scenario_id}_P{period_id}_A{action_codes}"
+     *   Example: "TEST_UNIFIED_L10_S14_P5_A_LED_SOLAR"
+     */
+    std::string get_template_for_period(
+        ScenarioID scenario_id,
+        PeriodID period_id,
+        const std::string& base_template_code,
+        const std::map<std::string, double>& prior_values
+    );
+
+    /**
+     * @brief Create or retrieve cached template for action combination
+     * @param base_template_code Base template to clone
+     * @param scenario_id Scenario identifier
+     * @param period_id Period identifier
+     * @param active_actions List of actions to apply
+     * @return Template code for the combined actions
+     *
+     * Caches templates in database to avoid recreating identical combinations.
+     */
+    std::string create_or_get_action_template(
+        const std::string& base_template_code,
+        ScenarioID scenario_id,
+        PeriodID period_id,
+        const std::vector<std::string>& active_action_codes
+    );
 };
 
 } // namespace orchestration
