@@ -10,7 +10,8 @@ import {
   Settings,
   GitBranch,
   Menu,
-  ChevronDown
+  ChevronDown,
+  ArrowRightLeft
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -55,9 +56,11 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
     {
       title: 'Inputs',
       items: [
-        { path: '/inputs/statements', icon: FileJson, label: 'Statements' },
+        { path: '/inputs/statements', icon: FileJson, label: 'Load Statements' },
+        { path: '/inputs/map-statements', icon: ArrowRightLeft, label: 'Map Statements' },
         { path: '/inputs/scenarios', icon: List, label: 'Scenarios' },
-        { path: '/inputs/damage-curves', icon: Cloud, label: 'Damage Curves' },
+        { path: '/inputs/damage-curves', icon: Cloud, label: 'Load Damage Curves' },
+        { path: '/inputs/map-damage-curves', icon: ArrowRightLeft, label: 'Map Damage Curves' },
       ]
     },
     {

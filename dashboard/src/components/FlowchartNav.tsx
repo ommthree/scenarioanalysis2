@@ -149,7 +149,7 @@ export default function FlowchartNav({ onNavigate }: FlowchartNavProps = {}) {
         ringClass: 'ring-cyan-500/20',
         iconClass: 'text-cyan-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
-        onClick: () => handleNodeClick('/inputs/statements'),
+        onClick: () => handleNodeClick('/inputs/map-statements'),
       },
     },
     {
@@ -164,7 +164,7 @@ export default function FlowchartNav({ onNavigate }: FlowchartNavProps = {}) {
         ringClass: 'ring-cyan-500/20',
         iconClass: 'text-cyan-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
-        onClick: () => handleNodeClick('/inputs/damage-curves'),
+        onClick: () => handleNodeClick('/inputs/map-damage-curves'),
       },
     },
 

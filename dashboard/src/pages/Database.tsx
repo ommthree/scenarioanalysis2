@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Database as DatabaseIcon, FolderOpen, Check, X } from 'lucide-react'
+import { Database as DatabaseIcon, Check, X, FolderOpen } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 export default function Database() {
-  const [dbPath, setDbPath] = useState(localStorage.getItem('lastDatabasePath') || '/Users/Owen/finmodel_data/production.db')
+  const [dbPath, setDbPath] = useState(localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db')
   const [isSaved, setIsSaved] = useState(false)
   const [isValid, setIsValid] = useState<boolean | null>(null)
   const [isChecking, setIsChecking] = useState(false)
@@ -43,19 +43,26 @@ export default function Database() {
   }, [dbPath])
 
   const handleBrowse = () => {
-    // Create a hidden file input element
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.db,.sqlite,.sqlite3'
+    // @ts-ignore - webkitdirectory is not in TypeScript types
+    input.webkitdirectory = false
 
-    input.onchange = (e: Event) => {
+    input.onchange = async (e: Event) => {
       const target = e.target as HTMLInputElement
       const file = target.files?.[0]
       if (file) {
-        // In a browser, we can't get the full path due to security restrictions
-        // In a real desktop app (Electron/Tauri), you'd get the full path from the file handle
-        // For now, use the filename with a placeholder path
-        setDbPath(`/Users/Owen/finmodel_data/${file.name}`)
+        // Try to get full path from various sources
+        const fullPath = (file as any).path || (file as any).webkitRelativePath || file.name
+
+        // If we only got the filename, check if it exists in the default location
+        if (!fullPath.includes('/')) {
+          const defaultPath = `/Users/Owen/ScenarioAnalysis2/data/database/${fullPath}`
+          setDbPath(defaultPath)
+        } else {
+          setDbPath(fullPath)
+        }
         setIsSaved(false)
       }
     }
@@ -157,10 +164,8 @@ export default function Database() {
                 onClick={handleSave}
                 disabled={!isValid || isChecking}
                 style={{
-                  width: 'auto',
+                  width: '220px',
                   height: '44px',
-                  paddingLeft: '32px',
-                  paddingRight: '32px',
                   backgroundColor: isSaved ? '#10b981' : (isValid ? '#2563eb' : '#6b7280'),
                   border: 'none',
                   boxShadow: 'none',
@@ -171,14 +176,7 @@ export default function Database() {
                   display: 'block'
                 }}
               >
-                {isSaved ? (
-                  <>
-                    <Check className="w-5 h-5 mr-2" />
-                    Saved!
-                  </>
-                ) : (
-                  'Save Database Path'
-                )}
+                {isSaved ? 'Saved!' : 'Save Database Path'}
               </Button>
             </div>
           </CardContent>
