@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 export default function Dashboard() {
   return (
     <div className="p-12 max-w-7xl mx-auto">
-      <div className="mb-12">
+      <div className="mb-12" style={{ marginLeft: '1.5rem' }}>
         <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground mt-2">Scenario Analysis Control Center</p>
       </div>

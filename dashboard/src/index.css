@@ -136,7 +136,7 @@
   }
 }
 
-/* React Flow arrow markers */
+/* React Flow arrow markers - stop flashing */
 .react-flow__edge-path {
   stroke: #3b82f6 !important;
   stroke-width: 4 !important;
@@ -149,4 +149,35 @@
 marker path {
   fill: #3b82f6 !important;
   stroke: #3b82f6 !important;
+}
+
+/* Stop animated marker flashing - disable animation on edges */
+.react-flow__edge.animated path {
+  stroke-dasharray: 5;
+  animation: dashdraw 0.5s linear infinite;
+}
+
+.react-flow__edge.animated path.react-flow__edge-interaction {
+  stroke-dasharray: none;
+  animation: none;
+}
+
+/* Prevent marker recreation/flashing */
+marker {
+  overflow: visible !important;
+}
+
+/* Force markers to be always visible and not recreated */
+.react-flow__edges marker {
+  display: block !important;
+}
+
+.react-flow svg defs marker {
+  overflow: visible !important;
+}
+
+@keyframes dashdraw {
+  to {
+    stroke-dashoffset: -10;
+  }
 }

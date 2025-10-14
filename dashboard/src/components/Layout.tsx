@@ -71,48 +71,43 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
 
   return (
     <div className="flex h-screen bg-background">
-      {/* Enhanced Sidebar */}
-      <aside className="w-72 bg-card border-r border-border flex flex-col shadow-lg">
+      {/* Enhanced Sidebar - Animated hide/show when flowchart is active */}
+      <aside
+        className="bg-card border-r border-border flex flex-col shadow-lg transition-all duration-300 ease-in-out overflow-hidden"
+        style={{
+          width: navMode === 'sidebar' ? '320px' : '0px',
+          minWidth: navMode === 'sidebar' ? '320px' : '0px',
+          opacity: navMode === 'sidebar' ? 1 : 0,
+        }}
+      >
+        <div className="flex flex-col h-full" style={{ width: '320px', minWidth: '320px' }}>
         {/* Header */}
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-primary to-blue-700 p-2.5 rounded-lg shadow-md">
-                <Database className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-foreground">FinModel</h1>
-                <p className="text-xs text-muted-foreground">Analysis Dashboard</p>
-              </div>
+        <div className="px-6 py-5 border-b border-border">
+          <div style={{ paddingLeft: '0.5rem', paddingRight: '0.5rem' }}>
+            <h1 className="text-2xl font-bold text-foreground mb-2 whitespace-nowrap">Financial Statement Model</h1>
+            <div className="flex items-center whitespace-nowrap" style={{ gap: '1rem' }}>
+              <p className="text-xs text-muted-foreground" style={{ marginLeft: '0.5rem' }}>Scenario Analysis Dashboard</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent h-6 px-2"
+                title="Switch to Flowchart"
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
-              className="text-muted-foreground hover:text-foreground hover:bg-accent"
-              title={navMode === 'sidebar' ? 'Switch to Flowchart' : 'Switch to Sidebar'}
-            >
-              {navMode === 'sidebar' ? <GitBranch className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-            </Button>
-          </div>
-
-          {/* Database Info */}
-          <div className="bg-muted/50 rounded-lg p-3 border border-border">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Active Database</p>
-            <p className="text-xs font-mono text-foreground truncate" title={dbPath || ''}>
-              {dbPath ? dbPath.split('/').pop() : 'No database'}
-            </p>
           </div>
         </div>
 
         {/* Navigation */}
-        <ScrollArea className="flex-1 px-4 py-4">
+        <ScrollArea className="flex-1 px-6 py-4">
           <nav className="space-y-6">
             {navSections.map((section, idx) => (
               <div key={section.title}>
                 {idx > 0 && <Separator className="my-4" />}
                 <div className="mb-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
                     {section.title}
                   </h3>
                 </div>
@@ -137,7 +132,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
                         }`}>
                           <Icon className="w-4 h-4" />
                         </div>
-                        <span>{item.label}</span>
+                        <span className="ml-1">{item.label}</span>
                       </Link>
                     )
                   })}
@@ -148,22 +143,33 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         </ScrollArea>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border bg-muted/30">
+        <div className="p-4 border-t border-border">
           <Button
-            variant="outline"
+            variant="ghost"
             onClick={onChangeDb}
-            className="w-full justify-start gap-3 hover:bg-accent"
+            className="w-full justify-start gap-3 text-foreground hover:bg-accent hover:text-foreground"
           >
             <Settings className="w-4 h-4" />
             <span className="text-sm">Change Database</span>
           </Button>
         </div>
+        </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-background">
+      <main className="flex-1 overflow-auto bg-background relative">
         {navMode === 'flowchart' ? (
           <div className="h-full">
+            {/* Floating button to return to sidebar */}
+            <Button
+              variant="default"
+              size="icon"
+              onClick={() => setNavMode('sidebar')}
+              className="absolute top-4 left-4 z-50 shadow-lg"
+              title="Back to Sidebar"
+            >
+              <Menu className="w-4 h-4" />
+            </Button>
             <FlowchartNav />
           </div>
         ) : (

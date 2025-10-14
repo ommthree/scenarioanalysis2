@@ -34,8 +34,12 @@ function FlowNode({ data }: { data: any }) {
 
   return (
     <div
-      className="bg-card border-2 border-border rounded-xl p-4 shadow-lg hover:shadow-xl hover:border-primary transition-all cursor-pointer group"
-      style={{ width: '220px', height: '120px' }}
+      className="border-2 border-border rounded-xl p-4 shadow-lg hover:shadow-xl hover:border-primary transition-all cursor-pointer group"
+      style={{
+        width: '220px',
+        height: '120px',
+        background: data.gradientBg || 'var(--card)'
+      }}
       onClick={data.onClick}
     >
       <Handle type="target" position={Position.Left} />
@@ -69,18 +73,19 @@ export default function FlowchartNav() {
   }, [navigate])
 
   const initialNodes: Node[] = [
-    // Column 1 - Inputs
+    // Column 1 - Inputs (Import)
     {
       id: 'load-statements',
       type: 'custom',
       position: { x: 0, y: 0 },
       data: {
         label: 'Load Statements',
-        sublabel: 'Import + Map',
+        sublabel: 'Import',
         icon: FileSpreadsheet,
         bgClass: 'bg-blue-500/10',
         ringClass: 'ring-blue-500/20',
         iconClass: 'text-blue-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.1))',
         onClick: () => handleNodeClick('/inputs/statements'),
       },
     },
@@ -95,6 +100,7 @@ export default function FlowchartNav() {
         bgClass: 'bg-green-500/10',
         ringClass: 'ring-green-500/20',
         iconClass: 'text-green-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.05), rgba(22, 163, 74, 0.1))',
         onClick: () => handleNodeClick('/inputs/scenarios'),
       },
     },
@@ -104,11 +110,44 @@ export default function FlowchartNav() {
       position: { x: 0, y: 300 },
       data: {
         label: 'Load Damage Curves',
-        sublabel: 'Import + Map',
+        sublabel: 'Import',
         icon: Cloud,
         bgClass: 'bg-purple-500/10',
         ringClass: 'ring-purple-500/20',
         iconClass: 'text-purple-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.05), rgba(147, 51, 234, 0.1))',
+        onClick: () => handleNodeClick('/inputs/damage-curves'),
+      },
+    },
+
+    // Column 1.5 - Mapping
+    {
+      id: 'map-statements',
+      type: 'custom',
+      position: { x: 270, y: 0 },
+      data: {
+        label: 'Map Statements',
+        sublabel: 'Fields',
+        icon: FileSpreadsheet,
+        bgClass: 'bg-blue-400/10',
+        ringClass: 'ring-blue-400/20',
+        iconClass: 'text-blue-400',
+        gradientBg: 'linear-gradient(to bottom right, rgba(96, 165, 250, 0.05), rgba(59, 130, 246, 0.1))',
+        onClick: () => handleNodeClick('/inputs/statements'),
+      },
+    },
+    {
+      id: 'map-damage',
+      type: 'custom',
+      position: { x: 270, y: 300 },
+      data: {
+        label: 'Map Damage Curves',
+        sublabel: 'Fields',
+        icon: Cloud,
+        bgClass: 'bg-purple-400/10',
+        ringClass: 'ring-purple-400/20',
+        iconClass: 'text-purple-400',
+        gradientBg: 'linear-gradient(to bottom right, rgba(192, 132, 252, 0.05), rgba(168, 85, 247, 0.1))',
         onClick: () => handleNodeClick('/inputs/damage-curves'),
       },
     },
@@ -117,7 +156,7 @@ export default function FlowchartNav() {
     {
       id: 'database',
       type: 'custom',
-      position: { x: 350, y: 150 },
+      position: { x: 580, y: 150 },
       data: {
         label: 'Database',
         sublabel: '',
@@ -125,6 +164,7 @@ export default function FlowchartNav() {
         bgClass: 'bg-slate-500/10',
         ringClass: 'ring-slate-500/20',
         iconClass: 'text-slate-400',
+        gradientBg: 'linear-gradient(to bottom right, rgba(148, 163, 184, 0.05), rgba(100, 116, 139, 0.1))',
         onClick: () => handleNodeClick('/data/database'),
       },
     },
@@ -133,7 +173,7 @@ export default function FlowchartNav() {
     {
       id: 'stmt-defs',
       type: 'custom',
-      position: { x: 700, y: 0 },
+      position: { x: 890, y: 0 },
       data: {
         label: 'Statement Definitions',
         sublabel: '',
@@ -141,27 +181,14 @@ export default function FlowchartNav() {
         bgClass: 'bg-cyan-500/10',
         ringClass: 'ring-cyan-500/20',
         iconClass: 'text-cyan-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.05), rgba(14, 165, 233, 0.1))',
         onClick: () => handleNodeClick('/definitions/statements'),
-      },
-    },
-    {
-      id: 'scenario-split',
-      type: 'custom',
-      position: { x: 700, y: 150 },
-      data: {
-        label: 'Scenario Data',
-        sublabel: '(unaffected)',
-        icon: TrendingUp,
-        bgClass: 'bg-green-400/10',
-        ringClass: 'ring-green-400/20',
-        iconClass: 'text-green-400',
-        onClick: () => handleNodeClick('/inputs/scenarios'),
       },
     },
     {
       id: 'pre-calc',
       type: 'custom',
-      position: { x: 700, y: 300 },
+      position: { x: 890, y: 300 },
       data: {
         label: 'Pre-Calc',
         sublabel: 'Apply Damage',
@@ -169,13 +196,14 @@ export default function FlowchartNav() {
         bgClass: 'bg-amber-500/10',
         ringClass: 'ring-amber-500/20',
         iconClass: 'text-amber-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(245, 158, 11, 0.05), rgba(217, 119, 6, 0.1))',
         onClick: () => handleNodeClick('/run'),
       },
     },
     {
       id: 'actions',
       type: 'custom',
-      position: { x: 700, y: 450 },
+      position: { x: 890, y: 450 },
       data: {
         label: 'Actions',
         sublabel: 'Definitions',
@@ -183,6 +211,7 @@ export default function FlowchartNav() {
         bgClass: 'bg-yellow-500/10',
         ringClass: 'ring-yellow-500/20',
         iconClass: 'text-yellow-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(234, 179, 8, 0.05), rgba(202, 138, 4, 0.1))',
         onClick: () => handleNodeClick('/definitions/actions'),
       },
     },
@@ -191,7 +220,7 @@ export default function FlowchartNav() {
     {
       id: 'calc-engine',
       type: 'custom',
-      position: { x: 1050, y: 150 },
+      position: { x: 1200, y: 150 },
       data: {
         label: 'Calculation Engine',
         sublabel: '',
@@ -199,6 +228,7 @@ export default function FlowchartNav() {
         bgClass: 'bg-orange-500/10',
         ringClass: 'ring-orange-500/20',
         iconClass: 'text-orange-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(249, 115, 22, 0.05), rgba(234, 88, 12, 0.1))',
         onClick: () => handleNodeClick('/run/execute'),
       },
     },
@@ -207,7 +237,7 @@ export default function FlowchartNav() {
     {
       id: 'results',
       type: 'custom',
-      position: { x: 1400, y: 150 },
+      position: { x: 1510, y: 150 },
       data: {
         label: 'Results',
         sublabel: '+ Audit Trail',
@@ -215,6 +245,7 @@ export default function FlowchartNav() {
         bgClass: 'bg-pink-500/10',
         ringClass: 'ring-pink-500/20',
         iconClass: 'text-pink-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(236, 72, 153, 0.05), rgba(219, 39, 119, 0.1))',
         onClick: () => handleNodeClick('/results'),
       },
     },
@@ -223,7 +254,7 @@ export default function FlowchartNav() {
     {
       id: 'visualize',
       type: 'custom',
-      position: { x: 1750, y: 150 },
+      position: { x: 1820, y: 150 },
       data: {
         label: 'Visualize',
         sublabel: 'Slice & Dice',
@@ -231,25 +262,38 @@ export default function FlowchartNav() {
         bgClass: 'bg-indigo-500/10',
         ringClass: 'ring-indigo-500/20',
         iconClass: 'text-indigo-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(99, 102, 241, 0.05), rgba(79, 70, 229, 0.1))',
         onClick: () => handleNodeClick('/visualize'),
       },
     },
   ]
 
   const initialEdges: Edge[] = [
-    { id: 'e1', type: 'smoothstep', source: 'load-statements', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e2', source: 'load-scenarios', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e3', source: 'load-damage', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e4', source: 'database', target: 'stmt-defs', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e5', source: 'database', target: 'scenario-split', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e6', source: 'database', target: 'pre-calc', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e7', source: 'database', target: 'actions', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e8', source: 'stmt-defs', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e9', source: 'scenario-split', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e10', source: 'pre-calc', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e11', source: 'actions', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e12', source: 'calc-engine', target: 'results', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
-    { id: 'e13', source: 'results', target: 'visualize', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 25, height: 25 } },
+    // Load to Map
+    { id: 'e1', type: 'smoothstep', source: 'load-statements', target: 'map-statements', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e2', type: 'smoothstep', source: 'load-damage', target: 'map-damage', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+
+    // Map to Database
+    { id: 'e3', source: 'map-statements', target: 'database', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e4', source: 'load-scenarios', target: 'database', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e5', source: 'map-damage', target: 'database', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+
+    // Database to Processing
+    { id: 'e6', source: 'database', target: 'stmt-defs', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e7', source: 'database', target: 'pre-calc', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e8', source: 'database', target: 'actions', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+
+    // Scenarios pass through (direct line from database to calc-engine at y=150)
+    { id: 'e9', source: 'database', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+
+    // Processing to Calc Engine
+    { id: 'e10', source: 'stmt-defs', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e11', source: 'pre-calc', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e12', source: 'actions', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+
+    // Calc to Results to Visualize
+    { id: 'e13', source: 'calc-engine', target: 'results', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e14', source: 'results', target: 'visualize', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
   ]
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes)
@@ -276,12 +320,12 @@ export default function FlowchartNav() {
         defaultViewport={{ x: 50, y: 50, zoom: 0.75 }}
         proOptions={{ hideAttribution: true }}
       >
-        <Panel position="top-left" className="bg-card/90 backdrop-blur-sm p-4 rounded-lg border border-border shadow-lg">
+        <Panel position="top-left" className="bg-card/90 backdrop-blur-sm rounded-lg border border-border shadow-lg" style={{ padding: '1.5rem' }}>
           <h2 className="text-xl font-bold mb-1">Data Flow</h2>
           <p className="text-sm text-muted-foreground">Click nodes to navigate • Use mouse to pan & zoom</p>
         </Panel>
-        <Background className="bg-muted" gap={16} />
-        <Controls className="[&_button]:!bg-card [&_button]:!border-primary [&_button]:!text-primary [&_button:hover]:!bg-primary [&_button:hover]:!text-white shadow-lg" />
+        <Background color="#1e293b" gap={20} style={{ backgroundColor: '#0f172a' }} />
+        <Controls showInteractive={false} className="[&_button]:!bg-card [&_button]:!border-primary [&_button]:!text-primary [&_button:hover]:!bg-primary [&_button:hover]:!text-white shadow-lg" />
       </ReactFlow>
     </div>
   )
