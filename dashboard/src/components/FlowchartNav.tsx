@@ -38,11 +38,14 @@ function FlowNode({ data }: { data: any }) {
       style={{
         width: '220px',
         height: '120px',
-        background: data.gradientBg || 'var(--card)'
+        background: data.gradientBg || 'var(--card)',
+        backgroundColor: 'rgba(30, 41, 59, 0.9)'
       }}
       onClick={data.onClick}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Bottom} style={{ opacity: 0 }} />
       <div className="h-full flex flex-col items-center justify-center text-center gap-2">
         <div className={`rounded-lg ${data.bgClass} p-2 ring-1 ${data.ringClass}`}>
           <Icon className={`w-5 h-5 ${data.iconClass}`} />
@@ -56,7 +59,9 @@ function FlowNode({ data }: { data: any }) {
           )}
         </div>
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
   )
 }
@@ -73,7 +78,7 @@ export default function FlowchartNav() {
   }, [navigate])
 
   const initialNodes: Node[] = [
-    // Column 1 - Inputs (Import)
+    // Column 1 - Inputs (Import) - Blue (cool)
     {
       id: 'load-statements',
       type: 'custom',
@@ -85,7 +90,7 @@ export default function FlowchartNav() {
         bgClass: 'bg-blue-500/10',
         ringClass: 'ring-blue-500/20',
         iconClass: 'text-blue-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.1))',
+        gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3))',
         onClick: () => handleNodeClick('/inputs/statements'),
       },
     },
@@ -97,10 +102,10 @@ export default function FlowchartNav() {
         label: 'Load Scenarios',
         sublabel: 'Import',
         icon: TrendingUp,
-        bgClass: 'bg-green-500/10',
-        ringClass: 'ring-green-500/20',
-        iconClass: 'text-green-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.05), rgba(22, 163, 74, 0.1))',
+        bgClass: 'bg-blue-500/10',
+        ringClass: 'ring-blue-500/20',
+        iconClass: 'text-blue-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3))',
         onClick: () => handleNodeClick('/inputs/scenarios'),
       },
     },
@@ -112,15 +117,15 @@ export default function FlowchartNav() {
         label: 'Load Damage Curves',
         sublabel: 'Import',
         icon: Cloud,
-        bgClass: 'bg-purple-500/10',
-        ringClass: 'ring-purple-500/20',
-        iconClass: 'text-purple-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.05), rgba(147, 51, 234, 0.1))',
+        bgClass: 'bg-blue-500/10',
+        ringClass: 'ring-blue-500/20',
+        iconClass: 'text-blue-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3))',
         onClick: () => handleNodeClick('/inputs/damage-curves'),
       },
     },
 
-    // Column 1.5 - Mapping
+    // Column 1.5 - Mapping - Cyan
     {
       id: 'map-statements',
       type: 'custom',
@@ -129,10 +134,10 @@ export default function FlowchartNav() {
         label: 'Map Statements',
         sublabel: 'Fields',
         icon: FileSpreadsheet,
-        bgClass: 'bg-blue-400/10',
-        ringClass: 'ring-blue-400/20',
-        iconClass: 'text-blue-400',
-        gradientBg: 'linear-gradient(to bottom right, rgba(96, 165, 250, 0.05), rgba(59, 130, 246, 0.1))',
+        bgClass: 'bg-cyan-500/10',
+        ringClass: 'ring-cyan-500/20',
+        iconClass: 'text-cyan-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
         onClick: () => handleNodeClick('/inputs/statements'),
       },
     },
@@ -144,15 +149,15 @@ export default function FlowchartNav() {
         label: 'Map Damage Curves',
         sublabel: 'Fields',
         icon: Cloud,
-        bgClass: 'bg-purple-400/10',
-        ringClass: 'ring-purple-400/20',
-        iconClass: 'text-purple-400',
-        gradientBg: 'linear-gradient(to bottom right, rgba(192, 132, 252, 0.05), rgba(168, 85, 247, 0.1))',
+        bgClass: 'bg-cyan-500/10',
+        ringClass: 'ring-cyan-500/20',
+        iconClass: 'text-cyan-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
         onClick: () => handleNodeClick('/inputs/damage-curves'),
       },
     },
 
-    // Column 2 - Database
+    // Column 2 - Database - Teal (transition)
     {
       id: 'database',
       type: 'custom',
@@ -161,15 +166,15 @@ export default function FlowchartNav() {
         label: 'Database',
         sublabel: '',
         icon: Database,
-        bgClass: 'bg-slate-500/10',
-        ringClass: 'ring-slate-500/20',
-        iconClass: 'text-slate-400',
-        gradientBg: 'linear-gradient(to bottom right, rgba(148, 163, 184, 0.05), rgba(100, 116, 139, 0.1))',
+        bgClass: 'bg-teal-500/10',
+        ringClass: 'ring-teal-500/20',
+        iconClass: 'text-teal-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
         onClick: () => handleNodeClick('/data/database'),
       },
     },
 
-    // Column 3 - Definitions/Processing
+    // Column 3 - Definitions/Processing - Green (middle)
     {
       id: 'stmt-defs',
       type: 'custom',
@@ -178,10 +183,10 @@ export default function FlowchartNav() {
         label: 'Statement Definitions',
         sublabel: '',
         icon: FileJson,
-        bgClass: 'bg-cyan-500/10',
-        ringClass: 'ring-cyan-500/20',
-        iconClass: 'text-cyan-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.05), rgba(14, 165, 233, 0.1))',
+        bgClass: 'bg-green-500/10',
+        ringClass: 'ring-green-500/20',
+        iconClass: 'text-green-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
         onClick: () => handleNodeClick('/definitions/statements'),
       },
     },
@@ -193,10 +198,10 @@ export default function FlowchartNav() {
         label: 'Pre-Calc',
         sublabel: 'Apply Damage',
         icon: Calculator,
-        bgClass: 'bg-amber-500/10',
-        ringClass: 'ring-amber-500/20',
-        iconClass: 'text-amber-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(245, 158, 11, 0.05), rgba(217, 119, 6, 0.1))',
+        bgClass: 'bg-green-500/10',
+        ringClass: 'ring-green-500/20',
+        iconClass: 'text-green-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
         onClick: () => handleNodeClick('/run'),
       },
     },
@@ -208,15 +213,15 @@ export default function FlowchartNav() {
         label: 'Actions',
         sublabel: 'Definitions',
         icon: Zap,
-        bgClass: 'bg-yellow-500/10',
-        ringClass: 'ring-yellow-500/20',
-        iconClass: 'text-yellow-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(234, 179, 8, 0.05), rgba(202, 138, 4, 0.1))',
+        bgClass: 'bg-green-500/10',
+        ringClass: 'ring-green-500/20',
+        iconClass: 'text-green-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
         onClick: () => handleNodeClick('/definitions/actions'),
       },
     },
 
-    // Column 4 - Calculation
+    // Column 4 - Calculation - Amber (warm)
     {
       id: 'calc-engine',
       type: 'custom',
@@ -225,15 +230,15 @@ export default function FlowchartNav() {
         label: 'Calculation Engine',
         sublabel: '',
         icon: Calculator,
-        bgClass: 'bg-orange-500/10',
-        ringClass: 'ring-orange-500/20',
-        iconClass: 'text-orange-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(249, 115, 22, 0.05), rgba(234, 88, 12, 0.1))',
+        bgClass: 'bg-amber-500/10',
+        ringClass: 'ring-amber-500/20',
+        iconClass: 'text-amber-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.3))',
         onClick: () => handleNodeClick('/run/execute'),
       },
     },
 
-    // Column 5 - Results
+    // Column 5 - Results - Orange
     {
       id: 'results',
       type: 'custom',
@@ -242,15 +247,15 @@ export default function FlowchartNav() {
         label: 'Results',
         sublabel: '+ Audit Trail',
         icon: BarChart3,
-        bgClass: 'bg-pink-500/10',
-        ringClass: 'ring-pink-500/20',
-        iconClass: 'text-pink-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(236, 72, 153, 0.05), rgba(219, 39, 119, 0.1))',
+        bgClass: 'bg-orange-500/10',
+        ringClass: 'ring-orange-500/20',
+        iconClass: 'text-orange-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(249, 115, 22, 0.2), rgba(234, 88, 12, 0.3))',
         onClick: () => handleNodeClick('/results'),
       },
     },
 
-    // Column 6 - Visualization
+    // Column 6 - Visualization - Pink (outputs)
     {
       id: 'visualize',
       type: 'custom',
@@ -259,10 +264,10 @@ export default function FlowchartNav() {
         label: 'Visualize',
         sublabel: 'Slice & Dice',
         icon: Eye,
-        bgClass: 'bg-indigo-500/10',
-        ringClass: 'ring-indigo-500/20',
-        iconClass: 'text-indigo-500',
-        gradientBg: 'linear-gradient(to bottom right, rgba(99, 102, 241, 0.05), rgba(79, 70, 229, 0.1))',
+        bgClass: 'bg-pink-500/10',
+        ringClass: 'ring-pink-500/20',
+        iconClass: 'text-pink-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(236, 72, 153, 0.2), rgba(219, 39, 119, 0.3))',
         onClick: () => handleNodeClick('/visualize'),
       },
     },
@@ -270,37 +275,48 @@ export default function FlowchartNav() {
 
   const initialEdges: Edge[] = [
     // Load to Map
-    { id: 'e1', type: 'smoothstep', source: 'load-statements', target: 'map-statements', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e2', type: 'smoothstep', source: 'load-damage', target: 'map-damage', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e1', type: 'smoothstep', source: 'load-statements', target: 'map-statements', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e2', type: 'smoothstep', source: 'load-damage', target: 'map-damage', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
 
     // Map to Database
-    { id: 'e3', source: 'map-statements', target: 'database', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e4', source: 'load-scenarios', target: 'database', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e5', source: 'map-damage', target: 'database', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e3', source: 'map-statements', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e4', source: 'load-scenarios', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e5', source: 'map-damage', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
 
     // Database to Processing
-    { id: 'e6', source: 'database', target: 'stmt-defs', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e7', source: 'database', target: 'pre-calc', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e8', source: 'database', target: 'actions', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e6', source: 'database', target: 'stmt-defs', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e7', source: 'database', target: 'pre-calc', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e8', source: 'database', target: 'actions', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
 
     // Scenarios pass through (direct line from database to calc-engine at y=150)
-    { id: 'e9', source: 'database', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e9', source: 'database', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
 
     // Processing to Calc Engine
-    { id: 'e10', source: 'stmt-defs', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e11', source: 'pre-calc', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e12', source: 'actions', target: 'calc-engine', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e10', source: 'stmt-defs', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e11', source: 'pre-calc', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e12', source: 'actions', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
 
     // Calc to Results to Visualize
-    { id: 'e13', source: 'calc-engine', target: 'results', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
-    { id: 'e14', source: 'results', target: 'visualize', animated: false, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 18, height: 18 } },
+    { id: 'e13', source: 'calc-engine', target: 'results', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e14', source: 'results', target: 'visualize', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
   ]
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes)
   const [edges, , onEdgesChange] = useEdgesState(initialEdges)
 
   return (
-    <div className="h-full bg-background">
+    <div className="h-full" style={{ backgroundColor: 'transparent' }}>
+      <style>{`
+        .react-flow__edge.animated path {
+          stroke-dasharray: 5;
+          animation: dashdraw 0.5s linear infinite;
+        }
+        @keyframes dashdraw {
+          to {
+            stroke-dashoffset: -10;
+          }
+        }
+      `}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -312,19 +328,19 @@ export default function FlowchartNav() {
           type: 'smoothstep',
           animated: true,
           style: { stroke: '#3b82f6', strokeWidth: 4 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 30, height: 30 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
         }}
-        fitView
-        minZoom={0.3}
-        maxZoom={1.5}
-        defaultViewport={{ x: 50, y: 50, zoom: 0.75 }}
+        defaultViewport={{ x: 80, y: 280, zoom: 0.65 }}
+        minZoom={0.4}
+        maxZoom={1.8}
+        fitViewOptions={{ padding: 0.1, maxZoom: 1.2, duration: 600 }}
         proOptions={{ hideAttribution: true }}
       >
         <Panel position="top-left" className="bg-card/90 backdrop-blur-sm rounded-lg border border-border shadow-lg" style={{ padding: '1.5rem' }}>
           <h2 className="text-xl font-bold mb-1">Data Flow</h2>
           <p className="text-sm text-muted-foreground">Click nodes to navigate • Use mouse to pan & zoom</p>
         </Panel>
-        <Background color="#1e293b" gap={20} style={{ backgroundColor: '#0f172a' }} />
+        <Background color="transparent" gap={20} style={{ backgroundColor: 'transparent' }} />
         <Controls showInteractive={false} className="[&_button]:!bg-card [&_button]:!border-primary [&_button]:!text-primary [&_button:hover]:!bg-primary [&_button:hover]:!text-white shadow-lg" />
       </ReactFlow>
     </div>

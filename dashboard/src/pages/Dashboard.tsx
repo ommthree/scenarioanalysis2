@@ -12,7 +12,7 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <div className="flex flex-wrap justify-center gap-12 mb-12" style={{ gap: '3rem', marginBottom: '3rem' }}>
-        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.05), rgba(22, 163, 74, 0.1))' }}>
+        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.25))', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardContent className="p-8 h-full flex items-center justify-center" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
             <div className="flex flex-col items-center text-center gap-4">
               <div className="shrink-0 rounded-lg bg-green-500/20 p-3 ring-1 ring-green-500/30">
@@ -26,7 +26,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.1))' }}>
+        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.15), rgba(37, 99, 235, 0.25))', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardContent className="p-8 h-full flex items-center justify-center" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
             <div className="flex flex-col items-center text-center gap-4">
               <div className="shrink-0 rounded-lg bg-blue-500/20 p-3 ring-1 ring-blue-500/30">
@@ -40,7 +40,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.05), rgba(147, 51, 234, 0.1))' }}>
+        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.15), rgba(147, 51, 234, 0.25))', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardContent className="p-8 h-full flex items-center justify-center" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
             <div className="flex flex-col items-center text-center gap-4">
               <div className="shrink-0 rounded-lg bg-purple-500/20 p-3 ring-1 ring-purple-500/30">
@@ -57,7 +57,7 @@ export default function Dashboard() {
 
       {/* Stats Row */}
       <div className="flex flex-wrap justify-center gap-8 mb-12" style={{ gap: '2rem', marginBottom: '3rem' }}>
-        <Card style={{ width: '240px' }}>
+        <Card style={{ width: '240px', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
             <CardDescription>Total Scenarios</CardDescription>
             <CardTitle className="text-3xl">24</CardTitle>
@@ -71,7 +71,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card style={{ width: '240px' }}>
+        <Card style={{ width: '240px', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
             <CardDescription>Completed Runs</CardDescription>
             <CardTitle className="text-3xl">18</CardTitle>
@@ -85,7 +85,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card style={{ width: '240px' }}>
+        <Card style={{ width: '240px', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
             <CardDescription>Active Templates</CardDescription>
             <CardTitle className="text-3xl">6</CardTitle>
@@ -97,7 +97,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card style={{ width: '240px' }}>
+        <Card style={{ width: '240px', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
             <CardDescription>Last Run</CardDescription>
             <CardTitle className="text-3xl">2h</CardTitle>
@@ -109,7 +109,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card style={{ width: '240px' }}>
+        <Card style={{ width: '240px', backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
           <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
             <CardDescription>Recent Activity</CardDescription>
             <CardTitle className="text-3xl">0</CardTitle>

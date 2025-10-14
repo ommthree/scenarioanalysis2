@@ -88,10 +88,15 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
             <div className="flex items-center whitespace-nowrap" style={{ gap: '1rem' }}>
               <p className="text-xs text-muted-foreground" style={{ marginLeft: '0.5rem' }}>Scenario Analysis Dashboard</p>
               <Button
-                variant="ghost"
+                variant="default"
                 size="sm"
                 onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
-                className="text-muted-foreground hover:text-foreground hover:bg-accent h-6 px-2"
+                className="h-6 px-2"
+                style={{
+                  backgroundColor: '#2563eb',
+                  border: 'none',
+                  boxShadow: 'none'
+                }}
                 title="Switch to Flowchart"
               >
                 <GitBranch className="w-3.5 h-3.5" />
@@ -157,7 +162,29 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-background relative">
+      <main
+        className="flex-1 overflow-auto relative"
+        style={{
+          backgroundImage: 'url(/waves.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: '#0f172a'
+        }}
+      >
+        {/* Logo - shown on all screens */}
+        <img
+          src="/logo3.png"
+          alt="Logo"
+          className="absolute z-50"
+          style={{
+            top: '1.5rem',
+            right: '2rem',
+            height: '70px',
+            width: 'auto'
+          }}
+        />
+
         {navMode === 'flowchart' ? (
           <div className="h-full">
             {/* Floating button to return to sidebar */}
@@ -165,7 +192,14 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
               variant="default"
               size="icon"
               onClick={() => setNavMode('sidebar')}
-              className="absolute top-4 left-4 z-50 shadow-lg"
+              className="absolute z-50"
+              style={{
+                top: '1.5rem',
+                left: '1.5rem',
+                backgroundColor: '#2563eb',
+                border: 'none',
+                boxShadow: 'none'
+              }}
               title="Back to Sidebar"
             >
               <Menu className="w-4 h-4" />
