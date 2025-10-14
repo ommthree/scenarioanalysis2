@@ -275,30 +275,30 @@ export default function FlowchartNav() {
 
   const initialEdges: Edge[] = [
     // Load to Map
-    { id: 'e1', type: 'smoothstep', source: 'load-statements', target: 'map-statements', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e2', type: 'smoothstep', source: 'load-damage', target: 'map-damage', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e1', type: 'smoothstep', source: 'load-statements', target: 'map-statements', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e2', type: 'smoothstep', source: 'load-damage', target: 'map-damage', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
 
     // Map to Database
-    { id: 'e3', source: 'map-statements', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e4', source: 'load-scenarios', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e5', source: 'map-damage', target: 'database', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e3', source: 'map-statements', target: 'database', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e4', source: 'load-scenarios', target: 'database', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e5', source: 'map-damage', target: 'database', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
 
     // Database to Processing
-    { id: 'e6', source: 'database', target: 'stmt-defs', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e7', source: 'database', target: 'pre-calc', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e8', source: 'database', target: 'actions', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e6', source: 'database', target: 'stmt-defs', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e7', source: 'database', target: 'pre-calc', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e8', source: 'database', target: 'actions', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
 
     // Scenarios pass through (direct line from database to calc-engine at y=150)
-    { id: 'e9', source: 'database', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e9', source: 'database', target: 'calc-engine', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
 
     // Processing to Calc Engine
-    { id: 'e10', source: 'stmt-defs', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e11', source: 'pre-calc', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e12', source: 'actions', target: 'calc-engine', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e10', source: 'stmt-defs', target: 'calc-engine', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e11', source: 'pre-calc', target: 'calc-engine', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e12', source: 'actions', target: 'calc-engine', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
 
     // Calc to Results to Visualize
-    { id: 'e13', source: 'calc-engine', target: 'results', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
-    { id: 'e14', source: 'results', target: 'visualize', animated: true, style: { stroke: '#3b82f6', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' } },
+    { id: 'e13', source: 'calc-engine', target: 'results', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+    { id: 'e14', source: 'results', target: 'visualize', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
   ]
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes)
@@ -308,13 +308,26 @@ export default function FlowchartNav() {
     <div className="h-full" style={{ backgroundColor: 'transparent' }}>
       <style>{`
         .react-flow__edge.animated path {
-          stroke-dasharray: 5;
-          animation: dashdraw 0.5s linear infinite;
+          stroke: #f97316 !important;
+          stroke-dasharray: 12 6;
+          animation: dashdraw 2s linear infinite;
         }
         @keyframes dashdraw {
           to {
-            stroke-dashoffset: -10;
+            stroke-dashoffset: -18;
           }
+        }
+        .react-flow__edge-path {
+          stroke: #f97316 !important;
+        }
+        .react-flow__edge marker {
+          animation: none !important;
+          animation-play-state: paused !important;
+        }
+        .react-flow__edge marker path {
+          animation: none !important;
+          animation-play-state: paused !important;
+          fill: #f97316 !important;
         }
       `}</style>
       <ReactFlow
@@ -327,8 +340,8 @@ export default function FlowchartNav() {
         defaultEdgeOptions={{
           type: 'smoothstep',
           animated: true,
-          style: { stroke: '#3b82f6', strokeWidth: 4 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
+          style: { stroke: '#f97316', strokeWidth: 4 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' },
         }}
         defaultViewport={{ x: 80, y: 280, zoom: 0.65 }}
         minZoom={0.4}
