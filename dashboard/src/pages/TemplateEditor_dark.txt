@@ -1,0 +1,15 @@
+Replace all className occurrences:
+
+OLD: bg-white → bg-slate-800
+OLD: border-gray-200 → border-slate-700
+OLD: text-gray-900 → text-white
+OLD: text-gray-600 → text-slate-400
+OLD: text-gray-700 → text-slate-300
+OLD: bg-gray-50 → bg-slate-900
+OLD: bg-gray-100 → bg-slate-700
+OLD: hover:bg-gray-200 → hover:bg-slate-600
+OLD: border-gray-300 → border-slate-600
+OLD: bg-blue-50 → bg-blue-900/30
+OLD: border-blue-500 → border-blue-500
+OLD: bg-gray-900 → bg-slate-950
+OLD: text-green-400 → text-green-400

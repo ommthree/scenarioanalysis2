@@ -95,38 +95,38 @@ export default function TemplateEditor() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4">
+      <div className="bg-slate-800 border-b border-slate-700 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Template Editor</h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <h1 className="text-2xl font-bold text-white">Template Editor</h1>
+            <p className="text-sm text-slate-400 mt-0.5">
               Define financial statement structures
             </p>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => setViewMode(viewMode === 'form' ? 'json' : 'form')}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md flex items-center gap-2 transition-colors"
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg flex items-center gap-2 transition-all text-sm"
             >
               {viewMode === 'form' ? <Code className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              {viewMode === 'form' ? 'View JSON' : 'View Form'}
+              {viewMode === 'form' ? 'JSON' : 'Form'}
             </button>
             <button
               onClick={importJSON}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md flex items-center gap-2 transition-colors"
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg flex items-center gap-2 transition-all text-sm"
             >
               <Upload className="w-4 h-4" />
               Import
             </button>
             <button
               onClick={exportJSON}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md flex items-center gap-2 transition-colors"
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg flex items-center gap-2 transition-all text-sm"
             >
               <Download className="w-4 h-4" />
               Export
             </button>
             <button
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center gap-2 transition-colors"
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-all text-sm font-medium"
             >
               <Save className="w-4 h-4" />
               Save to DB
@@ -140,41 +140,41 @@ export default function TemplateEditor() {
         {viewMode === 'form' ? (
           <div className="h-full flex">
             {/* Left: Template Settings & Line Items List */}
-            <div className="w-1/3 border-r border-gray-200 overflow-y-auto">
+            <div className="w-1/3 border-r border-slate-700 overflow-y-auto bg-slate-900">
               {/* Template Metadata */}
-              <div className="p-4 bg-gray-50 border-b border-gray-200">
-                <h3 className="font-semibold text-gray-900 mb-3">Template Settings</h3>
+              <div className="p-4 bg-slate-800 border-b border-slate-700">
+                <h3 className="font-semibold text-white mb-3">Template Settings</h3>
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
                       Template Code
                     </label>
                     <input
                       type="text"
                       value={template.code}
                       onChange={(e) => setTemplate({ ...template, code: e.target.value })}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
                       Template Name
                     </label>
                     <input
                       type="text"
                       value={template.name}
                       onChange={(e) => setTemplate({ ...template, name: e.target.value })}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
                       Statement Type
                     </label>
                     <select
                       value={template.statement_type}
                       onChange={(e) => setTemplate({ ...template, statement_type: e.target.value as any })}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="unified">Unified (P&L + BS + CF + Carbon)</option>
                       <option value="pl">Profit & Loss</option>
@@ -184,14 +184,14 @@ export default function TemplateEditor() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label className="block text-xs font-medium text-slate-300 mb-1">
                       Version
                     </label>
                     <input
                       type="text"
                       value={template.version}
                       onChange={(e) => setTemplate({ ...template, version: e.target.value })}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -200,7 +200,7 @@ export default function TemplateEditor() {
               {/* Line Items List */}
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-gray-900">Line Items ({template.line_items.length})</h3>
+                  <h3 className="font-semibold text-white">Line Items ({template.line_items.length})</h3>
                   <button
                     onClick={addLineItem}
                     className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md flex items-center gap-1 transition-colors"
@@ -216,29 +216,29 @@ export default function TemplateEditor() {
                       onClick={() => setSelectedLineItem(index)}
                       className={`p-3 rounded-md cursor-pointer transition-colors ${
                         selectedLineItem === index
-                          ? 'bg-blue-50 border-2 border-blue-500'
-                          : 'bg-gray-50 border border-gray-200 hover:border-gray-300'
+                          ? 'bg-blue-900/30 border-2 border-blue-500'
+                          : 'bg-slate-800 border border-slate-700 hover:border-slate-600'
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-gray-900 truncate">
+                          <div className="font-medium text-sm text-white truncate">
                             {item.code}
                           </div>
-                          <div className="text-xs text-gray-600 truncate">
+                          <div className="text-xs text-slate-400 truncate">
                             {item.display_name}
                           </div>
                           <div className="flex gap-2 mt-1">
-                            <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded">
+                            <span className="px-2 py-0.5 bg-slate-700 text-slate-300 text-xs rounded">
                               {item.section.toUpperCase()}
                             </span>
                             {item.formula && (
-                              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+                              <span className="px-2 py-0.5 bg-green-900/40 text-green-400 text-xs rounded">
                                 Formula
                               </span>
                             )}
                             {item.base_value_source && (
-                              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                              <span className="px-2 py-0.5 bg-blue-900/40 text-blue-400 text-xs rounded">
                                 Driver
                               </span>
                             )}
@@ -252,16 +252,16 @@ export default function TemplateEditor() {
             </div>
 
             {/* Right: Line Item Editor */}
-            <div className="flex-1 p-6 overflow-y-auto">
+            <div className="flex-1 p-6 overflow-y-auto bg-slate-900">
               {selectedLineItem !== null && template.line_items[selectedLineItem] ? (
                 <div className="max-w-3xl">
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <h3 className="text-lg font-semibold text-white">
                       Edit Line Item
                     </h3>
                     <button
                       onClick={() => removeLineItem(selectedLineItem)}
-                      className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 text-sm rounded-md transition-colors"
+                      className="px-3 py-1 bg-red-900/40 hover:bg-red-900/60 text-red-400 text-sm rounded-md transition-colors"
                     >
                       Delete
                     </button>
@@ -269,42 +269,42 @@ export default function TemplateEditor() {
 
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
                         Line Item Code *
                       </label>
                       <input
                         type="text"
                         value={template.line_items[selectedLineItem].code}
                         onChange={(e) => updateLineItem(selectedLineItem, { code: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="REVENUE"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-slate-400 mt-1">
                         Unique identifier (e.g., REVENUE, NET_INCOME)
                       </p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
                         Display Name *
                       </label>
                       <input
                         type="text"
                         value={template.line_items[selectedLineItem].display_name}
                         onChange={(e) => updateLineItem(selectedLineItem, { display_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Revenue"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
                         Section *
                       </label>
                       <select
                         value={template.line_items[selectedLineItem].section}
                         onChange={(e) => updateLineItem(selectedLineItem, { section: e.target.value as any })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="pl">Profit & Loss</option>
                         <option value="bs">Balance Sheet</option>
@@ -314,60 +314,60 @@ export default function TemplateEditor() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
                         Formula (optional)
                       </label>
                       <textarea
                         value={template.line_items[selectedLineItem].formula || ''}
                         onChange={(e) => updateLineItem(selectedLineItem, { formula: e.target.value || null })}
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                         placeholder="REVENUE - COST_OF_GOODS_SOLD"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-slate-400 mt-1">
                         Leave blank to use base_value_source. Use driver: prefix for explicit driver refs.
                       </p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
                         Base Value Source (optional)
                       </label>
                       <input
                         type="text"
                         value={template.line_items[selectedLineItem].base_value_source || ''}
                         onChange={(e) => updateLineItem(selectedLineItem, { base_value_source: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="driver:REVENUE"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-slate-400 mt-1">
                         Maps this line item to a scenario driver (e.g., driver:REVENUE)
                       </p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
                         Unit (optional)
                       </label>
                       <input
                         type="text"
                         value={template.line_items[selectedLineItem].unit || ''}
                         onChange={(e) => updateLineItem(selectedLineItem, { unit: e.target.value || undefined })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="CHF, tCO2e, etc."
                       />
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="flex items-center justify-center h-full text-slate-400">
                   Select a line item to edit, or add a new one
                 </div>
               )}
             </div>
           </div>
         ) : (
-          <div className="h-full p-6 bg-gray-900">
+          <div className="h-full p-6 bg-slate-950">
             <pre className="text-green-400 text-sm font-mono overflow-auto h-full">
               {JSON.stringify(template, null, 2)}
             </pre>

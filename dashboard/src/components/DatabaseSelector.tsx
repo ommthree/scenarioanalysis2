@@ -10,8 +10,6 @@ export default function DatabaseSelector({ onSelect }: DatabaseSelectorProps) {
   const [isValid, setIsValid] = useState(false)
 
   const handleBrowse = () => {
-    // In a real implementation, this would open a file dialog
-    // For now, we'll use a simple input
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.db'
@@ -31,47 +29,57 @@ export default function DatabaseSelector({ onSelect }: DatabaseSelectorProps) {
     }
   }
 
+  // Also allow connecting with any path typed (for testing)
+  const handlePathChange = (newPath: string) => {
+    setPath(newPath)
+    if (newPath.trim()) {
+      setIsValid(true)
+    } else {
+      setIsValid(false)
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+      <div className="bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 p-12 w-full" style={{ maxWidth: '550px' }}>
         <div className="flex items-center justify-center mb-6">
-          <div className="bg-blue-100 p-4 rounded-full">
-            <Database className="w-12 h-12 text-blue-600" />
+          <div className="bg-gradient-to-br from-blue-500 to-blue-700 p-4 rounded-xl shadow-lg">
+            <Database className="w-12 h-12 text-white" />
           </div>
         </div>
 
-        <h1 className="text-2xl font-bold text-center mb-2 text-gray-800">
+        <h1 className="text-3xl font-bold text-center mb-2 text-white">
           Financial Modeling Dashboard
         </h1>
-        <p className="text-center text-gray-600 mb-6">
-          Select a database to begin
+        <p className="text-center text-slate-400 mb-8">
+          Select a database to begin scenario analysis
         </p>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-slate-300 mb-2">
               Database Path
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={path}
-                onChange={(e) => setPath(e.target.value)}
+                onChange={(e) => handlePathChange(e.target.value)}
                 placeholder="/path/to/finmodel.db"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-4 py-3 bg-slate-900 border border-slate-700 text-white placeholder-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
               <button
                 onClick={handleBrowse}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md flex items-center gap-2 transition-colors"
+                className="px-5 py-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg flex items-center gap-2 transition-all border border-slate-600 font-medium hover:border-slate-500"
               >
                 <FolderOpen className="w-4 h-4" />
                 Browse
               </button>
             </div>
             {isValid && (
-              <div className="flex items-center gap-2 mt-2 text-green-600 text-sm">
+              <div className="flex items-center gap-2 mt-2 text-green-400 text-sm">
                 <Check className="w-4 h-4" />
-                Valid database file
+                <span>Valid database path</span>
               </div>
             )}
           </div>
@@ -79,14 +87,15 @@ export default function DatabaseSelector({ onSelect }: DatabaseSelectorProps) {
           <button
             onClick={handleConnect}
             disabled={!path || !isValid}
-            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-md font-medium transition-colors"
+            className="w-full px-6 py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-all shadow-lg hover:shadow-blue-500/20 disabled:shadow-none"
           >
             Connect to Database
           </button>
 
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">
-              Tip: Your database is typically located in the project data/ directory
+          <div className="pt-5 border-t border-slate-700">
+            <p className="text-sm text-slate-400 text-center">
+              <span className="inline-block mr-1">💡</span>
+              Your database is typically in the <span className="text-slate-300 font-mono bg-slate-900 px-1.5 py-0.5 rounded">data/</span> directory
             </p>
           </div>
         </div>

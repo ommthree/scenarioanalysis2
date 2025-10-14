@@ -1,39 +1,40 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState } from 'react'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
-import TemplateEditor from './pages/TemplateEditor'
-import DriverEditor from './pages/DriverEditor'
-import ActionsEditor from './pages/ActionsEditor'
-import PhysicalRiskConfig from './pages/PhysicalRiskConfig'
-import ScenarioEditor from './pages/ScenarioEditor'
-import Results from './pages/Results'
-import DatabaseSelector from './components/DatabaseSelector'
 
 function App() {
-  const [dbPath, setDbPath] = useState<string | null>(null)
-  const [showDbSelector, setShowDbSelector] = useState(true)
+  const [dbPath, setDbPath] = useState<string | null>(() => {
+    return localStorage.getItem('lastDatabasePath') || '/Users/Owen/finmodel_data/production.db'
+  })
+  const [showDbSelector, setShowDbSelector] = useState(false)
 
   const handleDbSelected = (path: string) => {
     setDbPath(path)
+    localStorage.setItem('lastDatabasePath', path)
     setShowDbSelector(false)
   }
 
   if (showDbSelector) {
-    return <DatabaseSelector onSelect={handleDbSelected} />
+    return <div style={{padding: '20px', color: 'white'}}>Database Selector Placeholder</div>
   }
 
   return (
     <BrowserRouter>
       <Layout dbPath={dbPath} onChangeDb={() => setShowDbSelector(true)}>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/scenarios" element={<ScenarioEditor />} />
-          <Route path="/templates" element={<TemplateEditor />} />
-          <Route path="/drivers" element={<DriverEditor />} />
-          <Route path="/actions" element={<ActionsEditor />} />
-          <Route path="/physical-risk" element={<PhysicalRiskConfig />} />
-          <Route path="/results" element={<Results />} />
+          <Route path="/" element={<Navigate to="/data/database" replace />} />
+          <Route path="/data/database" element={<Dashboard />} />
+          <Route path="/data/stored-calcs" element={<Dashboard />} />
+          <Route path="/inputs/statements" element={<Dashboard />} />
+          <Route path="/inputs/scenarios" element={<Dashboard />} />
+          <Route path="/inputs/damage-curves" element={<Dashboard />} />
+          <Route path="/definitions/statements" element={<Dashboard />} />
+          <Route path="/definitions/actions" element={<Dashboard />} />
+          <Route path="/run/definition" element={<Dashboard />} />
+          <Route path="/run/execute" element={<Dashboard />} />
+          <Route path="/run/open" element={<Dashboard />} />
+          <Route path="/visualize" element={<Dashboard />} />
         </Routes>
       </Layout>
     </BrowserRouter>

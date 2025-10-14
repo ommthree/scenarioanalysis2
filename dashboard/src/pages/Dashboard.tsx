@@ -1,58 +1,125 @@
-import { Play, Plus, FileText } from 'lucide-react'
+import { Play, Plus, FileText, TrendingUp } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 
 export default function Dashboard() {
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Scenario Analysis Control Center</p>
+    <div className="p-12 max-w-7xl mx-auto">
+      <div className="mb-12">
+        <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground mt-2">Scenario Analysis Control Center</p>
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4">
-            <div className="bg-green-100 p-3 rounded-lg">
-              <Play className="w-6 h-6 text-green-600" />
+      <div className="flex flex-wrap justify-center gap-12 mb-12" style={{ gap: '3rem', marginBottom: '3rem' }}>
+        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.05), rgba(22, 163, 74, 0.1))' }}>
+          <CardContent className="p-8 h-full flex items-center justify-center" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="shrink-0 rounded-lg bg-green-500/20 p-3 ring-1 ring-green-500/30">
+                <Play className="w-6 h-6 text-green-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors">Run Scenarios</h3>
+                <p className="text-sm text-muted-foreground">Execute and analyze selected scenarios</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">Run Scenarios</h3>
-              <p className="text-sm text-gray-600">Execute selected scenarios</p>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4">
-            <div className="bg-blue-100 p-3 rounded-lg">
-              <Plus className="w-6 h-6 text-blue-600" />
+        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.1))' }}>
+          <CardContent className="p-8 h-full flex items-center justify-center" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="shrink-0 rounded-lg bg-blue-500/20 p-3 ring-1 ring-blue-500/30">
+                <Plus className="w-6 h-6 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors">New Scenario</h3>
+                <p className="text-sm text-muted-foreground">Create and configure a new scenario</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">New Scenario</h3>
-              <p className="text-sm text-gray-600">Create a new scenario</p>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4">
-            <div className="bg-purple-100 p-3 rounded-lg">
-              <FileText className="w-6 h-6 text-purple-600" />
+        <Card className="group hover:shadow-xl hover:scale-[1.02] transition-all duration-200 cursor-pointer border-2 hover:border-primary" style={{ width: '320px', height: '256px', background: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.05), rgba(147, 51, 234, 0.1))' }}>
+          <CardContent className="p-8 h-full flex items-center justify-center" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="shrink-0 rounded-lg bg-purple-500/20 p-3 ring-1 ring-purple-500/30">
+                <FileText className="w-6 h-6 text-purple-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg mb-1 group-hover:text-primary transition-colors">View Results</h3>
+                <p className="text-sm text-muted-foreground">Browse and export latest results</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">View Results</h3>
-              <p className="text-sm text-gray-600">Browse latest results</p>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Recent Activity */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h2>
-        <div className="text-gray-500 text-center py-8">
-          No recent activity to display
-        </div>
+      {/* Stats Row */}
+      <div className="flex flex-wrap justify-center gap-8 mb-12" style={{ gap: '2rem', marginBottom: '3rem' }}>
+        <Card style={{ width: '240px' }}>
+          <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
+            <CardDescription>Total Scenarios</CardDescription>
+            <CardTitle className="text-3xl">24</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: '1.5rem', paddingTop: '0.5rem' }}>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <TrendingUp className="w-3 h-3 mr-1 text-green-500" />
+              <span className="text-green-500">+12%</span>
+              <span className="ml-1">from last month</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card style={{ width: '240px' }}>
+          <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
+            <CardDescription>Completed Runs</CardDescription>
+            <CardTitle className="text-3xl">18</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: '1.5rem', paddingTop: '0.5rem' }}>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <TrendingUp className="w-3 h-3 mr-1 text-green-500" />
+              <span className="text-green-500">+8%</span>
+              <span className="ml-1">from last month</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card style={{ width: '240px' }}>
+          <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
+            <CardDescription>Active Templates</CardDescription>
+            <CardTitle className="text-3xl">6</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: '1.5rem', paddingTop: '0.5rem' }}>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <span>Across 3 categories</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card style={{ width: '240px' }}>
+          <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
+            <CardDescription>Last Run</CardDescription>
+            <CardTitle className="text-3xl">2h</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: '1.5rem', paddingTop: '0.5rem' }}>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <span>Climate Scenario Q4</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card style={{ width: '240px' }}>
+          <CardHeader className="pb-2" style={{ padding: '1.5rem', paddingBottom: '0.5rem' }}>
+            <CardDescription>Recent Activity</CardDescription>
+            <CardTitle className="text-3xl">0</CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: '1.5rem', paddingTop: '0.5rem' }}>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <span>No recent runs</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
