@@ -70,12 +70,23 @@ const nodeTypes = {
   custom: FlowNode,
 }
 
-export default function FlowchartNav() {
+interface FlowchartNavProps {
+  onNavigate?: () => void
+}
+
+export default function FlowchartNav({ onNavigate }: FlowchartNavProps = {}) {
   const navigate = useNavigate()
 
   const handleNodeClick = useCallback((route: string) => {
     navigate(route)
-  }, [navigate])
+    onNavigate?.()
+  }, [navigate, onNavigate])
+
+  const onNodeClickHandler = useCallback((event: any, node: any) => {
+    if (node.data.onClick) {
+      node.data.onClick()
+    }
+  }, [])
 
   const initialNodes: Node[] = [
     // Column 1 - Inputs (Import) - Blue (cool)
@@ -335,6 +346,7 @@ export default function FlowchartNav() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClickHandler}
         nodeTypes={nodeTypes}
         connectionLineType={ConnectionLineType.SmoothStep}
         defaultEdgeOptions={{

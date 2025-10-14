@@ -12,7 +12,7 @@ import {
   Menu,
   ChevronDown
 } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -29,6 +29,20 @@ type NavigationMode = 'sidebar' | 'flowchart'
 export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
   const location = useLocation()
   const [navMode, setNavMode] = useState<NavigationMode>('sidebar')
+  const prevPathnameRef = useRef(location.pathname)
+
+  // Switch back to sidebar mode when location changes (navigation occurs)
+  useEffect(() => {
+    if (prevPathnameRef.current !== location.pathname) {
+      setNavMode((currentMode) => {
+        if (currentMode === 'flowchart') {
+          return 'sidebar'
+        }
+        return currentMode
+      })
+      prevPathnameRef.current = location.pathname
+    }
+  }, [location.pathname])
 
   const navSections = [
     {
@@ -192,7 +206,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
             >
               <Menu className="w-4 h-4" />
             </Button>
-            <FlowchartNav />
+            <FlowchartNav onNavigate={() => setNavMode('sidebar')} />
           </div>
         ) : (
           children
