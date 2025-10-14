@@ -146,18 +146,6 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
             ))}
           </nav>
         </ScrollArea>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-border">
-          <Button
-            variant="ghost"
-            onClick={onChangeDb}
-            className="w-full justify-start gap-3 text-foreground hover:bg-accent hover:text-foreground"
-          >
-            <Settings className="w-4 h-4" />
-            <span className="text-sm">Change Database</span>
-          </Button>
-        </div>
         </div>
       </aside>
 
