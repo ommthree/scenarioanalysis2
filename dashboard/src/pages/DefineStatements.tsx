@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FileText, Plus, Trash2, Save, Upload, Download, GripVertical } from 'lucide-react'
+import { FileText, Plus, Trash2, Save, Upload, Download, GripVertical, List } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,37 +17,94 @@ interface LineItem {
   dependencies?: string[]
 }
 
-interface Template {
-  template_code: string
-  template_name: string
-  statement_type: string
-  industry: string
-  version: string
+interface TemplateMetadata {
+  code: string
+  display_name: string
   description: string
-  line_items: LineItem[]
+  statement_type: string
 }
 
-const defaultTemplate: Template = {
-  template_code: '',
-  template_name: '',
-  statement_type: 'unified',
-  industry: 'GENERAL',
-  version: '1.0.0',
+interface Template extends TemplateMetadata {
+  lineItems?: LineItem[]
+}
+
+const defaultMetadata: TemplateMetadata = {
+  code: '',
+  display_name: '',
   description: '',
-  line_items: []
+  statement_type: 'unified'
 }
 
 export default function DefineStatements() {
-  const [template, setTemplate] = useState<Template>(defaultTemplate)
+  const [templates, setTemplates] = useState<TemplateMetadata[]>([])
+  const [selectedTemplateCode, setSelectedTemplateCode] = useState<string | null>(null)
+  const [templateMetadata, setTemplateMetadata] = useState<TemplateMetadata>(defaultMetadata)
+  const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const [isEditing, setIsEditing] = useState(false)
   const [selectedSection, setSelectedSection] = useState<'profit_and_loss' | 'balance_sheet' | 'cash_flow' | 'carbon_statement'>('profit_and_loss')
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true)
+
+  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
   const sections = {
     profit_and_loss: 'Profit & Loss',
     balance_sheet: 'Balance Sheet',
     cash_flow: 'Cash Flow',
     carbon_statement: 'Carbon Statement'
+  }
+
+  // Load all templates on mount
+  useEffect(() => {
+    loadTemplates()
+  }, [])
+
+  const loadTemplates = async () => {
+    setIsLoadingTemplates(true)
+    try {
+      const response = await fetch(`http://localhost:3001/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setTemplates(data)
+      }
+    } catch (error) {
+      console.error('Failed to load templates:', error)
+    } finally {
+      setIsLoadingTemplates(false)
+    }
+  }
+
+  // Load a specific template with line items
+  const loadTemplate = async (code: string) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/statement-templates/${code}?dbPath=${encodeURIComponent(dbPath)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setTemplateMetadata({
+          code: data.code,
+          display_name: data.display_name,
+          description: data.description,
+          statement_type: data.statement_type
+        })
+        setLineItems(data.lineItems || [])
+        setSelectedTemplateCode(code)
+        setIsEditing(true)
+      }
+    } catch (error) {
+      console.error('Failed to load template:', error)
+    }
+  }
+
+  const handleTemplateSelect = (code: string) => {
+    loadTemplate(code)
+  }
+
+  const handleNewTemplate = () => {
+    setTemplateMetadata(defaultMetadata)
+    setLineItems([])
+    setSelectedTemplateCode(null)
+    setIsEditing(true)
   }
 
   const addLineItem = () => {
@@ -62,33 +119,32 @@ export default function DefineStatements() {
       sign_convention: 'positive',
       dependencies: []
     }
-    setTemplate({
-      ...template,
-      line_items: [...template.line_items, newItem]
-    })
+    setLineItems([...lineItems, newItem])
   }
 
   const removeLineItem = (index: number) => {
-    setTemplate({
-      ...template,
-      line_items: template.line_items.filter((_, i) => i !== index)
-    })
+    setLineItems(lineItems.filter((_, i) => i !== index))
   }
 
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
-    const updated = [...template.line_items]
+    const updated = [...lineItems]
     updated[index] = { ...updated[index], [field]: value }
-    setTemplate({ ...template, line_items: updated })
+    setLineItems(updated)
   }
 
   const handleExport = () => {
-    const json = JSON.stringify(template, null, 2)
+    const exportData = {
+      ...templateMetadata,
+      lineItems
+    }
+    const json = JSON.stringify(exportData, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${template.template_code || 'template'}.json`
+    a.download = `${templateMetadata.code || 'template'}.json`
     a.click()
+    URL.revokeObjectURL(url)
   }
 
   const handleImport = () => {
@@ -103,28 +159,25 @@ export default function DefineStatements() {
           const text = await file.text()
           const imported = JSON.parse(text)
 
-          // Ensure all required fields exist with defaults
-          const normalized = {
-            template_code: imported.template_code || '',
-            template_name: imported.template_name || '',
-            statement_type: imported.statement_type || 'unified',
-            industry: imported.industry || 'GENERAL',
-            version: imported.version || '1.0.0',
+          setTemplateMetadata({
+            code: imported.code || imported.template_code || '',
+            display_name: imported.display_name || imported.template_name || '',
             description: imported.description || '',
-            line_items: (imported.line_items || []).map((item: any) => ({
-              code: item.code || '',
-              display_name: item.display_name || '',
-              level: typeof item.level === 'number' ? item.level : 1,
-              section: item.section || 'profit_and_loss',
-              formula: item.formula || null,
-              base_value_source: item.base_value_source || '',
-              is_computed: item.is_computed || false,
-              sign_convention: item.sign_convention || 'positive',
-              dependencies: item.dependencies || []
-            }))
-          }
+            statement_type: imported.statement_type || 'unified'
+          })
 
-          setTemplate(normalized)
+          setLineItems((imported.lineItems || imported.line_items || []).map((item: any) => ({
+            code: item.code || '',
+            display_name: item.display_name || '',
+            level: typeof item.level === 'number' ? item.level : 1,
+            section: item.section || 'profit_and_loss',
+            formula: item.formula || null,
+            base_value_source: item.base_value_source || '',
+            is_computed: item.is_computed || false,
+            sign_convention: item.sign_convention || 'positive',
+            dependencies: item.dependencies || []
+          })))
+
           setSaveMessage('Template imported successfully')
           setTimeout(() => setSaveMessage(''), 3000)
         } catch (error) {
@@ -136,16 +189,23 @@ export default function DefineStatements() {
   }
 
   const handleSave = async () => {
+    if (!templateMetadata.code) {
+      setSaveMessage('Error: Template code is required')
+      return
+    }
+
     setIsSaving(true)
     setSaveMessage('')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-
-      const response = await fetch('http://localhost:3001/api/templates/save', {
+      const response = await fetch('http://localhost:3001/api/statement-templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template, dbPath })
+        body: JSON.stringify({
+          dbPath,
+          template: templateMetadata,
+          lineItems
+        })
       })
 
       const result = await response.json()
@@ -153,6 +213,7 @@ export default function DefineStatements() {
       if (response.ok && result.success) {
         setSaveMessage('Template saved successfully!')
         setTimeout(() => setSaveMessage(''), 3000)
+        loadTemplates() // Reload the template list
       } else {
         setSaveMessage(`Error: ${result.error || 'Failed to save template'}`)
       }
@@ -164,7 +225,32 @@ export default function DefineStatements() {
     }
   }
 
-  const filteredLineItems = template.line_items
+  const handleDelete = async (code: string) => {
+    if (!confirm(`Delete template "${code}"?`)) return
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/statement-templates/${code}?dbPath=${encodeURIComponent(dbPath)}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setSaveMessage('Template deleted successfully')
+        setTimeout(() => setSaveMessage(''), 3000)
+        loadTemplates()
+        if (selectedTemplateCode === code) {
+          setTemplateMetadata(defaultMetadata)
+          setLineItems([])
+          setSelectedTemplateCode(null)
+          setIsEditing(false)
+        }
+      }
+    } catch (error) {
+      console.error('Delete error:', error)
+      setSaveMessage('Error deleting template')
+    }
+  }
+
+  const filteredLineItems = lineItems
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => item.section === selectedSection)
 
@@ -172,301 +258,374 @@ export default function DefineStatements() {
     <div className="p-12 max-w-7xl mx-auto">
       <div className="mb-12" style={{ marginLeft: '1.5rem' }}>
         <h1 className="text-4xl font-bold tracking-tight">Define Statements</h1>
-        <p className="text-muted-foreground mt-2">Create financial statement templates</p>
+        <p className="text-muted-foreground mt-2">Create and manage financial statement templates</p>
       </div>
 
-      <div className="flex flex-col" style={{ gap: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-        {/* Template Metadata Card */}
+      {/* Two-panel layout at top */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem', marginBottom: '32px' }}>
+        {/* Left Panel: Template List */}
         <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
-          <CardContent className="p-10">
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '28px', marginLeft: '1.5rem' }}>
-              <FileText className="w-8 h-8 text-blue-500" style={{ flexShrink: 0, marginTop: '17px' }} />
+          <CardContent style={{ padding: '2.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
+              <List className="w-8 h-8 text-blue-500" style={{ flexShrink: 0, marginTop: '15px' }} />
               <div>
-                <h3 className="font-semibold text-lg">Template Information</h3>
-                <p className="text-sm text-muted-foreground">Basic template metadata</p>
+                <h3 className="font-semibold text-lg">Statement Templates</h3>
+                <p className="text-sm text-muted-foreground">Select a template to edit</p>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Template Code</label>
-                <Input
-                  value={template.template_code}
-                  onChange={(e) => setTemplate({ ...template, template_code: e.target.value })}
-                  placeholder="e.g., TEST_UNIFIED_L1"
-                  className="h-8"
-                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Template Name</label>
-                <Input
-                  value={template.template_name}
-                  onChange={(e) => setTemplate({ ...template, template_name: e.target.value })}
-                  placeholder="e.g., Level 1: Simple Unified"
-                  className="h-8"
-                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Industry</label>
-                <Input
-                  value={template.industry}
-                  onChange={(e) => setTemplate({ ...template, industry: e.target.value })}
-                  placeholder="e.g., TEST"
-                  className="h-8"
-                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Version</label>
-                <Input
-                  value={template.version}
-                  onChange={(e) => setTemplate({ ...template, version: e.target.value })}
-                  placeholder="e.g., 1.0.0"
-                  className="h-8"
-                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
-                />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label className="text-sm font-medium text-muted-foreground">Description</label>
-                <Input
-                  value={template.description}
-                  onChange={(e) => setTemplate({ ...template, description: e.target.value })}
-                  placeholder="e.g., Simple P&L with static balance sheet"
-                  className="h-8"
-                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
-                />
-              </div>
-            </div>
+            <Button
+              onClick={handleNewTemplate}
+              size="sm"
+              style={{ width: '100%', marginBottom: '16px', backgroundColor: '#3b82f6', border: 'none', color: '#ffffff' }}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Template
+            </Button>
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '32px', marginBottom: '16px', paddingLeft: '1.5rem' }}>
-              <Button
-                variant="outline"
-                onClick={handleImport}
-                style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Import JSON
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleExport}
-                disabled={!template.template_code}
-                style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export JSON
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleSave}
-                disabled={!template.template_code || isSaving}
-                style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {isSaving ? 'Saving...' : 'Save to Database'}
-              </Button>
-            </div>
-
-            {saveMessage && (
-              <div style={{
-                padding: '12px',
-                marginLeft: '1.5rem',
-                marginRight: '1.5rem',
-                backgroundColor: saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-                color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e',
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                {saveMessage}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Line Items Card */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
-          <CardContent className="p-10">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', marginLeft: '1.5rem', marginRight: '1.5rem' }}>
-              <div>
-                <h3 className="font-semibold text-lg">Line Items</h3>
-                <p className="text-sm text-muted-foreground">Define financial statement line items</p>
-              </div>
-              <Button
-                onClick={addLineItem}
-                style={{ backgroundColor: '#10b981', color: '#ffffff' }}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Line Item
-              </Button>
-            </div>
-
-            {/* Section Tabs */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '28px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-              {(Object.keys(sections) as Array<keyof typeof sections>).map((section) => (
-                <Button
-                  key={section}
-                  variant="outline"
-                  onClick={() => setSelectedSection(section)}
-                  style={{
-                    backgroundColor: section === selectedSection ? '#10b981' : 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    borderColor: section === selectedSection ? '#10b981' : 'rgba(16, 185, 129, 0.3)',
-                    border: 'none'
-                  }}
-                >
-                  {sections[section]}
-                </Button>
-              ))}
-            </div>
-
-            {/* Line Items List */}
-            <ScrollArea style={{ height: '600px' }}>
-              <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '2rem' }}>
-                {filteredLineItems.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
-                    <p>No line items in {sections[selectedSection]}</p>
-                    <p className="text-sm mt-2">Click "Add Line Item" to create one</p>
-                  </div>
+            <ScrollArea style={{ height: '400px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {isLoadingTemplates ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">Loading...</p>
+                ) : templates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No templates found</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                    {filteredLineItems.map(({ item, index }) => (
-                      <Card
-                        key={index}
-                        style={{
-                          backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                          borderColor: 'rgba(16, 185, 129, 0.2)',
-                          border: '1px solid'
-                        }}
-                      >
-                        <CardContent style={{ padding: '2.25rem' }}>
-                          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                            <GripVertical className="w-5 h-5 text-gray-500 mt-2" />
-                            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                              <div>
-                                <label className="text-sm font-medium text-muted-foreground">Code</label>
-                                <Input
-                                  value={item.code}
-                                  onChange={(e) => updateLineItem(index, 'code', e.target.value)}
-                                  placeholder="e.g., REVENUE"
-                                  className="h-8"
-                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
-                                />
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-muted-foreground">Display Name</label>
-                                <Input
-                                  value={item.display_name}
-                                  onChange={(e) => updateLineItem(index, 'display_name', e.target.value)}
-                                  placeholder="e.g., Revenue"
-                                  className="h-8"
-                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
-                                />
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-muted-foreground">Level</label>
-                                <Input
-                                  value={item.level.toString()}
-                                  onChange={(e) => {
-                                    const val = e.target.value
-                                    const num = parseInt(val)
-                                    if (!isNaN(num) && num > 0) {
-                                      updateLineItem(index, 'level', num)
-                                    } else if (val === '') {
-                                      updateLineItem(index, 'level', 1)
-                                    }
-                                  }}
-                                  placeholder="1"
-                                  className="h-8"
-                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
-                                />
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-muted-foreground">Sign Convention</label>
-                                <select
-                                  value={item.sign_convention}
-                                  onChange={(e) => updateLineItem(index, 'sign_convention', e.target.value)}
-                                  style={{
-                                    width: '100%',
-                                    marginTop: '8px',
-                                    fontSize: '14px',
-                                    padding: '8px 12px',
-                                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                                    color: '#ffffff',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                    borderRadius: '6px'
-                                  }}
-                                >
-                                  <option value="positive">Positive</option>
-                                  <option value="negative">Negative</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium text-muted-foreground">Is Computed?</label>
-                                <select
-                                  value={item.is_computed ? 'true' : 'false'}
-                                  onChange={(e) => updateLineItem(index, 'is_computed', e.target.value === 'true')}
-                                  style={{
-                                    width: '100%',
-                                    marginTop: '8px',
-                                    fontSize: '14px',
-                                    padding: '8px 12px',
-                                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                                    color: '#ffffff',
-                                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                                    borderRadius: '6px'
-                                  }}
-                                >
-                                  <option value="false">No (From Driver)</option>
-                                  <option value="true">Yes (From Formula)</option>
-                                </select>
-                              </div>
-                              <div>
-                                {item.is_computed ? (
-                                  <>
-                                    <label className="text-sm font-medium text-muted-foreground">Formula</label>
-                                    <Input
-                                      value={item.formula || ''}
-                                      onChange={(e) => updateLineItem(index, 'formula', e.target.value)}
-                                      placeholder="e.g., REVENUE + EXPENSES"
-                                      className="h-8"
-                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
-                                    />
-                                  </>
-                                ) : (
-                                  <>
-                                    <label className="text-sm font-medium text-muted-foreground">Driver Source</label>
-                                    <Input
-                                      value={item.base_value_source || ''}
-                                      onChange={(e) => updateLineItem(index, 'base_value_source', e.target.value)}
-                                      placeholder="e.g., driver:REVENUE"
-                                      className="h-8"
-                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
-                                    />
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeLineItem(index)}
-                              style={{ color: '#ef4444', marginTop: '24px' }}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                  templates.map((template) => (
+                    <Card
+                      key={template.code}
+                      style={{
+                        backgroundColor: selectedTemplateCode === template.code ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.8)',
+                        borderColor: selectedTemplateCode === template.code ? 'rgba(59, 130, 246, 0.6)' : 'rgba(59, 130, 246, 0.2)',
+                        border: '1px solid',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => handleTemplateSelect(template.code)}
+                    >
+                      <CardContent className="p-4">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                          <div>
+                            <p className="font-medium text-sm">{template.code}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{template.statement_type || 'unified'} | v{template.version || '1.0'}</p>
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(template.code)
+                            }}
+                            style={{ padding: '4px' }}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
                 )}
               </div>
             </ScrollArea>
           </CardContent>
         </Card>
+
+        {/* Right Panel: Template Edit Form */}
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+          <CardContent style={{ padding: '2.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
+              <FileText className="w-8 h-8 text-green-500" style={{ flexShrink: 0, marginTop: '15px' }} />
+              <div>
+                <h3 className="font-semibold text-lg">Template Details</h3>
+                <p className="text-sm text-muted-foreground">Basic template metadata</p>
+              </div>
+            </div>
+
+            {isEditing ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Template Code</label>
+                    <Input
+                      value={templateMetadata.code}
+                      onChange={(e) => setTemplateMetadata({ ...templateMetadata, code: e.target.value })}
+                      placeholder="e.g., TEST_UNIFIED_L1"
+                      className="h-8"
+                      style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                      disabled={!!selectedTemplateCode}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Display Name</label>
+                    <Input
+                      value={templateMetadata.display_name}
+                      onChange={(e) => setTemplateMetadata({ ...templateMetadata, display_name: e.target.value })}
+                      placeholder="e.g., Test Unified Template Level 1"
+                      className="h-8"
+                      style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Description</label>
+                    <Input
+                      value={templateMetadata.description}
+                      onChange={(e) => setTemplateMetadata({ ...templateMetadata, description: e.target.value })}
+                      placeholder="Template description..."
+                      className="h-8"
+                      style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Statement Type</label>
+                    <select
+                      value={templateMetadata.statement_type}
+                      onChange={(e) => setTemplateMetadata({ ...templateMetadata, statement_type: e.target.value })}
+                      style={{
+                        width: '100%',
+                        marginTop: '8px',
+                        fontSize: '14px',
+                        padding: '8px 12px',
+                        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                        color: '#ffffff',
+                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                        borderRadius: '6px',
+                        height: '32px'
+                      }}
+                    >
+                      <option value="unified">Unified</option>
+                      <option value="profit_and_loss">Profit & Loss</option>
+                      <option value="balance_sheet">Balance Sheet</option>
+                      <option value="cash_flow">Cash Flow</option>
+                      <option value="carbon_statement">Carbon Statement</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '24px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outline"
+                    onClick={handleImport}
+                    size="sm"
+                    style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Import JSON
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleExport}
+                    size="sm"
+                    style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export JSON
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    size="sm"
+                    style={{ backgroundColor: '#22c55e', border: 'none', color: '#ffffff' }}
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSaving ? 'Saving...' : 'Save to Database'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => { setIsEditing(false); setTemplateMetadata(defaultMetadata); setLineItems([]) }}
+                    size="sm"
+                    style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+
+                {saveMessage && (
+                  <p className="text-sm mt-4" style={{ color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e' }}>
+                    {saveMessage}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+                <p>Select a template from the list or create a new one</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Bottom Panel: Line Items (Only shown when editing) */}
+      {isEditing && (
+        <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(139, 92, 246, 0.4)' }}>
+            <CardContent style={{ padding: '2.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '28px', marginLeft: '1.5rem' }}>
+                <FileText className="w-8 h-8 text-violet-500" style={{ flexShrink: 0, marginTop: '15px' }} />
+                <div>
+                  <h3 className="font-semibold text-lg">Line Items</h3>
+                  <p className="text-sm text-muted-foreground">Define line items for each section</p>
+                </div>
+              </div>
+
+              {/* Section Tabs */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+                {Object.entries(sections).map(([key, label]) => (
+                  <Button
+                    key={key}
+                    onClick={() => setSelectedSection(key as any)}
+                    size="sm"
+                    style={{
+                      backgroundColor: selectedSection === key ? '#22c55e' : 'rgba(16, 185, 129, 0.2)',
+                      border: 'none',
+                      color: '#ffffff'
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+                <Button
+                  onClick={addLineItem}
+                  size="sm"
+                  style={{ marginLeft: 'auto', backgroundColor: '#3b82f6', border: 'none', color: '#ffffff' }}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Line Item
+                </Button>
+              </div>
+
+              {/* Line Items List */}
+              <ScrollArea style={{ height: '600px' }}>
+                <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '2rem' }}>
+                  {filteredLineItems.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
+                      <p>No line items in {sections[selectedSection]}</p>
+                      <p className="text-sm mt-2">Click "Add Line Item" to create one</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                      {filteredLineItems.map(({ item, index }) => (
+                        <Card
+                          key={index}
+                          style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                            borderColor: 'rgba(16, 185, 129, 0.2)',
+                            border: '1px solid'
+                          }}
+                        >
+                          <CardContent style={{ padding: '2.25rem' }}>
+                            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                              <GripVertical className="w-5 h-5 text-gray-500 mt-2" />
+                              <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">Code</label>
+                                  <Input
+                                    value={item.code}
+                                    onChange={(e) => updateLineItem(index, 'code', e.target.value)}
+                                    placeholder="e.g., REVENUE"
+                                    className="h-8"
+                                    style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">Display Name</label>
+                                  <Input
+                                    value={item.display_name}
+                                    onChange={(e) => updateLineItem(index, 'display_name', e.target.value)}
+                                    placeholder="e.g., Revenue"
+                                    className="h-8"
+                                    style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">Level</label>
+                                  <Input
+                                    value={item.level.toString()}
+                                    onChange={(e) => {
+                                      const val = e.target.value
+                                      const num = parseInt(val)
+                                      if (!isNaN(num) && num > 0) {
+                                        updateLineItem(index, 'level', num)
+                                      } else if (val === '') {
+                                        updateLineItem(index, 'level', 1)
+                                      }
+                                    }}
+                                    placeholder="1"
+                                    className="h-8"
+                                    style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">Sign Convention</label>
+                                  <select
+                                    value={item.sign_convention}
+                                    onChange={(e) => updateLineItem(index, 'sign_convention', e.target.value)}
+                                    style={{
+                                      width: '100%',
+                                      marginTop: '8px',
+                                      fontSize: '14px',
+                                      padding: '8px 12px',
+                                      backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                                      color: '#ffffff',
+                                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                                      borderRadius: '6px'
+                                    }}
+                                  >
+                                    <option value="positive">Positive</option>
+                                    <option value="negative">Negative</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">Is Computed?</label>
+                                  <select
+                                    value={item.is_computed ? 'true' : 'false'}
+                                    onChange={(e) => updateLineItem(index, 'is_computed', e.target.value === 'true')}
+                                    style={{
+                                      width: '100%',
+                                      marginTop: '8px',
+                                      fontSize: '14px',
+                                      padding: '8px 12px',
+                                      backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                                      color: '#ffffff',
+                                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                                      borderRadius: '6px'
+                                    }}
+                                  >
+                                    <option value="false">No (From Driver)</option>
+                                    <option value="true">Yes (From Formula)</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">Base Value Source</label>
+                                  <Input
+                                    value={item.base_value_source || ''}
+                                    onChange={(e) => updateLineItem(index, 'base_value_source', e.target.value)}
+                                    placeholder="e.g., driver_code"
+                                    className="h-8"
+                                    style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  />
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeLineItem(index)}
+                                style={{ padding: '8px', marginTop: '20px' }}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-400" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

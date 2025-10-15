@@ -886,6 +886,148 @@ app.post('/api/entities/delete', express.json(), (req, res) => {
 })
 
 /**
+ * Get all statement templates
+ * GET /api/statement-templates
+ */
+app.get('/api/statement-templates', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Database path required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  db.all('SELECT code, statement_type, industry, version, is_active FROM statement_template WHERE is_active = 1 ORDER BY code', [], (err, rows) => {
+    db.close()
+
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    res.json(rows || [])
+  })
+})
+
+/**
+ * Get statement template by code with line items
+ * GET /api/statement-templates/:code
+ */
+app.get('/api/statement-templates/:code', (req, res) => {
+  const { code } = req.params
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Database path required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  db.get('SELECT * FROM statement_template WHERE code = ?', [code], (err, template) => {
+    db.close()
+
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' })
+    }
+
+    // Parse JSON structure and return
+    try {
+      const jsonStructure = JSON.parse(template.json_structure || '{"line_items":[]}')
+      res.json({
+        code: template.code,
+        statement_type: template.statement_type,
+        industry: template.industry,
+        version: template.version,
+        lineItems: jsonStructure.line_items || []
+      })
+    } catch (e) {
+      return res.status(500).json({ error: 'Invalid JSON structure in template' })
+    }
+  })
+})
+
+/**
+ * Save statement template with line items
+ * POST /api/statement-templates
+ */
+app.post('/api/statement-templates', (req, res) => {
+  const { dbPath, template, lineItems } = req.body
+
+  if (!dbPath || !template) {
+    return res.status(400).json({ error: 'Database path and template required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  // Build JSON structure
+  const jsonStructure = JSON.stringify({
+    line_items: lineItems || []
+  })
+
+  // Insert or replace template with JSON structure
+  db.run(
+    `INSERT OR REPLACE INTO statement_template (code, statement_type, industry, version, json_structure, is_active)
+     VALUES (?, ?, ?, ?, ?, 1)`,
+    [template.code, template.statement_type || 'unified', template.industry || 'GENERAL', template.version || '1.0', jsonStructure],
+    function(err) {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to save template: ' + err.message })
+      }
+
+      res.json({ success: true })
+    }
+  )
+})
+
+/**
+ * Delete statement template
+ * DELETE /api/statement-templates/:code
+ */
+app.delete('/api/statement-templates/:code', (req, res) => {
+  const { code } = req.params
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Database path required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  // Soft delete by setting is_active = 0
+  db.run('UPDATE statement_template SET is_active = 0 WHERE code = ?', [code], function(err) {
+    db.close()
+
+    if (err) {
+      return res.status(500).json({ error: 'Failed to delete template: ' + err.message })
+    }
+
+    res.json({ success: true, deleted: this.changes })
+  })
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {

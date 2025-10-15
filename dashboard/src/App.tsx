@@ -11,7 +11,7 @@ import MapStatements from './pages/MapStatements'
 
 function App() {
   const [dbPath, setDbPath] = useState<string | null>(() => {
-    return localStorage.getItem('lastDatabasePath') || '/Users/Owen/finmodel_data/production.db'
+    return localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
   })
   const [showDbSelector, setShowDbSelector] = useState(false)
 
