@@ -9,7 +9,7 @@ interface LineItem {
   code: string
   display_name: string
   level: number
-  section: 'profit_and_loss' | 'balance_sheet' | 'cash_flow'
+  section: 'profit_and_loss' | 'balance_sheet' | 'cash_flow' | 'carbon_statement'
   formula: string | null
   base_value_source?: string
   is_computed: boolean
@@ -39,14 +39,15 @@ const defaultTemplate: Template = {
 
 export default function DefineStatements() {
   const [template, setTemplate] = useState<Template>(defaultTemplate)
-  const [selectedSection, setSelectedSection] = useState<'profit_and_loss' | 'balance_sheet' | 'cash_flow'>('profit_and_loss')
+  const [selectedSection, setSelectedSection] = useState<'profit_and_loss' | 'balance_sheet' | 'cash_flow' | 'carbon_statement'>('profit_and_loss')
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
 
   const sections = {
     profit_and_loss: 'Profit & Loss',
     balance_sheet: 'Balance Sheet',
-    cash_flow: 'Cash Flow'
+    cash_flow: 'Cash Flow',
+    carbon_statement: 'Carbon Statement'
   }
 
   const addLineItem = () => {
@@ -174,67 +175,72 @@ export default function DefineStatements() {
         <p className="text-muted-foreground mt-2">Create financial statement templates</p>
       </div>
 
-      <div className="flex flex-col" style={{ gap: '32px' }}>
+      <div className="flex flex-col" style={{ gap: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         {/* Template Metadata Card */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(139, 92, 246, 0.3)' }}>
-          <CardContent className="p-8">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', marginLeft: '1.5rem' }}>
-              <FileText className="w-8 h-8 text-violet-500" />
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
+          <CardContent className="p-10">
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '28px', marginLeft: '1.5rem' }}>
+              <FileText className="w-8 h-8 text-blue-500" style={{ flexShrink: 0, marginTop: '17px' }} />
               <div>
                 <h3 className="font-semibold text-lg">Template Information</h3>
                 <p className="text-sm text-muted-foreground">Basic template metadata</p>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
               <div>
-                <label className="text-sm text-muted-foreground">Template Code</label>
+                <label className="text-sm font-medium text-muted-foreground">Template Code</label>
                 <Input
                   value={template.template_code}
                   onChange={(e) => setTemplate({ ...template, template_code: e.target.value })}
                   placeholder="e.g., TEST_UNIFIED_L1"
-                  style={{ marginTop: '4px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                  className="h-8"
+                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">Template Name</label>
+                <label className="text-sm font-medium text-muted-foreground">Template Name</label>
                 <Input
                   value={template.template_name}
                   onChange={(e) => setTemplate({ ...template, template_name: e.target.value })}
                   placeholder="e.g., Level 1: Simple Unified"
-                  style={{ marginTop: '4px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                  className="h-8"
+                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">Industry</label>
+                <label className="text-sm font-medium text-muted-foreground">Industry</label>
                 <Input
                   value={template.industry}
                   onChange={(e) => setTemplate({ ...template, industry: e.target.value })}
                   placeholder="e.g., TEST"
-                  style={{ marginTop: '4px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                  className="h-8"
+                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
                 />
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">Version</label>
+                <label className="text-sm font-medium text-muted-foreground">Version</label>
                 <Input
                   value={template.version}
                   onChange={(e) => setTemplate({ ...template, version: e.target.value })}
                   placeholder="e.g., 1.0.0"
-                  style={{ marginTop: '4px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                  className="h-8"
+                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
                 />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label className="text-sm text-muted-foreground">Description</label>
+                <label className="text-sm font-medium text-muted-foreground">Description</label>
                 <Input
                   value={template.description}
                   onChange={(e) => setTemplate({ ...template, description: e.target.value })}
                   placeholder="e.g., Simple P&L with static balance sheet"
-                  style={{ marginTop: '4px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
+                  className="h-8"
+                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
                 />
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px', paddingLeft: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '32px', marginBottom: '16px', paddingLeft: '1.5rem' }}>
               <Button
                 variant="outline"
                 onClick={handleImport}
@@ -252,21 +258,44 @@ export default function DefineStatements() {
                 <Download className="w-4 h-4 mr-2" />
                 Export JSON
               </Button>
+              <Button
+                variant="outline"
+                onClick={handleSave}
+                disabled={!template.template_code || isSaving}
+                style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {isSaving ? 'Saving...' : 'Save to Database'}
+              </Button>
             </div>
+
+            {saveMessage && (
+              <div style={{
+                padding: '12px',
+                marginLeft: '1.5rem',
+                marginRight: '1.5rem',
+                backgroundColor: saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                {saveMessage}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* Line Items Card */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(139, 92, 246, 0.3)' }}>
-          <CardContent className="p-8">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', marginLeft: '1.5rem', marginRight: '1.5rem' }}>
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+          <CardContent className="p-10">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', marginLeft: '1.5rem', marginRight: '1.5rem' }}>
               <div>
                 <h3 className="font-semibold text-lg">Line Items</h3>
                 <p className="text-sm text-muted-foreground">Define financial statement line items</p>
               </div>
               <Button
                 onClick={addLineItem}
-                style={{ backgroundColor: '#8b5cf6', color: '#ffffff' }}
+                style={{ backgroundColor: '#10b981', color: '#ffffff' }}
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Line Item
@@ -274,16 +303,16 @@ export default function DefineStatements() {
             </div>
 
             {/* Section Tabs */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '28px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
               {(Object.keys(sections) as Array<keyof typeof sections>).map((section) => (
                 <Button
                   key={section}
                   variant="outline"
                   onClick={() => setSelectedSection(section)}
                   style={{
-                    backgroundColor: section === selectedSection ? '#8b5cf6' : 'rgba(15, 23, 42, 0.8)',
+                    backgroundColor: section === selectedSection ? '#10b981' : 'rgba(15, 23, 42, 0.8)',
                     color: '#ffffff',
-                    borderColor: section === selectedSection ? '#8b5cf6' : 'rgba(139, 92, 246, 0.3)',
+                    borderColor: section === selectedSection ? '#10b981' : 'rgba(16, 185, 129, 0.3)',
                     border: 'none'
                   }}
                 >
@@ -307,34 +336,36 @@ export default function DefineStatements() {
                         key={index}
                         style={{
                           backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                          borderColor: 'rgba(139, 92, 246, 0.2)',
+                          borderColor: 'rgba(16, 185, 129, 0.2)',
                           border: '1px solid'
                         }}
                       >
                         <CardContent className="p-6">
                           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                             <GripVertical className="w-5 h-5 text-gray-500 mt-2" />
-                            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                               <div>
-                                <label className="text-xs text-muted-foreground">Code</label>
+                                <label className="text-sm font-medium text-muted-foreground">Code</label>
                                 <Input
                                   value={item.code}
                                   onChange={(e) => updateLineItem(index, 'code', e.target.value)}
                                   placeholder="e.g., REVENUE"
-                                  style={{ marginTop: '4px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  className="h-8"
+                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
                                 />
                               </div>
                               <div>
-                                <label className="text-xs text-muted-foreground">Display Name</label>
+                                <label className="text-sm font-medium text-muted-foreground">Display Name</label>
                                 <Input
                                   value={item.display_name}
                                   onChange={(e) => updateLineItem(index, 'display_name', e.target.value)}
                                   placeholder="e.g., Revenue"
-                                  style={{ marginTop: '4px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  className="h-8"
+                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
                                 />
                               </div>
                               <div>
-                                <label className="text-xs text-muted-foreground">Level</label>
+                                <label className="text-sm font-medium text-muted-foreground">Level</label>
                                 <Input
                                   value={item.level.toString()}
                                   onChange={(e) => {
@@ -347,21 +378,23 @@ export default function DefineStatements() {
                                     }
                                   }}
                                   placeholder="1"
-                                  style={{ marginTop: '4px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                  className="h-8"
+                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
                                 />
                               </div>
                               <div>
-                                <label className="text-xs text-muted-foreground">Sign Convention</label>
+                                <label className="text-sm font-medium text-muted-foreground">Sign Convention</label>
                                 <select
                                   value={item.sign_convention}
                                   onChange={(e) => updateLineItem(index, 'sign_convention', e.target.value)}
                                   style={{
                                     width: '100%',
-                                    marginTop: '4px',
+                                    marginTop: '8px',
+                                    fontSize: '14px',
                                     padding: '8px 12px',
                                     backgroundColor: 'rgba(30, 41, 59, 0.9)',
                                     color: '#ffffff',
-                                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                                    border: '1px solid rgba(16, 185, 129, 0.2)',
                                     borderRadius: '6px'
                                   }}
                                 >
@@ -370,17 +403,18 @@ export default function DefineStatements() {
                                 </select>
                               </div>
                               <div>
-                                <label className="text-xs text-muted-foreground">Is Computed?</label>
+                                <label className="text-sm font-medium text-muted-foreground">Is Computed?</label>
                                 <select
                                   value={item.is_computed ? 'true' : 'false'}
                                   onChange={(e) => updateLineItem(index, 'is_computed', e.target.value === 'true')}
                                   style={{
                                     width: '100%',
-                                    marginTop: '4px',
+                                    marginTop: '8px',
+                                    fontSize: '14px',
                                     padding: '8px 12px',
                                     backgroundColor: 'rgba(30, 41, 59, 0.9)',
                                     color: '#ffffff',
-                                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                                    border: '1px solid rgba(16, 185, 129, 0.2)',
                                     borderRadius: '6px'
                                   }}
                                 >
@@ -391,22 +425,24 @@ export default function DefineStatements() {
                               <div>
                                 {item.is_computed ? (
                                   <>
-                                    <label className="text-xs text-muted-foreground">Formula</label>
+                                    <label className="text-sm font-medium text-muted-foreground">Formula</label>
                                     <Input
                                       value={item.formula || ''}
                                       onChange={(e) => updateLineItem(index, 'formula', e.target.value)}
                                       placeholder="e.g., REVENUE + EXPENSES"
-                                      style={{ marginTop: '4px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                      className="h-8"
+                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
                                     />
                                   </>
                                 ) : (
                                   <>
-                                    <label className="text-xs text-muted-foreground">Driver Source</label>
+                                    <label className="text-sm font-medium text-muted-foreground">Driver Source</label>
                                     <Input
                                       value={item.base_value_source || ''}
                                       onChange={(e) => updateLineItem(index, 'base_value_source', e.target.value)}
                                       placeholder="e.g., driver:REVENUE"
-                                      style={{ marginTop: '4px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
+                                      className="h-8"
+                                  style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
                                     />
                                   </>
                                 )}
@@ -430,36 +466,6 @@ export default function DefineStatements() {
             </ScrollArea>
           </CardContent>
         </Card>
-
-        {/* Save Button */}
-        {saveMessage && (
-          <div style={{
-            padding: '12px',
-            backgroundColor: saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-            color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e',
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            {saveMessage}
-          </div>
-        )}
-
-        <Button
-          onClick={handleSave}
-          disabled={!template.template_code || isSaving}
-          style={{
-            width: '220px',
-            height: '44px',
-            backgroundColor: template.template_code && !isSaving ? '#8b5cf6' : '#6b7280',
-            border: 'none',
-            color: '#ffffff',
-            margin: '0 auto',
-            display: 'block'
-          }}
-        >
-          <Save className="w-4 h-4 mr-2" />
-          {isSaving ? 'Saving...' : 'Save Template'}
-        </Button>
       </div>
     </div>
   )

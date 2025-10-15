@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Building2, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save } from 'lucide-react'
+import { Building2, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Upload, Download } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -147,6 +147,32 @@ export default function DefineEntities() {
     setSelectedEntity(null)
   }
 
+  const handleImport = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) {
+        const text = await file.text()
+        const data = JSON.parse(text)
+        setFormData(data)
+      }
+    }
+    input.click()
+  }
+
+  const handleExport = () => {
+    const dataStr = JSON.stringify(formData, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `entity_${formData.code || 'new'}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const startEdit = (entity: Entity) => {
     setFormData({ ...entity })
     setSelectedEntity(entity)
@@ -165,7 +191,7 @@ export default function DefineEntities() {
 
   const renderTree = (entities: Entity[], level = 0): JSX.Element => {
     return (
-      <div style={{ marginLeft: level > 0 ? '24px' : '0' }}>
+      <div style={{ marginLeft: level > 0 ? '24px' : '8px', marginRight: '8px' }}>
         {entities.map((entity) => {
           const hasChildren = entity.children && entity.children.length > 0
           const isExpanded = entity.entity_id ? expandedNodes.has(entity.entity_id) : false
@@ -202,7 +228,7 @@ export default function DefineEntities() {
                 )}
                 {!hasChildren && <div style={{ width: '28px' }} />}
 
-                <Building2 className="w-4 h-4 mr-2" style={{ color: '#22c55e' }} />
+                <Building2 className="w-4 h-4" style={{ color: '#22c55e', marginRight: '8px', marginLeft: '-4px' }} />
 
                 <div style={{ flex: 1 }}>
                   <div className="text-sm font-medium">{entity.name}</div>
@@ -211,7 +237,7 @@ export default function DefineEntities() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginRight: '4px' }}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -248,22 +274,23 @@ export default function DefineEntities() {
         <p className="text-muted-foreground mt-2">Create and manage your entity hierarchy</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         {/* Tree View */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(34, 197, 94, 0.3)' }}>
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
           <CardContent className="p-8">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 className="font-semibold text-lg">Entity Hierarchy</h3>
+              <h3 className="font-semibold text-lg" style={{ marginLeft: '8px' }}>Entity Hierarchy</h3>
               <Button
                 onClick={() => {
                   resetForm()
                   setIsEditing(true)
                 }}
+                size="sm"
                 style={{
                   backgroundColor: '#22c55e',
                   border: 'none',
                   color: '#ffffff',
-                  padding: '8px 16px'
+                  marginRight: '8px'
                 }}
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -285,19 +312,20 @@ export default function DefineEntities() {
 
         {/* Edit Form */}
         {isEditing && (
-          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(34, 197, 94, 0.3)' }}>
+          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
             <CardContent className="p-8">
-              <h3 className="font-semibold text-lg mb-6">
+              <h3 className="font-semibold text-lg mb-6" style={{ marginLeft: '8px' }}>
                 {formData.entity_id ? 'Edit Entity' : 'New Entity'}
               </h3>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '8px', paddingRight: '8px' }}>
                 <div>
                   <label className="text-sm text-muted-foreground">Code</label>
                   <Input
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                     placeholder="e.g., ACME_CORP"
+                    className="h-8"
                     style={{ marginTop: '4px', color: '#ffffff' }}
                   />
                 </div>
@@ -308,6 +336,7 @@ export default function DefineEntities() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g., Acme Corporation"
+                    className="h-8"
                     style={{ marginTop: '4px', color: '#ffffff' }}
                   />
                 </div>
@@ -342,6 +371,7 @@ export default function DefineEntities() {
                     onChange={(e) => setFormData({ ...formData, base_currency: e.target.value.toUpperCase() })}
                     placeholder="USD"
                     maxLength={3}
+                    className="h-8"
                     style={{ marginTop: '4px', color: '#ffffff' }}
                   />
                 </div>
@@ -378,6 +408,7 @@ export default function DefineEntities() {
                       json_metadata: { ...formData.json_metadata, industry: e.target.value }
                     })}
                     placeholder="e.g., Manufacturing"
+                    className="h-8"
                     style={{ marginTop: '4px', color: '#ffffff' }}
                   />
                 </div>
@@ -391,6 +422,7 @@ export default function DefineEntities() {
                       json_metadata: { ...formData.json_metadata, geography: e.target.value }
                     })}
                     placeholder="e.g., Global"
+                    className="h-8"
                     style={{ marginTop: '4px', color: '#ffffff' }}
                   />
                 </div>
@@ -407,29 +439,47 @@ export default function DefineEntities() {
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outline"
+                    onClick={handleImport}
+                    size="sm"
+                    style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Import JSON
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleExport}
+                    size="sm"
+                    style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export JSON
+                  </Button>
                   <Button
                     onClick={handleSave}
+                    size="sm"
                     style={{
-                      flex: 1,
                       backgroundColor: '#22c55e',
                       border: 'none',
                       color: '#ffffff'
                     }}
                   >
                     <Save className="w-4 h-4 mr-2" />
-                    Save Entity
+                    Save to Database
                   </Button>
                   <Button
+                    variant="outline"
                     onClick={() => {
                       setIsEditing(false)
                       resetForm()
                     }}
+                    size="sm"
                     style={{
-                      flex: 1,
-                      backgroundColor: '#6b7280',
-                      border: 'none',
-                      color: '#ffffff'
+                      color: '#ffffff',
+                      borderColor: 'rgba(255, 255, 255, 0.2)'
                     }}
                   >
                     Cancel

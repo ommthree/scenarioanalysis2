@@ -48,10 +48,11 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
 
   const navSections = [
     {
-      title: 'Data',
+      title: 'Definitions',
       items: [
-        { path: '/data/database', icon: Database, label: 'Database' },
-        { path: '/data/stored-calcs', icon: BarChart3, label: 'Stored Calcs' },
+        { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
+        { path: '/definitions/entities', icon: Building2, label: 'Entities' },
+        { path: '/definitions/actions', icon: Activity, label: 'Actions' },
       ]
     },
     {
@@ -65,11 +66,10 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       ]
     },
     {
-      title: 'Definitions',
+      title: 'Data',
       items: [
-        { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
-        { path: '/definitions/entities', icon: Building2, label: 'Entities' },
-        { path: '/definitions/actions', icon: Activity, label: 'Actions' },
+        { path: '/data/database', icon: Database, label: 'Database' },
+        { path: '/data/stored-calcs', icon: BarChart3, label: 'Stored Calcs' },
       ]
     },
     {
@@ -126,11 +126,11 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
 
         {/* Navigation */}
         <ScrollArea className="flex-1 px-6 py-4">
-          <nav className="space-y-6">
+          <nav className="space-y-6" style={{ marginLeft: '8px' }}>
             {navSections.map((section, idx) => (
               <div key={section.title}>
                 {idx > 0 && <Separator className="my-4" />}
-                <div className="mb-3">
+                <div style={{ marginBottom: '4px' }}>
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
                     {section.title}
                   </h3>
@@ -143,7 +143,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
                       <Link
                         key={item.path}
                         to={item.path}
-                        className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm ${
+                        className={`group flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all text-sm ${
                           isActive
                             ? 'bg-primary text-primary-foreground font-medium shadow-sm'
                             : 'text-muted-foreground hover:bg-accent hover:text-foreground'

@@ -422,19 +422,19 @@ export default function MapStatements() {
         <p className="text-muted-foreground mt-2">Map CSV rows to entity hierarchy + line items</p>
       </div>
 
-      <div className="flex flex-col" style={{ gap: '32px' }}>
+      <div className="flex flex-col" style={{ gap: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         {/* Selection Card */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(34, 197, 94, 0.3)' }}>
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
           <CardContent className="p-8">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', marginLeft: '1.5rem' }}>
-              <Link2 className="w-8 h-8 text-green-500" />
+              <Link2 className="w-8 h-8 text-blue-500" style={{ marginTop: '-30px' }} />
               <div>
                 <h3 className="font-semibold text-lg">Select Template & Statement</h3>
                 <p className="text-sm text-muted-foreground">Choose what to map</p>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '16px' }}>
               <div>
                 <label className="text-sm text-muted-foreground">Template</label>
                 <select
@@ -517,17 +517,30 @@ export default function MapStatements() {
 
         {/* Hierarchical Tree Mapping */}
         {selectedTemplate && selectedCompany && csvRows.length > 0 && (
-          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(34, 197, 94, 0.3)' }}>
+          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
             <CardContent className="p-8">
               <div style={{ marginBottom: '24px', marginLeft: '1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Network className="w-8 h-8 text-green-500" />
-                  <div>
-                    <h3 className="font-semibold text-lg">Hierarchical Mapping</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Company → Line Item → Division → Region | Drag CSV rows to any level
-                    </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between', paddingRight: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <Network className="w-8 h-8 text-green-500" style={{ marginTop: '-30px' }} />
+                    <div>
+                      <h3 className="font-semibold text-lg">Hierarchical Mapping</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Drag CSV rows to any level
+                      </p>
+                    </div>
                   </div>
+                  <Button
+                    size="sm"
+                    style={{
+                      backgroundColor: '#22c55e',
+                      border: 'none',
+                      color: '#ffffff',
+                      marginTop: '-20px'
+                    }}
+                  >
+                    Map with AI
+                  </Button>
                 </div>
               </div>
 
