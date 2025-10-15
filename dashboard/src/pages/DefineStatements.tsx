@@ -83,11 +83,26 @@ export default function DefineStatements() {
         const data = await response.json()
         setTemplateMetadata({
           code: data.code,
-          display_name: data.display_name,
-          description: data.description,
+          display_name: data.display_name || data.code,
+          description: data.description || '',
           statement_type: data.statement_type
         })
-        setLineItems(data.lineItems || [])
+
+        // For unified templates, preserve the section field from the database
+        // For specific statement types, set a default section
+        const defaultSection = data.statement_type === 'pl' ? 'profit_and_loss' :
+                               data.statement_type === 'bs' ? 'balance_sheet' :
+                               data.statement_type === 'cf' ? 'cash_flow' :
+                               data.statement_type === 'carbon' ? 'carbon_statement' : 'profit_and_loss'
+
+        const mappedLineItems = (data.lineItems || []).map((item: any) => ({
+          ...item,
+          // Use item's section if it exists (unified templates), otherwise use default
+          section: item.section || defaultSection,
+          sign_convention: item.sign_convention || 'positive'
+        }))
+        setLineItems(mappedLineItems)
+        setSelectedSection(defaultSection)  // Start with the default tab for the template type
         setSelectedTemplateCode(code)
         setIsEditing(true)
       }
@@ -255,7 +270,7 @@ export default function DefineStatements() {
     .filter(({ item }) => item.section === selectedSection)
 
   return (
-    <div className="p-12 max-w-7xl mx-auto">
+    <div className="p-12 mx-auto" style={{ maxWidth: '1800px' }}>
       <div className="mb-12" style={{ marginLeft: '1.5rem' }}>
         <h1 className="text-4xl font-bold tracking-tight">Define Statements</h1>
         <p className="text-muted-foreground mt-2">Create and manage financial statement templates</p>
@@ -264,7 +279,7 @@ export default function DefineStatements() {
       {/* Two-panel layout at top */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem', marginBottom: '32px' }}>
         {/* Left Panel: Template List */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)', minWidth: 0 }}>
           <CardContent style={{ padding: '2.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
               <List className="w-8 h-8 text-blue-500" style={{ flexShrink: 0, marginTop: '15px' }} />
@@ -283,8 +298,8 @@ export default function DefineStatements() {
               New Template
             </Button>
 
-            <ScrollArea style={{ height: '400px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ height: '400px', overflowY: 'auto', width: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '8px' }}>
                 {isLoadingTemplates ? (
                   <p className="text-sm text-muted-foreground text-center py-4">Loading...</p>
                 ) : templates.length === 0 ? (
@@ -297,13 +312,16 @@ export default function DefineStatements() {
                         backgroundColor: selectedTemplateCode === template.code ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.8)',
                         borderColor: selectedTemplateCode === template.code ? 'rgba(59, 130, 246, 0.6)' : 'rgba(59, 130, 246, 0.2)',
                         border: '1px solid',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box'
                       }}
                       onClick={() => handleTemplateSelect(template.code)}
                     >
-                      <CardContent className="p-4">
+                      <CardContent style={{ padding: '10px 20px 10px 20px', position: 'relative', minHeight: '52px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                          <div>
+                          <div style={{ paddingRight: '12px', flex: 1 }}>
                             <p className="font-medium text-sm">{template.code}</p>
                             <p className="text-xs text-muted-foreground mt-1">{template.statement_type || 'unified'} | v{template.version || '1.0'}</p>
                           </div>
@@ -314,7 +332,7 @@ export default function DefineStatements() {
                               e.stopPropagation()
                               handleDelete(template.code)
                             }}
-                            style={{ padding: '4px' }}
+                            style={{ padding: '4px', position: 'absolute', bottom: '16px', right: '8px' }}
                           >
                             <Trash2 className="w-4 h-4 text-red-400" />
                           </Button>
@@ -324,12 +342,12 @@ export default function DefineStatements() {
                   ))
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </CardContent>
         </Card>
 
         {/* Right Panel: Template Edit Form */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)', minWidth: 0 }}>
           <CardContent style={{ padding: '2.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
               <FileText className="w-8 h-8 text-green-500" style={{ flexShrink: 0, marginTop: '15px' }} />
