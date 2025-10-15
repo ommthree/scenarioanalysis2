@@ -564,7 +564,7 @@ app.post('/api/templates/list', express.json(), (req, res) => {
       }
     })
 
-    db.all('SELECT code, json_structure FROM statement_template WHERE is_active = 1', [], (err, rows) => {
+    db.all('SELECT code, statement_type, json_structure FROM statement_template WHERE is_active = 1', [], (err, rows) => {
       db.close()
 
       if (err) {
@@ -577,6 +577,7 @@ app.post('/api/templates/list', express.json(), (req, res) => {
           return {
             template_code: row.code,
             template_name: template.template_name || row.code,
+            statement_type: row.statement_type,
             line_items: template.line_items || []
           }
         } catch (parseError) {
@@ -584,6 +585,7 @@ app.post('/api/templates/list', express.json(), (req, res) => {
           return {
             template_code: row.code,
             template_name: row.code,
+            statement_type: row.statement_type,
             line_items: []
           }
         }
@@ -653,7 +655,18 @@ app.post('/api/statements/staging', express.json(), (req, res) => {
       return res.status(400).json({ error: 'Statement type is required' })
     }
 
-    const tableName = `staging_statement_${statementType}`
+    // Map statement types to staging table names
+    const tableNameMap = {
+      'pl': 'staging_statement_pnl',
+      'pnl': 'staging_statement_pnl',
+      'bs': 'staging_statement_balance_sheet',
+      'balance_sheet': 'staging_statement_balance_sheet',
+      'cf': 'staging_statement_cashflow',
+      'cashflow': 'staging_statement_cashflow',
+      'carbon': 'staging_statement_carbon'
+    }
+
+    const tableName = tableNameMap[statementType.toLowerCase()] || `staging_statement_${statementType}`
 
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {

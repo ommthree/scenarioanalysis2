@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Link2, ArrowRight, Check, AlertCircle, Save, GripVertical, ChevronDown, ChevronRight, Building2, Network } from 'lucide-react'
+import { Link2, ArrowRight, Check, AlertCircle, Save, GripVertical, ChevronDown, ChevronRight, Building2, Network, FileText, Upload, FileSpreadsheet, Layers } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 
 interface LineItem {
   code: string
@@ -14,6 +13,7 @@ interface LineItem {
 interface Template {
   template_code: string
   template_name: string
+  statement_type: string
   line_items: LineItem[]
 }
 
@@ -31,31 +31,73 @@ interface Entity {
 }
 
 interface HierarchicalMapping {
-  entity_path: number[]  // Array of entity_ids from root to leaf
+  entity_path: number[]
   line_item_code: string
   csv_row_index: number
 }
 
+interface StatementMapping {
+  statementType: 'pnl' | 'bs' | 'carbon'
+  label: string
+  csvData: CsvRow[]
+  csvColumns: string[]
+  selectedTemplate: Template | null
+  hierarchicalMappings: HierarchicalMapping[]
+  expandedNodes: Set<string>
+}
+
 export default function MapStatements() {
   const [templates, setTemplates] = useState<Template[]>([])
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
-  const [statementTypes, setStatementTypes] = useState<string[]>([])
-  const [selectedStatementType, setSelectedStatementType] = useState<string>('')
-  const [csvRows, setCsvRows] = useState<CsvRow[]>([])
-  const [csvColumns, setCsvColumns] = useState<string[]>([])
   const [entities, setEntities] = useState<Entity[]>([])
   const [selectedCompany, setSelectedCompany] = useState<Entity | null>(null)
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
-  const [hierarchicalMappings, setHierarchicalMappings] = useState<HierarchicalMapping[]>([])
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
 
-  // Load templates on mount
+  // State for each statement type
+  const [statementMappings, setStatementMappings] = useState<Record<string, StatementMapping>>({
+    pnl: {
+      statementType: 'pnl',
+      label: 'Profit & Loss',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set()
+    },
+    bs: {
+      statementType: 'bs',
+      label: 'Balance Sheet',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set()
+    },
+    cf: {
+      statementType: 'cf',
+      label: 'Cash Flow',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set()
+    },
+    carbon: {
+      statementType: 'carbon',
+      label: 'Carbon Statement',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set()
+    }
+  })
+
   useEffect(() => {
     loadTemplates()
-    loadStatementTypes()
     loadEntities()
+    loadAllStagingData()
   }, [])
 
   const loadTemplates = async () => {
@@ -68,32 +110,10 @@ export default function MapStatements() {
       })
       const result = await response.json()
       if (result.success) {
-        console.log('Loaded templates:', result.templates.length)
         setTemplates(result.templates || [])
-      } else {
-        console.error('Failed to load templates:', result.error)
-        setTemplates([])
       }
     } catch (error) {
       console.error('Failed to load templates:', error)
-      setTemplates([])
-    }
-  }
-
-  const loadStatementTypes = async () => {
-    try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch('http://localhost:3001/api/statements/types', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath })
-      })
-      const result = await response.json()
-      if (result.success) {
-        setStatementTypes(result.types)
-      }
-    } catch (error) {
-      console.error('Failed to load statement types:', error)
     }
   }
 
@@ -114,132 +134,434 @@ export default function MapStatements() {
     }
   }
 
-  const buildEntityTree = (flatEntities: any[]): Entity[] => {
-    const entityMap = new Map<number, Entity>()
-    const roots: Entity[] = []
-
-    // First pass: create all entities with children array
-    flatEntities.forEach(e => {
-      entityMap.set(e.entity_id, {
-        ...e,
-        children: []
-      })
-    })
-
-    // Second pass: build tree structure
-    flatEntities.forEach(e => {
-      const entity = entityMap.get(e.entity_id)!
-      if (e.parent_entity_id) {
-        const parent = entityMap.get(e.parent_entity_id)
-        if (parent) {
-          parent.children!.push(entity)
-        }
-      } else {
-        roots.push(entity)
-      }
-    })
-
-    return roots
-  }
-
-  const toggleNode = (nodeKey: string) => {
-    const newExpanded = new Set(expandedNodes)
-    if (newExpanded.has(nodeKey)) {
-      newExpanded.delete(nodeKey)
-    } else {
-      newExpanded.add(nodeKey)
+  const loadAllStagingData = async () => {
+    const types: Array<'pnl' | 'bs' | 'cf' | 'carbon'> = ['pnl', 'bs', 'cf', 'carbon']
+    for (const type of types) {
+      await loadStagingData(type)
     }
-    setExpandedNodes(newExpanded)
   }
 
-  const handleHierarchicalMapping = (entityPath: number[], lineItemCode: string, csvRowIndex: number) => {
-    // Helper: Check if pathA is an ancestor of pathB
-    const isAncestor = (pathA: number[], pathB: number[]): boolean => {
-      if (pathA.length >= pathB.length) return false
-      return pathA.every((id, idx) => id === pathB[idx])
-    }
-
-    // Helper: Check if pathA is a descendant of pathB
-    const isDescendant = (pathA: number[], pathB: number[]): boolean => {
-      return isAncestor(pathB, pathA)
-    }
-
-    // Filter out:
-    // 1. Exact match (same entity path + line item)
-    // 2. Any parent mappings for this line item (when mapping to child)
-    // 3. Any child mappings for this line item (when mapping to parent)
-    const filtered = hierarchicalMappings.filter(m => {
-      // Different line item - keep it
-      if (m.line_item_code !== lineItemCode) return true
-
-      // Same line item - check relationships
-      const isSamePath = JSON.stringify(m.entity_path) === JSON.stringify(entityPath)
-      const isMappingParentOfNew = isAncestor(m.entity_path, entityPath)
-      const isMappingChildOfNew = isDescendant(m.entity_path, entityPath)
-
-      // Remove if exact match, or if it's a parent/child of the new mapping
-      return !(isSamePath || isMappingParentOfNew || isMappingChildOfNew)
-    })
-
-    // Add new mapping
-    setHierarchicalMappings([
-      ...filtered,
-      { entity_path: entityPath, line_item_code: lineItemCode, csv_row_index: csvRowIndex }
-    ])
-  }
-
-  const getMappingForNode = (entityPath: number[], lineItemCode: string): number | undefined => {
-    const mapping = hierarchicalMappings.find(
-      m => JSON.stringify(m.entity_path) === JSON.stringify(entityPath) && m.line_item_code === lineItemCode
-    )
-    return mapping?.csv_row_index
-  }
-
-  const getRootCompanies = (): Entity[] => {
-    return entities.filter(e => e.parent_entity_id === null)
-  }
-
-  const handleTemplateSelect = async (templateCode: string) => {
-    const template = templates.find(t => t.template_code === templateCode)
-    setSelectedTemplate(template || null)
-    setHierarchicalMappings([])
-    setSelectedCompany(null)
-    // Clear statement type and CSV data when template changes
-    setSelectedStatementType('')
-    setCsvRows([])
-    setCsvColumns([])
-  }
-
-  const handleStatementTypeSelect = async (statementType: string) => {
-    setSelectedStatementType(statementType)
-
-    // Load CSV rows from staging table
+  const loadStagingData = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon') => {
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      console.log('Loading CSV data for statement type:', statementType)
       const response = await fetch('http://localhost:3001/api/statements/staging', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, statementType })
       })
       const result = await response.json()
-      console.log('CSV data result:', result)
-      console.log('Result has rows?', 'rows' in result, 'rows value:', result.rows)
-      console.log('Result has columns?', 'columns' in result, 'columns value:', result.columns)
       if (result.success) {
-        console.log('Setting CSV rows:', result.rows?.length || 0, 'columns:', result.columns?.length || 0)
-        setCsvRows(result.rows || [])
-        setCsvColumns(result.columns || [])
-      } else {
-        console.error('Failed to load CSV data:', result.error)
+        setStatementMappings(prev => ({
+          ...prev,
+          [statementType]: {
+            ...prev[statementType],
+            csvData: result.rows || [],
+            csvColumns: result.columns || []
+          }
+        }))
       }
     } catch (error) {
-      console.error('Failed to load CSV data:', error)
+      console.error(`Failed to load staging data for ${statementType}:`, error)
     }
   }
 
-  const handleSaveMapping = async () => {
-    if (!selectedTemplate || !selectedCompany) return
+  const buildEntityTree = (flatEntities: any[]): Entity[] => {
+    const entityMap = new Map<number, Entity>()
+    const roots: Entity[] = []
+
+    flatEntities.forEach((e) => {
+      entityMap.set(e.entity_id, {
+        ...e,
+        children: []
+      })
+    })
+
+    flatEntities.forEach((e) => {
+      const entity = entityMap.get(e.entity_id)!
+      if (e.parent_entity_id === null) {
+        roots.push(entity)
+      } else {
+        const parent = entityMap.get(e.parent_entity_id)
+        if (parent) {
+          parent.children = parent.children || []
+          parent.children.push(entity)
+        }
+      }
+    })
+
+    return roots
+  }
+
+  const getRootCompanies = (): Entity[] => {
+    return entities.filter(e => e.parent_entity_id === null)
+  }
+
+  const handleTemplateSelect = (statementType: 'pnl' | 'bs' | 'carbon', templateCode: string) => {
+    const template = templates.find(t => t.template_code === templateCode)
+    setStatementMappings(prev => ({
+      ...prev,
+      [statementType]: {
+        ...prev[statementType],
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      }
+    }))
+  }
+
+  const toggleNode = (statementType: string, nodeId: string) => {
+    setStatementMappings(prev => {
+      const mapping = prev[statementType]
+      const newExpanded = new Set(mapping.expandedNodes)
+      if (newExpanded.has(nodeId)) {
+        newExpanded.delete(nodeId)
+      } else {
+        newExpanded.add(nodeId)
+      }
+      return {
+        ...prev,
+        [statementType]: {
+          ...mapping,
+          expandedNodes: newExpanded
+        }
+      }
+    })
+  }
+
+  const getRowIdentifier = (row: CsvRow, columns: string[]): string => {
+    const nameColumn = columns.find(col =>
+      col.toLowerCase().includes('name') ||
+      col.toLowerCase().includes('description') ||
+      col.toLowerCase().includes('item')
+    )
+    if (nameColumn && row[nameColumn]) {
+      return row[nameColumn]
+    }
+    const firstCol = columns[0]
+    return firstCol ? row[firstCol] : 'Unknown'
+  }
+
+  const handleDragStart = (rowIndex: number) => {
+    setDraggedRowIndex(rowIndex)
+  }
+
+  const handleDrop = (statementType: string, entityPath: number[], lineItemCode: string) => {
+    if (draggedRowIndex === null) return
+
+    setStatementMappings(prev => {
+      const mapping = prev[statementType]
+      let newMappings = [...mapping.hierarchicalMappings]
+
+      // Helper function to check if path1 is an ancestor of path2
+      const isAncestor = (path1: number[], path2: number[]): boolean => {
+        if (path1.length >= path2.length) return false
+        return path1.every((id, i) => id === path2[i])
+      }
+
+      // Helper function to check if path1 is a descendant of path2
+      const isDescendant = (path1: number[], path2: number[]): boolean => {
+        return isAncestor(path2, path1)
+      }
+
+      // Remove conflicting mappings:
+      // 1. Any ancestor entities with the same line item
+      // 2. Any descendant entities with the same line item
+      newMappings = newMappings.filter(m => {
+        if (m.line_item_code !== lineItemCode) return true
+        const isSamePath = JSON.stringify(m.entity_path) === JSON.stringify(entityPath)
+        const isConflict = isAncestor(m.entity_path, entityPath) || isDescendant(m.entity_path, entityPath)
+        return isSamePath || !isConflict
+      })
+
+      const existingIndex = newMappings.findIndex(
+        m => JSON.stringify(m.entity_path) === JSON.stringify(entityPath) && m.line_item_code === lineItemCode
+      )
+
+      if (existingIndex >= 0) {
+        newMappings[existingIndex] = {
+          entity_path: entityPath,
+          line_item_code: lineItemCode,
+          csv_row_index: draggedRowIndex
+        }
+      } else {
+        newMappings.push({
+          entity_path: entityPath,
+          line_item_code: lineItemCode,
+          csv_row_index: draggedRowIndex
+        })
+      }
+
+      return {
+        ...prev,
+        [statementType]: {
+          ...mapping,
+          hierarchicalMappings: newMappings
+        }
+      }
+    })
+
+    setDraggedRowIndex(null)
+  }
+
+  const getMappedRow = (statementType: string, entityPath: number[], lineItemCode: string): CsvRow | null => {
+    const mapping = statementMappings[statementType]
+    const found = mapping.hierarchicalMappings.find(
+      m => JSON.stringify(m.entity_path) === JSON.stringify(entityPath) && m.line_item_code === lineItemCode
+    )
+    return found ? mapping.csvData[found.csv_row_index] : null
+  }
+
+  const filteredLineItems = (template: Template | null, statementType: string) => {
+    if (!template) return []
+
+    // Map statement type to section name
+    const sectionMap: Record<string, string> = {
+      'pnl': 'profit_and_loss',
+      'pl': 'profit_and_loss',
+      'bs': 'balance_sheet',
+      'cf': 'cash_flow',
+      'carbon': 'carbon_statement'
+    }
+
+    const targetSection = sectionMap[statementType]
+
+    // Check if template has sections defined (any line item has a section)
+    const hasSections = template.line_items.some(item => item.section !== undefined)
+
+    console.log('Filtering line items:', {
+      statementType,
+      targetSection,
+      templateType: template.statement_type,
+      templateCode: template.template_code,
+      totalItems: template.line_items.length,
+      hasSections,
+      sections: [...new Set(template.line_items.map(i => i.section))]
+    })
+
+    // For unified templates OR templates with sections, filter by section
+    if (hasSections && targetSection) {
+      let filtered = template.line_items.filter(item =>
+        !item.is_computed && item.section === targetSection
+      )
+
+      // If no non-computed items, include computed items too
+      if (filtered.length === 0) {
+        filtered = template.line_items.filter(item =>
+          item.section === targetSection
+        )
+        console.log('No non-computed items, showing all items in section:', filtered.length)
+      } else {
+        console.log('Filtered by section:', filtered.length, 'items')
+      }
+      return filtered
+    }
+
+    // For templates without sections (specific statement type templates), show all non-computed items
+    const filtered = template.line_items.filter(item => !item.is_computed)
+    console.log('Showing all non-computed items:', filtered.length)
+    return filtered
+  }
+
+  const renderEntityLineItemTree = (
+    statementType: string,
+    entity: Entity,
+    entityPath: number[],
+    lineItemCode: string,
+    depth: number
+  ): JSX.Element => {
+    const mapping = statementMappings[statementType]
+    const nodeId = `${entityPath.join('-')}-${lineItemCode}`
+    const isExpanded = mapping.expandedNodes.has(nodeId)
+    const mappedRow = getMappedRow(statementType, entityPath, lineItemCode)
+    const hasChildren = entity.children && entity.children.length > 0
+
+    return (
+      <div key={nodeId} style={{ marginLeft: depth * 16 }}>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+          }}
+          onDragLeave={(e) => {
+            e.currentTarget.style.backgroundColor = mappedRow ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.5)'
+            e.currentTarget.style.borderColor = mappedRow ? 'rgba(34, 197, 94, 0.3)' : 'rgba(71, 85, 105, 0.3)'
+          }}
+          onDrop={(e) => {
+            handleDrop(statementType, entityPath, lineItemCode)
+            e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)'
+          }}
+          onMouseEnter={(e) => {
+            if (!mappedRow) {
+              e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.5)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!mappedRow) {
+              e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+            }
+          }}
+          style={{
+            padding: '10px 12px',
+            marginBottom: '6px',
+            backgroundColor: mappedRow ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.5)',
+            border: mappedRow ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(71, 85, 105, 0.3)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          {hasChildren && (
+            <button
+              onClick={() => toggleNode(statementType, nodeId)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+          )}
+          <Building2 className="w-3 h-3" style={{ color: '#64748b', flexShrink: 0 }} />
+          <span style={{ color: '#94a3b8', fontSize: '14px', flex: 1 }}>
+            {entity.name}
+          </span>
+          {mappedRow && (
+            <>
+              <ArrowRight className="w-4 h-4 text-green-500" />
+              <span style={{ color: '#22c55e', fontSize: '14px' }}>
+                {getRowIdentifier(mappedRow, mapping.csvColumns)}
+              </span>
+            </>
+          )}
+        </div>
+
+        {hasChildren && isExpanded && entity.children?.map(childEntity =>
+          renderEntityLineItemTree(statementType, childEntity, [...entityPath, childEntity.entity_id], lineItemCode, depth + 1)
+        )}
+      </div>
+    )
+  }
+
+  const renderMappingPanel = (statementType: 'pnl' | 'bs' | 'carbon') => {
+    const mapping = statementMappings[statementType]
+    if (!mapping.selectedTemplate || !selectedCompany || mapping.csvData.length === 0) {
+      return null
+    }
+
+    const template = mapping.selectedTemplate
+    const lineItems = filteredLineItems(template, statementType)
+
+    return (
+      <Card key={statementType} className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)', marginBottom: '32px' }}>
+        <CardContent style={{ padding: '32px' }}>
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Network className="w-8 h-8 text-green-500" />
+                <div>
+                  <h3 className="font-semibold text-lg">{mapping.label} Mapping</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Drag CSV rows to line items for {selectedCompany.name}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', paddingLeft: '32px', paddingRight: '32px' }}>
+            {/* CSV Data */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
+                <h4 className="text-sm font-semibold text-muted-foreground">CSV Rows</h4>
+              </div>
+              <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                {mapping.csvData.map((row, index) => (
+                  <div
+                    key={index}
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+                      e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+                      e.currentTarget.style.transform = 'translateX(4px)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                      e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                      e.currentTarget.style.transform = 'translateX(0)'
+                    }}
+                    style={{
+                      padding: '6px 10px',
+                      marginBottom: '4px',
+                      backgroundColor: 'rgba(51, 65, 85, 0.5)',
+                      border: '1px solid rgba(71, 85, 105, 0.3)',
+                      borderRadius: '4px',
+                      cursor: 'grab',
+                      fontSize: '12px',
+                      color: '#e2e8f0',
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <GripVertical className="w-3 h-3" style={{ color: '#64748b', flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{getRowIdentifier(row, mapping.csvColumns)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Hierarchical Tree */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Network className="w-4 h-4 text-muted-foreground" />
+                <h4 className="text-sm font-semibold text-muted-foreground">Template Line Items</h4>
+              </div>
+              <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                {lineItems.map(lineItem => (
+                  <div key={lineItem.code} style={{ marginBottom: '20px' }}>
+                    <div style={{
+                      padding: '12px 16px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                      border: '2px solid rgba(59, 130, 246, 0.4)',
+                      borderRadius: '8px',
+                      marginBottom: '12px',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      color: '#60a5fa',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      <Layers className="w-4 h-4" />
+                      {lineItem.display_name}
+                    </div>
+                    {renderEntityLineItemTree(statementType, selectedCompany, [selectedCompany.entity_id], lineItem.code, 0)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const handleSave = async () => {
+    if (!selectedCompany) return
 
     setIsSaving(true)
     setSaveMessage('')
@@ -247,26 +569,30 @@ export default function MapStatements() {
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
-      const response = await fetch('http://localhost:3001/api/statements/save-hierarchical-mapping', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dbPath,
-          templateCode: selectedTemplate.template_code,
-          statementType: selectedStatementType,
-          companyId: selectedCompany.entity_id,
-          hierarchicalMappings
-        })
-      })
+      // Save each statement type's mappings
+      for (const [statementType, mapping] of Object.entries(statementMappings)) {
+        if (mapping.selectedTemplate && mapping.hierarchicalMappings.length > 0) {
+          const response = await fetch('http://localhost:3001/api/statements/save-hierarchical-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dbPath,
+              templateCode: mapping.selectedTemplate.template_code,
+              statementType: mapping.selectedTemplate.statement_type,
+              companyId: selectedCompany.entity_id,
+              hierarchicalMappings: mapping.hierarchicalMappings
+            })
+          })
 
-      const result = await response.json()
-
-      if (response.ok && result.success) {
-        setSaveMessage('Mapping saved successfully!')
-        setTimeout(() => setSaveMessage(''), 3000)
-      } else {
-        setSaveMessage(`Error: ${result.error || 'Failed to save mapping'}`)
+          const result = await response.json()
+          if (!response.ok || !result.success) {
+            throw new Error(`Failed to save ${statementType} mapping: ${result.error}`)
+          }
+        }
       }
+
+      setSaveMessage('All mappings saved successfully!')
+      setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
       console.error('Save error:', error)
       setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
@@ -275,368 +601,152 @@ export default function MapStatements() {
     }
   }
 
-  const getRowIdentifier = (row: CsvRow): string => {
-    // Try to find a column that looks like a line item name
-    const nameColumn = csvColumns.find(col =>
-      col.toLowerCase().includes('name') ||
-      col.toLowerCase().includes('description') ||
-      col.toLowerCase().includes('item')
-    )
-    if (nameColumn && row[nameColumn]) {
-      return row[nameColumn]
-    }
-    // Fallback to first non-internal column
-    const firstCol = csvColumns[0]
-    return firstCol ? row[firstCol] : 'Unknown'
-  }
-
-  const filteredLineItems = selectedTemplate?.line_items.filter(item => !item.is_computed) || []
-
-  // Recursive function to render: Company → Line Item → Child Entity → (repeat)
-  const renderEntityLineItemTree = (
-    entity: Entity,
-    entityPath: number[],
-    lineItemCode: string,
-    depth: number = 0
-  ): React.ReactElement => {
-    const currentPath = [...entityPath, entity.entity_id]
-    const nodeKey = `${currentPath.join('-')}-${lineItemCode}`
-    const isExpanded = expandedNodes.has(nodeKey)
-    const mappedRowIndex = getMappingForNode(currentPath, lineItemCode)
-    const isMapped = mappedRowIndex !== undefined
-    const hasChildren = entity.children && entity.children.length > 0
-
-    return (
-      <div key={nodeKey} style={{ marginLeft: depth > 0 ? '24px' : '0', marginBottom: '8px' }}>
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => {
-            if (draggedRowIndex !== null) {
-              handleHierarchicalMapping(currentPath, lineItemCode, draggedRowIndex)
-            }
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 12px',
-            backgroundColor: isMapped ? 'rgba(34, 197, 94, 0.15)' : 'rgba(15, 23, 42, 0.8)',
-            border: `2px dashed ${isMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(100, 116, 139, 0.4)'}`,
-            borderRadius: '6px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            minHeight: '48px'
-          }}
-          className="hover:border-green-500/60"
-        >
-          {hasChildren && (
-            <button
-              onClick={() => toggleNode(nodeKey)}
-              style={{
-                padding: '2px',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: '#22c55e'
-              }}
-            >
-              {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
-          )}
-
-          <Building2 className="w-4 h-4" style={{ color: '#22c55e' }} />
-
-          <div style={{ flex: 1 }}>
-            <div className="text-sm font-medium">{entity.name}</div>
-            <div className="text-xs text-muted-foreground">
-              {entity.code} • {entity.granularity_level}
-            </div>
-          </div>
-
-          {isMapped ? (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 8px',
-              backgroundColor: 'rgba(34, 197, 94, 0.3)',
-              borderRadius: '4px'
-            }}>
-              <Check className="w-3 h-3" style={{ color: '#22c55e' }} />
-              <span className="text-xs" style={{ color: '#22c55e' }}>
-                {getRowIdentifier(csvRows[mappedRowIndex])}
-              </span>
-            </div>
-          ) : (
-            <span className="text-xs" style={{ color: '#94a3b8', fontStyle: 'italic' }}>
-              Drop CSV row
-            </span>
-          )}
-        </div>
-
-        {/* Render child entities for this line item */}
-        {isExpanded && hasChildren && (
-          <div style={{ marginTop: '8px' }}>
-            {entity.children!.map((childEntity) =>
-              renderEntityLineItemTree(childEntity, currentPath, lineItemCode, depth + 1)
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  const renderHierarchicalTree = (): React.ReactElement => {
-    if (!selectedCompany) return <div>No company selected</div>
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {filteredLineItems.map((lineItem) => (
-          <div key={lineItem.code}>
-            {/* Line Item Header */}
-            <div style={{
-              padding: '8px 12px',
-              backgroundColor: 'rgba(34, 197, 94, 0.2)',
-              borderRadius: '6px',
-              marginBottom: '8px',
-              border: '1px solid rgba(34, 197, 94, 0.4)'
-            }}>
-              <div className="text-sm font-semibold" style={{ color: '#22c55e' }}>
-                {lineItem.display_name}
-              </div>
-              <div className="text-xs text-muted-foreground">{lineItem.code}</div>
-            </div>
-
-            {/* Company level drop target for this line item */}
-            {renderEntityLineItemTree(selectedCompany, [], lineItem.code, 0)}
-          </div>
-        ))}
-      </div>
-    )
-  }
+  const hasAnyMappings = Object.values(statementMappings).some(m => m.hierarchicalMappings.length > 0)
 
   return (
-    <div className="p-12 max-w-7xl mx-auto">
-      <div className="mb-12" style={{ marginLeft: '1.5rem' }}>
-        <h1 className="text-4xl font-bold tracking-tight">Map Statements</h1>
-        <p className="text-muted-foreground mt-2">Map CSV rows to entity hierarchy + line items</p>
+    <div className="p-12">
+      <div style={{ marginBottom: '32px' }}>
+        <h2 className="text-2xl font-bold mb-2">Map Statements</h2>
+        <p className="text-muted-foreground">
+          Map uploaded CSV data to statement templates for each statement type
+        </p>
       </div>
 
-      <div className="flex flex-col" style={{ gap: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-        {/* Selection Card */}
-        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
-          <CardContent className="p-8">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', marginLeft: '1.5rem' }}>
-              <Link2 className="w-8 h-8 text-blue-500" style={{ marginTop: '-30px' }} />
-              <div>
-                <h3 className="font-semibold text-lg">Select Template & Statement</h3>
-                <p className="text-sm text-muted-foreground">Choose what to map</p>
-              </div>
+      <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
+        {/* Company Selection */}
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)', marginBottom: '32px' }}>
+          <CardContent style={{ padding: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <Building2 className="w-6 h-6 text-blue-500" />
+              <h3 className="font-semibold text-lg">Select Company</h3>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '16px' }}>
-              <div>
-                <label className="text-sm text-muted-foreground">Template</label>
-                <select
-                  value={selectedTemplate?.template_code || ''}
-                  onChange={(e) => handleTemplateSelect(e.target.value)}
-                  style={{
-                    width: '100%',
-                    marginTop: '4px',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    borderRadius: '6px'
-                  }}
-                >
-                  <option value="">Select a template...</option>
-                  {templates.map(t => (
-                    <option key={t.template_code} value={t.template_code}>
-                      {t.template_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground">Statement Type</label>
-                <select
-                  value={selectedStatementType}
-                  onChange={(e) => handleStatementTypeSelect(e.target.value)}
-                  disabled={!selectedTemplate}
-                  style={{
-                    width: '100%',
-                    marginTop: '4px',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    borderRadius: '6px',
-                    opacity: selectedTemplate ? 1 : 0.5
-                  }}
-                >
-                  <option value="">Select statement type...</option>
-                  {statementTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground">Company</label>
-                <select
-                  value={selectedCompany?.entity_id || ''}
-                  onChange={(e) => {
-                    const company = getRootCompanies().find(c => c.entity_id === parseInt(e.target.value))
-                    setSelectedCompany(company || null)
-                  }}
-                  disabled={!selectedStatementType}
-                  style={{
-                    width: '100%',
-                    marginTop: '4px',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    borderRadius: '6px',
-                    opacity: selectedStatementType ? 1 : 0.5
-                  }}
-                >
-                  <option value="">Select company...</option>
-                  {getRootCompanies().map(company => (
-                    <option key={company.entity_id} value={company.entity_id}>
-                      {company.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            <select
+              value={selectedCompany?.entity_id || ''}
+              onChange={(e) => {
+                const company = getRootCompanies().find(c => c.entity_id === parseInt(e.target.value))
+                setSelectedCompany(company || null)
+              }}
+              style={{
+                width: '100%',
+                maxWidth: '400px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                color: '#ffffff',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: '6px'
+              }}
+            >
+              <option value="">Select company...</option>
+              {getRootCompanies().map(company => (
+                <option key={company.entity_id} value={company.entity_id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
           </CardContent>
         </Card>
 
-        {/* Hierarchical Tree Mapping */}
-        {selectedTemplate && selectedCompany && csvRows.length > 0 && (
-          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)' }}>
-            <CardContent className="p-8">
-              <div style={{ marginBottom: '24px', marginLeft: '1.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between', paddingRight: '1.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Network className="w-8 h-8 text-green-500" style={{ marginTop: '-30px' }} />
-                    <div>
-                      <h3 className="font-semibold text-lg">Hierarchical Mapping</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Drag CSV rows to any level
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    style={{
-                      backgroundColor: '#22c55e',
-                      border: 'none',
-                      color: '#ffffff',
-                      marginTop: '-20px'
-                    }}
-                  >
-                    Map with AI
-                  </Button>
+        {/* Statement Type Mapping Table */}
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(34, 197, 94, 0.4)', marginBottom: '32px' }}>
+        <CardContent style={{ padding: '32px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+            <FileText className="w-6 h-6 text-green-500" />
+            <h3 className="font-semibold text-lg">Statement Templates</h3>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '200px 300px 1fr', gap: '16px', alignItems: 'center' }}>
+            {/* Headers */}
+            <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '14px' }}>Statement Type</div>
+            <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '14px' }}>CSV Data</div>
+            <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '14px' }}>Template</div>
+
+            {/* Rows */}
+            {Object.entries(statementMappings).map(([type, mapping]) => (
+              <React.Fragment key={type}>
+                <div style={{ color: '#e2e8f0', fontSize: '14px' }}>{mapping.label}</div>
+                <div style={{ color: mapping.csvData.length > 0 ? '#22c55e' : '#94a3b8', fontSize: '14px' }}>
+                  {mapping.csvData.length > 0 ? `${mapping.csvData.length} rows` : 'No data uploaded'}
                 </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-                {/* CSV Data Preview */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-4" style={{ color: '#22c55e' }}>CSV Data Rows</h4>
-                  <ScrollArea style={{ height: '600px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {csvRows.map((row, idx) => {
-                        const rowName = getRowIdentifier(row)
-                        const isMappedInHierarchy = hierarchicalMappings.some(m => m.csv_row_index === idx)
-                        return (
-                          <div
-                            key={idx}
-                            draggable
-                            onDragStart={() => setDraggedRowIndex(idx)}
-                            onDragEnd={() => setDraggedRowIndex(null)}
-                            style={{
-                              padding: '12px',
-                              backgroundColor: isMappedInHierarchy ? 'rgba(34, 197, 94, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-                              border: `2px solid ${isMappedInHierarchy ? 'rgba(34, 197, 94, 0.5)' : 'rgba(34, 197, 94, 0.3)'}`,
-                              borderRadius: '8px',
-                              cursor: 'grab',
-                              opacity: draggedRowIndex === idx ? 0.5 : 1,
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <GripVertical className="w-4 h-4" style={{ color: '#22c55e' }} />
-                              <div style={{ flex: 1 }}>
-                                <div className="text-sm font-medium">{rowName}</div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {csvColumns.slice(0, 3).map(col => `${col}: ${row[col]}`).join(' | ')}
-                                </div>
-                              </div>
-                              {isMappedInHierarchy && <Check className="w-4 h-4" style={{ color: '#22c55e' }} />}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </ScrollArea>
-                </div>
-
-                {/* Hierarchical Tree */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-4" style={{ color: '#22c55e' }}>
-                    Entity Hierarchy ({hierarchicalMappings.length} mappings)
-                  </h4>
-                  <ScrollArea style={{ height: '600px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {selectedCompany && renderHierarchicalTree(selectedCompany, [])}
-                    </div>
-                  </ScrollArea>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Save Section */}
-        {selectedTemplate && selectedCompany && hierarchicalMappings.length > 0 && (
-          <>
-            {saveMessage && (
-              <div style={{
-                padding: '12px',
-                backgroundColor: saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-                color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e',
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                {saveMessage}
-              </div>
-            )}
-
-            <Button
-              onClick={handleSaveMapping}
-              disabled={isSaving}
-              style={{
-                width: '220px',
-                height: '44px',
-                backgroundColor: !isSaving ? '#22c55e' : '#6b7280',
-                border: 'none',
-                color: '#ffffff',
-                margin: '0 auto',
-                display: 'block',
-                opacity: !isSaving ? 1 : 0.5
-              }}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {isSaving ? 'Saving...' : 'Save Mapping'}
-            </Button>
-          </>
-        )}
+                <select
+                  value={mapping.selectedTemplate?.template_code || ''}
+                  onChange={(e) => handleTemplateSelect(type as 'pnl' | 'bs' | 'carbon', e.target.value)}
+                  disabled={mapping.csvData.length === 0}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    borderRadius: '6px',
+                    opacity: mapping.csvData.length === 0 ? 0.5 : 1
+                  }}
+                >
+                  <option value="">Select template...</option>
+                  {templates
+                    .filter(t => t.statement_type === type || t.statement_type === 'unified')
+                    .map(t => (
+                      <option key={t.template_code} value={t.template_code}>
+                        {t.template_name}
+                      </option>
+                    ))}
+                </select>
+              </React.Fragment>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
       </div>
+
+      {/* Mapping Panels */}
+      <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
+        {renderMappingPanel('pnl')}
+        {renderMappingPanel('bs')}
+        {renderMappingPanel('cf')}
+        {renderMappingPanel('carbon')}
+      </div>
+
+      {/* Save Button */}
+      {hasAnyMappings && (
+        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 50 }}>
+          <Button
+            onClick={handleSave}
+            disabled={isSaving || !selectedCompany}
+            style={{
+              backgroundColor: isSaving ? '#64748b' : '#22c55e',
+              padding: '12px 24px',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            {isSaving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5" />
+                Save All Mappings
+              </>
+            )}
+          </Button>
+          {saveMessage && (
+            <div style={{
+              marginTop: '8px',
+              padding: '8px 16px',
+              backgroundColor: saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+              border: `1px solid ${saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+              borderRadius: '6px',
+              color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e',
+              fontSize: '14px'
+            }}>
+              {saveMessage}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
