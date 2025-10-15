@@ -5,6 +5,9 @@ import Dashboard from './pages/Dashboard'
 import Database from './pages/Database'
 import LoadStatements from './pages/LoadStatements'
 import LoadScenarios from './pages/LoadScenarios'
+import DefineStatements from './pages/DefineStatements'
+import DefineEntities from './pages/DefineEntities'
+import MapStatements from './pages/MapStatements'
 
 function App() {
   const [dbPath, setDbPath] = useState<string | null>(() => {
@@ -30,11 +33,12 @@ function App() {
           <Route path="/data/database" element={<Database />} />
           <Route path="/data/stored-calcs" element={<Dashboard />} />
           <Route path="/inputs/statements" element={<LoadStatements />} />
-          <Route path="/inputs/map-statements" element={<Dashboard />} />
+          <Route path="/inputs/map-statements" element={<MapStatements />} />
           <Route path="/inputs/scenarios" element={<LoadScenarios />} />
           <Route path="/inputs/damage-curves" element={<Dashboard />} />
           <Route path="/inputs/map-damage-curves" element={<Dashboard />} />
-          <Route path="/definitions/statements" element={<Dashboard />} />
+          <Route path="/definitions/statements" element={<DefineStatements />} />
+          <Route path="/definitions/entities" element={<DefineEntities />} />
           <Route path="/definitions/actions" element={<Dashboard />} />
           <Route path="/run/definition" element={<Dashboard />} />
           <Route path="/run/execute" element={<Dashboard />} />

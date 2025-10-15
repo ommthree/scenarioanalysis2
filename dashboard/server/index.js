@@ -454,6 +454,438 @@ app.post('/api/database/browse', express.json(), (req, res) => {
 })
 
 /**
+ * Save template to database
+ * POST /api/templates/save
+ * Body: template (JSON), dbPath
+ */
+app.post('/api/templates/save', express.json(), (req, res) => {
+  console.log('Received template save request')
+
+  try {
+    const { template, dbPath } = req.body
+
+    if (!template || !dbPath) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!template.template_code) {
+      return res.status(400).json({ error: 'Template code is required' })
+    }
+
+    // Check if database exists
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({
+        error: `Database not found at ${dbPath}. Please select a valid database in the Database page.`
+      })
+    }
+
+    // Connect to database
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        console.error('Database connection error:', err)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Insert or replace template
+    const templateJson = JSON.stringify(template)
+
+    // Validate required fields
+    if (!template.template_code) {
+      db.close()
+      return res.status(400).json({ error: 'Template code is required' })
+    }
+
+    if (!template.industry) {
+      db.close()
+      return res.status(400).json({ error: 'Industry is required' })
+    }
+
+    console.log('Saving template:', {
+      code: template.template_code,
+      statement_type: template.statement_type,
+      industry: template.industry,
+      version: template.version
+    })
+
+    db.run(
+      `INSERT OR REPLACE INTO statement_template
+       (code, statement_type, industry, version, json_structure, is_active, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, datetime('now'))`,
+      [
+        template.template_code,
+        template.statement_type || 'unified',
+        template.industry || 'GENERAL',
+        template.version || '1.0.0',
+        templateJson
+      ],
+      function(err) {
+        db.close()
+
+        if (err) {
+          console.error('Insert error:', err)
+          console.error('Template data:', template)
+          return res.status(500).json({
+            error: 'Failed to save template: ' + err.message,
+            details: err.toString()
+          })
+        }
+
+        res.json({
+          success: true,
+          message: `Template '${template.template_code}' saved successfully`,
+          template_code: template.template_code
+        })
+      }
+    )
+
+  } catch (error) {
+    console.error('Save error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * List available templates
+ * POST /api/templates/list
+ * Body: dbPath
+ */
+app.post('/api/templates/list', express.json(), (req, res) => {
+  try {
+    const { dbPath } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all('SELECT code, json_structure FROM statement_template WHERE is_active = 1', [], (err, rows) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch templates: ' + err.message })
+      }
+
+      const templates = rows.map(row => {
+        try {
+          const template = JSON.parse(row.json_structure)
+          return {
+            template_code: row.code,
+            template_name: template.template_name || row.code,
+            line_items: template.line_items || []
+          }
+        } catch (parseError) {
+          console.error(`Failed to parse template ${row.code}:`, parseError)
+          return {
+            template_code: row.code,
+            template_name: row.code,
+            line_items: []
+          }
+        }
+      })
+
+      res.json({ success: true, templates })
+    })
+  } catch (error) {
+    console.error('List templates error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get statement types from staging tables
+ * POST /api/statements/types
+ * Body: dbPath
+ */
+app.post('/api/statements/types', express.json(), (req, res) => {
+  try {
+    const { dbPath } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'staging_statement_%'`,
+      [],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch statement types: ' + err.message })
+        }
+
+        const types = rows.map(row => row.name.replace('staging_statement_', ''))
+        res.json({ success: true, types })
+      }
+    )
+  } catch (error) {
+    console.error('Get statement types error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get staging table columns and preview data
+ * POST /api/statements/staging
+ * Body: dbPath, statementType
+ */
+app.post('/api/statements/staging', express.json(), (req, res) => {
+  try {
+    const { dbPath, statementType } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!statementType) {
+      return res.status(400).json({ error: 'Statement type is required' })
+    }
+
+    const tableName = `staging_statement_${statementType}`
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get table info to find columns
+    db.all(`PRAGMA table_info(${tableName})`, [], (err, columns) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to get table info: ' + err.message })
+      }
+
+      // Filter out internal columns
+      const csvColumns = columns
+        .map(col => col.name)
+        .filter(name => !['_rowid', 'imported_at', 'is_mapped'].includes(name))
+
+      // Get all rows - each row represents a line item
+      db.all(`SELECT * FROM ${tableName}`, [], (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to get data: ' + err.message })
+        }
+
+        // Return rows and columns (columns will be period columns like Period_0, Period_1, etc.)
+        res.json({ success: true, rows: rows || [], columns: csvColumns })
+      })
+    })
+  } catch (error) {
+    console.error('Get staging data error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save column mapping
+ * POST /api/statements/save-mapping
+ * Body: dbPath, templateCode, statementType, mappings
+ */
+app.post('/api/statements/save-mapping', express.json(), (req, res) => {
+  try {
+    const { dbPath, templateCode, statementType, mappings } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!templateCode || !statementType || !mappings) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    const mappingJson = JSON.stringify(mappings)
+
+    db.run(
+      `INSERT OR REPLACE INTO statement_mapping
+       (template_code, statement_type, column_mapping, created_at)
+       VALUES (?, ?, ?, datetime('now'))`,
+      [templateCode, statementType, mappingJson],
+      function(err) {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+        }
+
+        res.json({
+          success: true,
+          message: `Mapping saved for ${templateCode} - ${statementType}`
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Save mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * List all entities
+ * POST /api/entities/list
+ * Body: dbPath
+ */
+app.post('/api/entities/list', express.json(), (req, res) => {
+  try {
+    const { dbPath } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all('SELECT * FROM entity WHERE is_active = 1 ORDER BY entity_id', [], (err, rows) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch entities: ' + err.message })
+      }
+
+      res.json({ success: true, entities: rows })
+    })
+  } catch (error) {
+    console.error('List entities error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save entity (create or update)
+ * POST /api/entities/save
+ * Body: dbPath, entity
+ */
+app.post('/api/entities/save', express.json(), (req, res) => {
+  try {
+    const { dbPath, entity } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!entity || !entity.code || !entity.name) {
+      return res.status(400).json({ error: 'Missing required entity fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    const metadataJson = JSON.stringify(entity.json_metadata || {})
+
+    if (entity.entity_id) {
+      // Update existing entity
+      db.run(
+        `UPDATE entity
+         SET code = ?, name = ?, parent_entity_id = ?, granularity_level = ?,
+             base_currency = ?, json_metadata = ?
+         WHERE entity_id = ?`,
+        [entity.code, entity.name, entity.parent_entity_id, entity.granularity_level,
+         entity.base_currency, metadataJson, entity.entity_id],
+        function(err) {
+          db.close()
+
+          if (err) {
+            return res.status(500).json({ error: 'Failed to update entity: ' + err.message })
+          }
+
+          res.json({ success: true, entity_id: entity.entity_id })
+        }
+      )
+    } else {
+      // Insert new entity
+      db.run(
+        `INSERT INTO entity (code, name, parent_entity_id, granularity_level, base_currency, json_metadata)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [entity.code, entity.name, entity.parent_entity_id, entity.granularity_level,
+         entity.base_currency, metadataJson],
+        function(err) {
+          db.close()
+
+          if (err) {
+            return res.status(500).json({ error: 'Failed to create entity: ' + err.message })
+          }
+
+          res.json({ success: true, entity_id: this.lastID })
+        }
+      )
+    }
+  } catch (error) {
+    console.error('Save entity error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Delete entity
+ * POST /api/entities/delete
+ * Body: dbPath, entityId
+ */
+app.post('/api/entities/delete', express.json(), (req, res) => {
+  try {
+    const { dbPath, entityId } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!entityId) {
+      return res.status(400).json({ error: 'Entity ID is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Soft delete by setting is_active = 0
+    db.run(
+      'UPDATE entity SET is_active = 0 WHERE entity_id = ?',
+      [entityId],
+      function(err) {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to delete entity: ' + err.message })
+        }
+
+        res.json({ success: true })
+      }
+    )
+  } catch (error) {
+    console.error('Delete entity error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {

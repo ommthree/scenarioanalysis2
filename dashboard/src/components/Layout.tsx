@@ -11,7 +11,8 @@ import {
   GitBranch,
   Menu,
   ChevronDown,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Building2
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -67,6 +68,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       title: 'Definitions',
       items: [
         { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
+        { path: '/definitions/entities', icon: Building2, label: 'Entities' },
         { path: '/definitions/actions', icon: Activity, label: 'Actions' },
       ]
     },
