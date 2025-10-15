@@ -323,14 +323,14 @@ export default function DefineStatements() {
 
             {/* Line Items List */}
             <ScrollArea style={{ height: '600px' }}>
-              <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+              <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem', paddingBottom: '2rem' }}>
                 {filteredLineItems.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
                     <p>No line items in {sections[selectedSection]}</p>
                     <p className="text-sm mt-2">Click "Add Line Item" to create one</p>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                     {filteredLineItems.map(({ item, index }) => (
                       <Card
                         key={index}
@@ -340,7 +340,7 @@ export default function DefineStatements() {
                           border: '1px solid'
                         }}
                       >
-                        <CardContent className="p-6">
+                        <CardContent style={{ padding: '2.25rem' }}>
                           <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                             <GripVertical className="w-5 h-5 text-gray-500 mt-2" />
                             <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
