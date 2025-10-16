@@ -573,7 +573,7 @@ export default function DefineStatements() {
                                   </select>
                                 </div>
                                 <div>
-                                  <label className="text-sm font-medium text-muted-foreground">Is Computed?</label>
+                                  <label className="text-sm font-medium text-muted-foreground">Data Source Type</label>
                                   <select
                                     value={item.is_computed ? 'true' : 'false'}
                                     onChange={(e) => updateLineItem(index, 'is_computed', e.target.value === 'true')}
@@ -588,8 +588,8 @@ export default function DefineStatements() {
                                       borderRadius: '6px'
                                     }}
                                   >
-                                    <option value="false">No (From Driver)</option>
-                                    <option value="true">Yes (From Formula)</option>
+                                    <option value="false">External Data (can map CSV/scenarios)</option>
+                                    <option value="true">Purely Derived (formula from other rows only)</option>
                                   </select>
                                 </div>
                               </div>

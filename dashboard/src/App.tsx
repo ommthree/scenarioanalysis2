@@ -7,6 +7,7 @@ import LoadStatements from './pages/LoadStatements'
 import LoadScenarios from './pages/LoadScenarios'
 import DefineStatements from './pages/DefineStatements'
 import DefineEntities from './pages/DefineEntities'
+import DefineFormulas from './pages/DefineFormulas'
 import MapStatements from './pages/MapStatements'
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
           <Route path="/inputs/damage-curves" element={<Dashboard />} />
           <Route path="/inputs/map-damage-curves" element={<Dashboard />} />
           <Route path="/definitions/statements" element={<DefineStatements />} />
+          <Route path="/definitions/formulas" element={<DefineFormulas />} />
           <Route path="/definitions/entities" element={<DefineEntities />} />
           <Route path="/definitions/actions" element={<Dashboard />} />
           <Route path="/run/definition" element={<Dashboard />} />

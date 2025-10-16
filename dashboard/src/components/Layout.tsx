@@ -12,7 +12,8 @@ import {
   Menu,
   ChevronDown,
   ArrowRightLeft,
-  Building2
+  Building2,
+  Calculator
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -61,6 +62,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/inputs/statements', icon: FileJson, label: 'Load Statements' },
         { path: '/inputs/map-statements', icon: ArrowRightLeft, label: 'Map Statements' },
         { path: '/inputs/scenarios', icon: List, label: 'Scenarios' },
+        { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
         { path: '/inputs/damage-curves', icon: Cloud, label: 'Load Damage Curves' },
         { path: '/inputs/map-damage-curves', icon: ArrowRightLeft, label: 'Map Damage Curves' },
       ]
