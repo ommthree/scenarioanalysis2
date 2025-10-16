@@ -50,8 +50,8 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
     {
       title: 'Definitions',
       items: [
-        { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
         { path: '/definitions/entities', icon: Building2, label: 'Entities' },
+        { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
         { path: '/definitions/actions', icon: Activity, label: 'Actions' },
       ]
     },

@@ -605,7 +605,7 @@ export default function MapStatements() {
 
   return (
     <div className="p-12">
-      <div style={{ marginBottom: '32px' }}>
+      <div style={{ marginBottom: '32px', paddingLeft: '48px' }}>
         <h2 className="text-2xl font-bold mb-2">Map Statements</h2>
         <p className="text-muted-foreground">
           Map uploaded CSV data to statement templates for each statement type

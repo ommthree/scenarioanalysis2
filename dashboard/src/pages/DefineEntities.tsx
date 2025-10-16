@@ -33,7 +33,7 @@ export default function DefineEntities() {
     name: '',
     parent_entity_id: null,
     granularity_level: 'company',
-    base_currency: 'USD',
+    base_currency: 'CHF',
     json_metadata: {}
   })
 
@@ -141,7 +141,7 @@ export default function DefineEntities() {
       name: '',
       parent_entity_id: null,
       granularity_level: 'company',
-      base_currency: 'USD',
+      base_currency: 'CHF',
       json_metadata: {}
     })
     setSelectedEntity(null)

@@ -754,6 +754,59 @@ app.post('/api/statements/save-mapping', express.json(), (req, res) => {
 })
 
 /**
+ * Save hierarchical statement mapping
+ * POST /api/statements/save-hierarchical-mapping
+ * Body: dbPath, templateCode, statementType, companyId, hierarchicalMappings
+ */
+app.post('/api/statements/save-hierarchical-mapping', express.json(), (req, res) => {
+  try {
+    const { dbPath, templateCode, statementType, companyId, hierarchicalMappings } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!templateCode || !statementType || !companyId || !hierarchicalMappings) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    const mappingData = {
+      company_id: companyId,
+      hierarchical_mappings: hierarchicalMappings
+    }
+    const mappingJson = JSON.stringify(mappingData)
+
+    db.run(
+      `INSERT OR REPLACE INTO statement_mapping
+       (template_code, statement_type, column_mapping, created_at)
+       VALUES (?, ?, ?, datetime('now'))`,
+      [templateCode, statementType, mappingJson],
+      function(err) {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to save hierarchical mapping: ' + err.message })
+        }
+
+        res.json({
+          success: true,
+          message: `Hierarchical mapping saved for ${templateCode} - ${statementType}`
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Save hierarchical mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * List all entities
  * POST /api/entities/list
  * Body: dbPath
