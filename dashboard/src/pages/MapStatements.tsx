@@ -51,6 +51,7 @@ export default function MapStatements() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [entities, setEntities] = useState<Entity[]>([])
   const [selectedCompany, setSelectedCompany] = useState<Entity | null>(null)
+  const [selectedUnifiedTemplate, setSelectedUnifiedTemplate] = useState<Template | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
@@ -277,12 +278,32 @@ export default function MapStatements() {
     return entities.filter(e => e.parent_entity_id === null)
   }
 
-  const handleTemplateSelect = (statementType: 'pnl' | 'bs' | 'carbon', templateCode: string) => {
+  const handleTemplateSelect = (templateCode: string) => {
     const template = templates.find(t => t.template_code === templateCode)
+    setSelectedUnifiedTemplate(template || null)
+
+    // Apply the unified template to ALL statement types
     setStatementMappings(prev => ({
-      ...prev,
-      [statementType]: {
-        ...prev[statementType],
+      pnl: {
+        ...prev.pnl,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      },
+      bs: {
+        ...prev.bs,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      },
+      cf: {
+        ...prev.cf,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      },
+      carbon: {
+        ...prev.carbon,
         selectedTemplate: template || null,
         hierarchicalMappings: [],
         expandedNodes: new Set()
@@ -420,26 +441,18 @@ export default function MapStatements() {
     })
 
     // For unified templates OR templates with sections, filter by section
+    // Show ALL items (both computed and non-computed), but computed items will be visually distinct and non-droppable
     if (hasSections && targetSection) {
-      let filtered = template.line_items.filter(item =>
-        !item.is_computed && item.section === targetSection
+      const filtered = template.line_items.filter(item =>
+        item.section === targetSection
       )
-
-      // If no non-computed items, include computed items too
-      if (filtered.length === 0) {
-        filtered = template.line_items.filter(item =>
-          item.section === targetSection
-        )
-        console.log('No non-computed items, showing all items in section:', filtered.length)
-      } else {
-        console.log('Filtered by section:', filtered.length, 'items')
-      }
+      console.log('Filtered by section (including computed):', filtered.length, 'items')
       return filtered
     }
 
-    // For templates without sections (specific statement type templates), show all non-computed items
-    const filtered = template.line_items.filter(item => !item.is_computed)
-    console.log('Showing all non-computed items:', filtered.length)
+    // For templates without sections (specific statement type templates), show all items
+    const filtered = template.line_items
+    console.log('Showing all items (including computed):', filtered.length)
     return filtered
   }
 
@@ -615,22 +628,24 @@ export default function MapStatements() {
                   <div key={lineItem.code} style={{ marginBottom: '20px' }}>
                     <div style={{
                       padding: '12px 16px',
-                      backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                      border: '2px solid rgba(59, 130, 246, 0.4)',
+                      backgroundColor: lineItem.is_computed ? 'rgba(100, 116, 139, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                      border: lineItem.is_computed ? '2px solid rgba(100, 116, 139, 0.3)' : '2px solid rgba(59, 130, 246, 0.4)',
                       borderRadius: '8px',
                       marginBottom: '12px',
                       fontWeight: 600,
                       fontSize: '14px',
-                      color: '#60a5fa',
+                      color: lineItem.is_computed ? '#94a3b8' : '#60a5fa',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                      opacity: lineItem.is_computed ? 0.6 : 1
                     }}>
                       <Layers className="w-4 h-4" />
                       {lineItem.display_name}
+                      {lineItem.is_computed && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: 'auto' }}>(Calculated)</span>}
                     </div>
-                    {renderEntityLineItemTree(statementType, selectedCompany, [selectedCompany.entity_id], lineItem.code, 0)}
+                    {!lineItem.is_computed && renderEntityLineItemTree(statementType, selectedCompany, [selectedCompany.entity_id], lineItem.code, 0)}
                   </div>
                 ))}
               </div>
@@ -772,53 +787,36 @@ export default function MapStatements() {
           </CardContent>
         </Card>
 
-        {/* Statement Type Mapping Table */}
+        {/* Unified Template Selection */}
         <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(34, 197, 94, 0.4)', marginBottom: '32px' }}>
         <CardContent style={{ padding: '32px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
             <FileText className="w-6 h-6 text-green-500" />
-            <h3 className="font-semibold text-lg">Statement Templates</h3>
+            <h3 className="font-semibold text-lg">Unified Statement Template</h3>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '200px 300px 1fr', gap: '16px', alignItems: 'center' }}>
-            {/* Headers */}
-            <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '14px' }}>Statement Type</div>
-            <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '14px' }}>CSV Data</div>
-            <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '14px' }}>Template</div>
-
-            {/* Rows */}
-            {Object.entries(statementMappings).map(([type, mapping]) => (
-              <React.Fragment key={type}>
-                <div style={{ color: '#e2e8f0', fontSize: '14px' }}>{mapping.label}</div>
-                <div style={{ color: mapping.csvData.length > 0 ? '#22c55e' : '#94a3b8', fontSize: '14px' }}>
-                  {mapping.csvData.length > 0 ? `${mapping.csvData.length} rows` : 'No data uploaded'}
-                </div>
-                <select
-                  value={mapping.selectedTemplate?.template_code || ''}
-                  onChange={(e) => handleTemplateSelect(type as 'pnl' | 'bs' | 'carbon', e.target.value)}
-                  disabled={mapping.csvData.length === 0}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    borderRadius: '6px',
-                    opacity: mapping.csvData.length === 0 ? 0.5 : 1
-                  }}
-                >
-                  <option value="">Select template...</option>
-                  {templates
-                    .filter(t => t.statement_type === type || t.statement_type === 'unified')
-                    .map(t => (
-                      <option key={t.template_code} value={t.template_code}>
-                        {t.template_name}
-                      </option>
-                    ))}
-                </select>
-              </React.Fragment>
+          <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '16px' }}>
+            Select a unified template that will be used for all statement types (P&L, Balance Sheet, Cash Flow, Carbon)
+          </p>
+          <select
+            value={selectedUnifiedTemplate?.template_code || ''}
+            onChange={(e) => handleTemplateSelect(e.target.value)}
+            style={{
+              width: '100%',
+              maxWidth: '500px',
+              padding: '10px 12px',
+              backgroundColor: 'rgba(15, 23, 42, 0.8)',
+              color: '#ffffff',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '6px'
+            }}
+          >
+            <option value="">Select unified template...</option>
+            {templates.map(t => (
+              <option key={t.template_code} value={t.template_code}>
+                {t.template_name}
+              </option>
             ))}
-          </div>
+          </select>
         </CardContent>
       </Card>
       </div>

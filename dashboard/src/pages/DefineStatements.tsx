@@ -85,7 +85,7 @@ export default function DefineStatements() {
           code: data.code,
           display_name: data.display_name || data.code,
           description: data.description || '',
-          statement_type: data.statement_type
+          statement_type: 'unified'  // Force all templates to be unified
         })
 
         // For unified templates, preserve the section field from the database
@@ -213,12 +213,18 @@ export default function DefineStatements() {
     setSaveMessage('')
 
     try {
+      // Force statement_type to 'unified' - all templates must be unified
+      const templateToSave = {
+        ...templateMetadata,
+        statement_type: 'unified'
+      }
+
       const response = await fetch('http://localhost:3001/api/statement-templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dbPath,
-          template: templateMetadata,
+          template: templateToSave,
           lineItems
         })
       })
@@ -310,8 +316,7 @@ export default function DefineStatements() {
                       key={template.code}
                       style={{
                         backgroundColor: selectedTemplateCode === template.code ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-                        borderColor: selectedTemplateCode === template.code ? 'rgba(59, 130, 246, 0.6)' : 'rgba(59, 130, 246, 0.2)',
-                        border: '1px solid',
+                        border: 'none',
                         cursor: 'pointer',
                         width: '100%',
                         maxWidth: '100%',
@@ -392,31 +397,6 @@ export default function DefineStatements() {
                       className="h-8"
                       style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(15, 23, 42, 0.8)', color: '#ffffff' }}
                     />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Statement Type</label>
-                    <select
-                      value={templateMetadata.statement_type}
-                      onChange={(e) => setTemplateMetadata({ ...templateMetadata, statement_type: e.target.value })}
-                      style={{
-                        width: '100%',
-                        marginTop: '8px',
-                        fontSize: '14px',
-                        padding: '8px 12px',
-                        backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                        color: '#ffffff',
-                        border: '1px solid rgba(16, 185, 129, 0.2)',
-                        borderRadius: '6px',
-                        height: '32px'
-                      }}
-                    >
-                      <option value="unified">Unified</option>
-                      <option value="profit_and_loss">Profit & Loss</option>
-                      <option value="balance_sheet">Balance Sheet</option>
-                      <option value="cash_flow">Cash Flow</option>
-                      <option value="carbon_statement">Carbon Statement</option>
-                    </select>
                   </div>
                 </div>
 
@@ -527,8 +507,7 @@ export default function DefineStatements() {
                           key={index}
                           style={{
                             backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                            borderColor: 'rgba(16, 185, 129, 0.2)',
-                            border: '1px solid'
+                            border: 'none'
                           }}
                         >
                           <CardContent style={{ padding: '2.25rem' }}>
@@ -612,16 +591,6 @@ export default function DefineStatements() {
                                     <option value="false">No (From Driver)</option>
                                     <option value="true">Yes (From Formula)</option>
                                   </select>
-                                </div>
-                                <div>
-                                  <label className="text-sm font-medium text-muted-foreground">Base Value Source</label>
-                                  <Input
-                                    value={item.base_value_source || ''}
-                                    onChange={(e) => updateLineItem(index, 'base_value_source', e.target.value)}
-                                    placeholder="e.g., driver_code"
-                                    className="h-8"
-                                    style={{ marginTop: '8px', fontSize: '14px', backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#ffffff' }}
-                                  />
                                 </div>
                               </div>
                               <Button
