@@ -756,11 +756,11 @@ app.post('/api/statements/save-mapping', express.json(), (req, res) => {
 /**
  * Save hierarchical statement mapping
  * POST /api/statements/save-hierarchical-mapping
- * Body: dbPath, templateCode, statementType, companyId, hierarchicalMappings
+ * Body: dbPath, templateCode, statementType, companyId, hierarchicalMappings, csvFileName
  */
 app.post('/api/statements/save-hierarchical-mapping', express.json(), (req, res) => {
   try {
-    const { dbPath, templateCode, statementType, companyId, hierarchicalMappings } = req.body
+    const { dbPath, templateCode, statementType, companyId, hierarchicalMappings, csvFileName } = req.body
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -777,16 +777,15 @@ app.post('/api/statements/save-hierarchical-mapping', express.json(), (req, res)
     })
 
     const mappingData = {
-      company_id: companyId,
       hierarchical_mappings: hierarchicalMappings
     }
     const mappingJson = JSON.stringify(mappingData)
 
     db.run(
       `INSERT OR REPLACE INTO statement_mapping
-       (template_code, statement_type, column_mapping, created_at)
-       VALUES (?, ?, ?, datetime('now'))`,
-      [templateCode, statementType, mappingJson],
+       (template_code, statement_type, company_id, column_mapping, csv_file_name, created_at, last_updated)
+       VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+      [templateCode, statementType, companyId, mappingJson, csvFileName || null],
       function(err) {
         db.close()
 
@@ -802,6 +801,257 @@ app.post('/api/statements/save-hierarchical-mapping', express.json(), (req, res)
     )
   } catch (error) {
     console.error('Save hierarchical mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get saved hierarchical mapping
+ * GET /api/statements/get-hierarchical-mapping
+ * Query params: dbPath, templateCode, statementType
+ */
+app.get('/api/statements/get-hierarchical-mapping', (req, res) => {
+  try {
+    const { dbPath, templateCode, statementType } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!templateCode || !statementType) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.get(
+      `SELECT company_id, column_mapping, csv_file_name, last_updated
+       FROM statement_mapping
+       WHERE template_code = ? AND statement_type = ?`,
+      [templateCode, statementType],
+      (err, row) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to retrieve mapping: ' + err.message })
+        }
+
+        if (!row) {
+          return res.json({ success: true, mapping: null })
+        }
+
+        try {
+          const mappingData = JSON.parse(row.column_mapping)
+          res.json({
+            success: true,
+            mapping: {
+              companyId: row.company_id,
+              hierarchicalMappings: mappingData.hierarchical_mappings,
+              csvFileName: row.csv_file_name,
+              lastUpdated: row.last_updated
+            }
+          })
+        } catch (parseErr) {
+          return res.status(500).json({ error: 'Failed to parse mapping data' })
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Get hierarchical mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get all saved mappings for a statement type
+ * GET /api/statements/get-all-mappings
+ * Query: dbPath, statementType
+ */
+app.get('/api/statements/get-all-mappings', (req, res) => {
+  try {
+    const { dbPath, statementType } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!statementType) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT template_code, statement_type, company_id, column_mapping, csv_file_name, last_updated
+       FROM statement_mapping
+       WHERE statement_type = ?
+       ORDER BY last_updated DESC`,
+      [statementType],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to retrieve mappings: ' + err.message })
+        }
+
+        if (!rows || rows.length === 0) {
+          return res.json({ success: true, mappings: [] })
+        }
+
+        try {
+          const mappings = rows.map(row => {
+            const mappingData = JSON.parse(row.column_mapping)
+            return {
+              templateCode: row.template_code,
+              statementType: row.statement_type,
+              companyId: row.company_id,
+              hierarchicalMappings: mappingData.hierarchical_mappings,
+              csvFileName: row.csv_file_name,
+              lastUpdated: row.last_updated
+            }
+          })
+          res.json({ success: true, mappings })
+        } catch (parseErr) {
+          return res.status(500).json({ error: 'Failed to parse mapping data' })
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Get all mappings error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save mapped statement data to result tables
+ * POST /api/statements/save-mapped-data
+ * Body: { dbPath, templateCode, statementType, companyId, hierarchicalMappings, scenarioId, periodId }
+ */
+app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
+  try {
+    const { dbPath, templateCode, statementType, companyId, hierarchicalMappings, scenarioId, periodId } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!templateCode || !statementType || !companyId || !hierarchicalMappings || !scenarioId || !periodId) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Determine staging table and result table based on statement type
+    const tableMap = {
+      'pnl': { staging: 'staging_statement_pnl', result: 'pl_results' },
+      'balance_sheet': { staging: 'staging_statement_bs', result: 'bs_result' },
+      'carbon': { staging: 'staging_statement_carbon', result: 'carbon_result' },
+      'cashflow': { staging: 'staging_statement_cf', result: 'cf_result' }
+    }
+
+    const tables = tableMap[statementType]
+    if (!tables) {
+      db.close()
+      return res.status(400).json({ error: 'Invalid statement type' })
+    }
+
+    // First, get all staging data
+    db.all(`SELECT * FROM ${tables.staging}`, [], (err, stagingRows) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to read staging data: ' + err.message })
+      }
+
+      if (!stagingRows || stagingRows.length === 0) {
+        db.close()
+        return res.status(400).json({ error: 'No staging data found' })
+      }
+
+      // Process each hierarchical mapping
+      const insertPromises = []
+      for (const mapping of hierarchicalMappings) {
+        const { entity_path, line_item_code, csv_row_index } = mapping
+
+        // Get the target entity (last in path)
+        const targetEntityId = entity_path[entity_path.length - 1]
+
+        // Get the CSV row data
+        const csvRow = stagingRows[csv_row_index]
+        if (!csvRow) continue
+
+        // Extract value from CSV row (assuming first numeric column contains the value)
+        // This is a simplification - in reality you'd need to map specific columns
+        let value = null
+        for (const key in csvRow) {
+          if (key !== 'id' && !isNaN(parseFloat(csvRow[key]))) {
+            value = parseFloat(csvRow[key])
+            break
+          }
+        }
+
+        if (value === null) continue
+
+        // Insert into appropriate result table
+        let insertSql
+        if (statementType === 'carbon') {
+          insertSql = `
+            INSERT OR REPLACE INTO ${tables.result}
+            (entity_id, scenario_id, period_id, template_code, line_item_code, value, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+          `
+        } else {
+          // For P&L, BS, CF - assuming they have similar structures
+          insertSql = `
+            INSERT OR REPLACE INTO ${tables.result}
+            (entity_id, scenario_id, period_id, code, value, calculation_timestamp)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+          `
+        }
+
+        insertPromises.push(new Promise((resolve, reject) => {
+          if (statementType === 'carbon') {
+            db.run(insertSql, [targetEntityId, scenarioId, periodId, templateCode, line_item_code, value], (err) => {
+              if (err) reject(err)
+              else resolve()
+            })
+          } else {
+            db.run(insertSql, [targetEntityId, scenarioId, periodId, line_item_code, value], (err) => {
+              if (err) reject(err)
+              else resolve()
+            })
+          }
+        }))
+      }
+
+      // Execute all inserts
+      Promise.all(insertPromises)
+        .then(() => {
+          db.close()
+          res.json({
+            success: true,
+            message: `Saved ${insertPromises.length} mapped data records`,
+            recordCount: insertPromises.length
+          })
+        })
+        .catch((error) => {
+          db.close()
+          res.status(500).json({ error: 'Failed to save mapped data: ' + error.message })
+        })
+    })
+  } catch (error) {
+    console.error('Save mapped data error:', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -1091,6 +1341,146 @@ app.delete('/api/statement-templates/:code', (req, res) => {
 
     res.json({ success: true, deleted: this.changes })
   })
+})
+
+/**
+ * Record a staged file after successful load
+ * POST /api/staged-files
+ * Body: { dbPath, fileName, fileType, rowCount }
+ */
+app.post('/api/staged-files', express.json(), (req, res) => {
+  try {
+    const { dbPath, fileName, fileType, rowCount } = req.body
+
+    if (!dbPath || !fileName || !fileType) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.run(
+      `INSERT INTO staged_file (file_name, file_type, row_count, is_valid)
+       VALUES (?, ?, ?, 1)`,
+      [fileName, fileType, rowCount || 0],
+      function(err) {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to record staged file: ' + err.message })
+        }
+
+        res.json({
+          success: true,
+          fileId: this.lastID,
+          message: 'Staged file recorded'
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Record staged file error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get staged files by type
+ * GET /api/staged-files/:fileType
+ * Query params: dbPath
+ */
+app.get('/api/staged-files/:fileType', (req, res) => {
+  try {
+    const { fileType } = req.params
+    const { dbPath } = req.query
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'Missing dbPath parameter' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT file_id, file_name, file_type, row_count, uploaded_at, is_valid
+       FROM staged_file
+       WHERE file_type = ?
+       ORDER BY uploaded_at DESC`,
+      [fileType],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to retrieve staged files: ' + err.message })
+        }
+
+        res.json({ success: true, files: rows || [] })
+      }
+    )
+  } catch (error) {
+    console.error('Get staged files error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Delete a staged file record
+ * DELETE /api/staged-files/:fileId
+ * Query params: dbPath
+ */
+app.delete('/api/staged-files/:fileId', (req, res) => {
+  try {
+    const { fileId } = req.params
+    const { dbPath } = req.query
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'Missing dbPath parameter' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.run(
+      `DELETE FROM staged_file WHERE file_id = ?`,
+      [fileId],
+      function(err) {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to delete staged file: ' + err.message })
+        }
+
+        res.json({
+          success: true,
+          deleted: this.changes,
+          message: 'Staged file deleted'
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Delete staged file error:', error)
+    res.status(500).json({ error: error.message })
+  }
 })
 
 /**

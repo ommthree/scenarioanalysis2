@@ -37,10 +37,11 @@ interface HierarchicalMapping {
 }
 
 interface StatementMapping {
-  statementType: 'pnl' | 'bs' | 'carbon'
+  statementType: 'pnl' | 'bs' | 'carbon' | 'cf'
   label: string
   csvData: CsvRow[]
   csvColumns: string[]
+  csvFileName?: string
   selectedTemplate: Template | null
   hierarchicalMappings: HierarchicalMapping[]
   expandedNodes: Set<string>
@@ -99,6 +100,13 @@ export default function MapStatements() {
     loadEntities()
     loadAllStagingData()
   }, [])
+
+  // Restore saved mappings when selectedCompany and templates are loaded
+  useEffect(() => {
+    if (selectedCompany && templates.length > 0) {
+      restoreSavedMappings()
+    }
+  }, [selectedCompany?.entity_id, templates.length])
 
   const loadTemplates = async () => {
     try {
@@ -162,6 +170,79 @@ export default function MapStatements() {
       }
     } catch (error) {
       console.error(`Failed to load staging data for ${statementType}:`, error)
+    }
+  }
+
+  const restoreSavedMappings = async () => {
+    if (!selectedCompany || templates.length === 0) return
+
+    try {
+      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+
+      // First, reset template selections and mappings (but preserve csvData)
+      setStatementMappings(prev => ({
+        pnl: {
+          ...prev.pnl,
+          selectedTemplate: null,
+          hierarchicalMappings: [],
+          expandedNodes: new Set()
+        },
+        bs: {
+          ...prev.bs,
+          selectedTemplate: null,
+          hierarchicalMappings: [],
+          expandedNodes: new Set()
+        },
+        cf: {
+          ...prev.cf,
+          selectedTemplate: null,
+          hierarchicalMappings: [],
+          expandedNodes: new Set()
+        },
+        carbon: {
+          ...prev.carbon,
+          selectedTemplate: null,
+          hierarchicalMappings: [],
+          expandedNodes: new Set()
+        }
+      }))
+
+      // Restore mappings for each statement type
+      // Query for mappings with the exact frontend type (pnl, bs, cf, carbon)
+      const types: Array<'pnl' | 'bs' | 'carbon' | 'cf'> = ['pnl', 'bs', 'cf', 'carbon']
+      for (const type of types) {
+        const response = await fetch(
+          `http://localhost:3001/api/statements/get-all-mappings?${new URLSearchParams({
+            dbPath,
+            statementType: type
+          })}`
+        )
+        const result = await response.json()
+
+        if (result.success && result.mappings && result.mappings.length > 0) {
+          // Find mapping for current company
+          const companyMapping = result.mappings.find((m: any) => m.companyId === selectedCompany.entity_id)
+
+          if (companyMapping) {
+            // Find the template by code
+            const template = templates.find(t => t.template_code === companyMapping.templateCode)
+
+            if (template) {
+              setStatementMappings(prev => ({
+                ...prev,
+                [type]: {
+                  ...prev[type],
+                  selectedTemplate: template,
+                  hierarchicalMappings: companyMapping.hierarchicalMappings || [],
+                  csvFileName: companyMapping.csvFileName || undefined
+                }
+              }))
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore saved mappings:', error)
     }
   }
 
@@ -572,15 +653,35 @@ export default function MapStatements() {
       // Save each statement type's mappings
       for (const [statementType, mapping] of Object.entries(statementMappings)) {
         if (mapping.selectedTemplate && mapping.hierarchicalMappings.length > 0) {
+          // Get the most recent staged file name for this statement type
+          let csvFileName: string | undefined = undefined
+          try {
+            const fileTypeMap: Record<string, string> = {
+              'pnl': 'pnl',
+              'bs': 'balance_sheet',
+              'carbon': 'carbon',
+              'cf': 'cashflow'
+            }
+            const fileType = fileTypeMap[statementType] || statementType
+            const filesResponse = await fetch(`http://localhost:3001/api/staged-files/${fileType}?dbPath=${encodeURIComponent(dbPath)}`)
+            const filesResult = await filesResponse.json()
+            if (filesResult.success && filesResult.files && filesResult.files.length > 0) {
+              csvFileName = filesResult.files[0].file_name
+            }
+          } catch (err) {
+            console.error(`Failed to fetch staged file for ${statementType}:`, err)
+          }
+
           const response = await fetch('http://localhost:3001/api/statements/save-hierarchical-mapping', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               dbPath,
               templateCode: mapping.selectedTemplate.template_code,
-              statementType: mapping.selectedTemplate.statement_type,
+              statementType: statementType, // Use frontend statement type, not template's
               companyId: selectedCompany.entity_id,
-              hierarchicalMappings: mapping.hierarchicalMappings
+              hierarchicalMappings: mapping.hierarchicalMappings,
+              csvFileName
             })
           })
 
@@ -588,10 +689,35 @@ export default function MapStatements() {
           if (!response.ok || !result.success) {
             throw new Error(`Failed to save ${statementType} mapping: ${result.error}`)
           }
+
+          // Also save the mapped data to result tables
+          // Using default scenario_id=1 and period_id=1 for now
+          try {
+            const dataResponse = await fetch('http://localhost:3001/api/statements/save-mapped-data', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                dbPath,
+                templateCode: mapping.selectedTemplate.template_code,
+                statementType: statementType, // Use frontend statement type, not template's
+                companyId: selectedCompany.entity_id,
+                hierarchicalMappings: mapping.hierarchicalMappings,
+                scenarioId: 1,  // TODO: Make this selectable by user
+                periodId: 1     // TODO: Make this selectable by user
+              })
+            })
+
+            const dataResult = await dataResponse.json()
+            if (!dataResponse.ok || !dataResult.success) {
+              console.warn(`Failed to save ${statementType} data: ${dataResult.error}`)
+            }
+          } catch (dataErr) {
+            console.error(`Failed to save ${statementType} data:`, dataErr)
+          }
         }
       }
 
-      setSaveMessage('All mappings saved successfully!')
+      setSaveMessage('All mappings and data saved successfully!')
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
       console.error('Save error:', error)
