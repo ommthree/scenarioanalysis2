@@ -939,11 +939,19 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
   try {
     const { dbPath, templateCode, statementType, companyId, hierarchicalMappings, scenarioId, periodId } = req.body
 
+    console.log('=== save-mapped-data called ===')
+    console.log('statementType:', statementType)
+    console.log('companyId:', companyId)
+    console.log('hierarchicalMappings count:', hierarchicalMappings?.length)
+    console.log('scenarioId:', scenarioId, 'periodId:', periodId)
+
     if (!dbPath || !fs.existsSync(dbPath)) {
+      console.log('ERROR: Invalid database path')
       return res.status(400).json({ error: 'Invalid database path' })
     }
 
     if (!templateCode || !statementType || !companyId || !hierarchicalMappings || !scenarioId || !periodId) {
+      console.log('ERROR: Missing required fields:', { templateCode, statementType, companyId, hierarchicalMappings: !!hierarchicalMappings, scenarioId, periodId })
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
@@ -953,34 +961,61 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
       }
     })
 
-    // Determine staging table and result table based on statement type
-    const tableMap = {
-      'pnl': { staging: 'staging_statement_pnl', result: 'pl_results' },
-      'balance_sheet': { staging: 'staging_statement_bs', result: 'bs_result' },
-      'carbon': { staging: 'staging_statement_carbon', result: 'carbon_result' },
-      'cashflow': { staging: 'staging_statement_cf', result: 'cf_result' }
-    }
+    // First, look up the template_id from statement_template
+    console.log('Looking up template_id for:', templateCode)
+    db.get(
+      `SELECT template_id FROM statement_template WHERE code = ?`,
+      [templateCode],
+      (err, templateRow) => {
+        if (err) {
+          console.log('ERROR looking up template:', err.message)
+          db.close()
+          return res.status(500).json({ error: 'Failed to look up template: ' + err.message })
+        }
 
-    const tables = tableMap[statementType]
-    if (!tables) {
-      db.close()
-      return res.status(400).json({ error: 'Invalid statement type' })
-    }
+        if (!templateRow) {
+          console.log('ERROR: Template not found:', templateCode)
+          db.close()
+          return res.status(400).json({ error: 'Template not found: ' + templateCode })
+        }
 
-    // First, get all staging data
-    db.all(`SELECT * FROM ${tables.staging}`, [], (err, stagingRows) => {
+        const statementId = templateRow.template_id
+        console.log('Found statement_id:', statementId)
+
+        // Determine staging table and result table based on statement type
+        const tableMap = {
+          'pnl': { staging: 'staging_statement_pnl', result: 'pl_results' },
+          'balance_sheet': { staging: 'staging_statement_bs', result: 'bs_result' },
+          'carbon': { staging: 'staging_statement_carbon', result: 'carbon_result' },
+          'cashflow': { staging: 'staging_statement_cf', result: 'cf_result' }
+        }
+
+        const tables = tableMap[statementType]
+        if (!tables) {
+          db.close()
+          return res.status(400).json({ error: 'Invalid statement type' })
+        }
+
+        // Now get all staging data
+        console.log('Querying staging table:', tables.staging)
+        db.all(`SELECT * FROM ${tables.staging}`, [], (err, stagingRows) => {
       if (err) {
+        console.log('ERROR reading staging data:', err.message)
         db.close()
         return res.status(500).json({ error: 'Failed to read staging data: ' + err.message })
       }
 
+      console.log('Staging rows found:', stagingRows?.length)
+
       if (!stagingRows || stagingRows.length === 0) {
+        console.log('ERROR: No staging data found')
         db.close()
         return res.status(400).json({ error: 'No staging data found' })
       }
 
       // Process each hierarchical mapping
       const insertPromises = []
+      console.log('Processing hierarchical mappings...')
       for (const mapping of hierarchicalMappings) {
         const { entity_path, line_item_code, csv_row_index } = mapping
 
@@ -989,55 +1024,63 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
 
         // Get the CSV row data
         const csvRow = stagingRows[csv_row_index]
-        if (!csvRow) continue
-
-        // Extract value from CSV row (assuming first numeric column contains the value)
-        // This is a simplification - in reality you'd need to map specific columns
-        let value = null
-        for (const key in csvRow) {
-          if (key !== 'id' && !isNaN(parseFloat(csvRow[key]))) {
-            value = parseFloat(csvRow[key])
-            break
-          }
+        if (!csvRow) {
+          console.log('WARNING: csv_row_index', csv_row_index, 'not found in staging rows')
+          continue
         }
 
-        if (value === null) continue
+        // Extract value from the "Initial Value" column
+        // The staging tables have columns: _rowid, "Line Item", "Initial Value", imported_at, is_mapped
+        let value = null
+        if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
+          value = parseFloat(csvRow['Initial Value'])
+        }
+
+        if (value === null || isNaN(value)) {
+          console.log('WARNING: Could not extract value from row', csv_row_index, 'Initial Value:', csvRow['Initial Value'])
+          continue
+        }
+
+        console.log('Mapping:', line_item_code, '=', value, 'from row', csv_row_index)
 
         // Insert into appropriate result table
         let insertSql
-        if (statementType === 'carbon') {
+        let insertParams
+
+        if (statementType === 'pnl') {
+          // P&L has specific schema with statement_id
+          insertSql = `
+            INSERT OR REPLACE INTO ${tables.result}
+            (entity_id, scenario_id, period_id, statement_id, code, value, calculation_timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+          `
+          insertParams = [targetEntityId, scenarioId, periodId, statementId, line_item_code, value]
+        } else if (statementType === 'carbon') {
           insertSql = `
             INSERT OR REPLACE INTO ${tables.result}
             (entity_id, scenario_id, period_id, template_code, line_item_code, value, created_at)
             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
           `
+          insertParams = [targetEntityId, scenarioId, periodId, templateCode, line_item_code, value]
         } else {
-          // For P&L, BS, CF - assuming they have similar structures
-          insertSql = `
-            INSERT OR REPLACE INTO ${tables.result}
-            (entity_id, scenario_id, period_id, code, value, calculation_timestamp)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
-          `
+          // For BS, CF - they use JSON structure, skip for now
+          // TODO: Implement JSON-based storage for BS and CF
+          continue
         }
 
         insertPromises.push(new Promise((resolve, reject) => {
-          if (statementType === 'carbon') {
-            db.run(insertSql, [targetEntityId, scenarioId, periodId, templateCode, line_item_code, value], (err) => {
-              if (err) reject(err)
-              else resolve()
-            })
-          } else {
-            db.run(insertSql, [targetEntityId, scenarioId, periodId, line_item_code, value], (err) => {
-              if (err) reject(err)
-              else resolve()
-            })
-          }
+          db.run(insertSql, insertParams, (err) => {
+            if (err) reject(err)
+            else resolve()
+          })
         }))
       }
 
       // Execute all inserts
+      console.log('Executing', insertPromises.length, 'insert operations...')
       Promise.all(insertPromises)
         .then(() => {
+          console.log('SUCCESS: All inserts completed')
           db.close()
           res.json({
             success: true,
@@ -1046,10 +1089,13 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           })
         })
         .catch((error) => {
+          console.log('ERROR in inserts:', error.message)
           db.close()
           res.status(500).json({ error: 'Failed to save mapped data: ' + error.message })
         })
     })
+      }
+    )
   } catch (error) {
     console.error('Save mapped data error:', error)
     res.status(500).json({ error: error.message })
