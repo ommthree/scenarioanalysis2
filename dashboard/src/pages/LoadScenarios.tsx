@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { TrendingUp, FolderOpen, Check, X, FileText, Database as DatabaseIcon } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { TrendingUp, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,12 +22,58 @@ interface SelectedRow {
   rowIdx: number
 }
 
+interface StagedFile {
+  file_id: number
+  file_name: string
+  file_type: string
+  row_count: number
+  uploaded_at: string
+  is_valid: number
+}
+
 export default function LoadScenarios() {
   const [scenarioFiles, setScenarioFiles] = useState<ScenarioFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [loadSuccess, setLoadSuccess] = useState(false)
   const [loadMessage, setLoadMessage] = useState('')
   const [selectedRows, setSelectedRows] = useState<SelectedRow[]>([])
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
+
+  // Load staged files when component mounts
+  useEffect(() => {
+    fetchStagedFiles()
+  }, [])
+
+  const fetchStagedFiles = async () => {
+    try {
+      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const response = await fetch(`http://localhost:3001/api/staged-files/scenario?dbPath=${encodeURIComponent(dbPath)}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setStagedFiles(result.files || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch staged files:', error)
+    }
+  }
+
+  const handleDeleteStagedFile = async (fileId: number) => {
+    try {
+      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`, {
+        method: 'DELETE'
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        // Refresh the list
+        fetchStagedFiles()
+      }
+    } catch (error) {
+      console.error('Failed to delete staged file:', error)
+    }
+  }
 
   const parseCsv = (text: string): CsvData => {
     const lines = text.split('\n').filter(line => line.trim() !== '')
@@ -115,6 +161,30 @@ export default function LoadScenarios() {
       if (response.ok && result.success) {
         setLoadSuccess(true)
         setLoadMessage(result.message)
+
+        // Record each staged file
+        try {
+          for (const scenario of scenarioFiles) {
+            if (scenario.isValid && scenario.csvData) {
+              await fetch('http://localhost:3001/api/staged-files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  dbPath,
+                  fileName: scenario.name,
+                  fileType: 'scenario',
+                  rowCount: scenario.csvData.rows.length
+                })
+              })
+            }
+          }
+
+          // Refresh staged files list
+          fetchStagedFiles()
+        } catch (err) {
+          console.error('Failed to record staged files:', err)
+        }
+
         setTimeout(() => {
           setLoadSuccess(false)
           setLoadMessage('')
@@ -217,6 +287,46 @@ export default function LoadScenarios() {
                   Browse Multiple Files
                 </Button>
               </div>
+
+              {/* Staged Files List */}
+              {stagedFiles.length > 0 && (
+                <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: '#94a3b8' }}>
+                    Staged Files ({stagedFiles.length})
+                  </div>
+                  <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                    {stagedFiles.map((file) => (
+                      <div
+                        key={file.file_id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          marginBottom: '6px',
+                          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(34, 197, 94, 0.3)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                          <Check className="w-4 h-4 text-green-500" />
+                          <span className="text-sm" style={{ color: '#ffffff' }}>{file.file_name}</span>
+                          <span className="text-xs text-muted-foreground">({file.row_count} rows)</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteStagedFile(file.file_id)}
+                          style={{ color: '#ef4444', padding: '4px 8px' }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* File List */}
               {scenarioFiles.length > 0 && (

@@ -53,6 +53,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/definitions/entities', icon: Building2, label: 'Entities' },
         { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
+        { path: '/definitions/scenarios', icon: Cloud, label: 'Scenarios' },
         { path: '/definitions/actions', icon: Activity, label: 'Actions' },
       ]
     },
@@ -61,7 +62,8 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/inputs/statements', icon: FileJson, label: 'Load Statements' },
         { path: '/inputs/map-statements', icon: ArrowRightLeft, label: 'Map Statements' },
-        { path: '/inputs/scenarios', icon: List, label: 'Scenarios' },
+        { path: '/inputs/scenarios', icon: List, label: 'Load Scenarios' },
+        { path: '/inputs/map-scenarios', icon: ArrowRightLeft, label: 'Map Scenarios' },
         { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
         { path: '/inputs/damage-curves', icon: Cloud, label: 'Load Damage Curves' },
         { path: '/inputs/map-damage-curves', icon: ArrowRightLeft, label: 'Map Damage Curves' },

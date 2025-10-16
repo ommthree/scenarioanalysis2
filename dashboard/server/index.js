@@ -1530,6 +1530,459 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
 })
 
 /**
+ * Get list of scenario staging tables with filenames
+ * GET /api/scenarios/staging-tables
+ * Query params: dbPath
+ */
+app.get('/api/scenarios/staging-tables', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get filenames from staged_file table - each file represents a "table" to map
+    db.all(
+      `SELECT file_id, file_name FROM staged_file WHERE file_type = 'scenario' ORDER BY uploaded_at`,
+      [],
+      (err, fileRows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch file names: ' + err.message })
+        }
+
+        // Each file becomes a virtual "table" that references the unified staging_scenario table
+        // The actual data query will filter by file context when needed
+        const tables = fileRows.map(file => ({
+          tableName: `staging_scenario`, // All use the unified table
+          fileName: file.file_name,
+          fileId: file.file_id
+        }))
+
+        res.json({ success: true, tables })
+      }
+    )
+  } catch (error) {
+    console.error('Get staging tables error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get columns from a scenario staging table
+ * GET /api/scenarios/staging-columns
+ * Query params: dbPath, tableName
+ */
+app.get('/api/scenarios/staging-columns', (req, res) => {
+  try {
+    const { dbPath, tableName } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ error: 'Table name is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(`PRAGMA table_info(${tableName})`, [], (err, columns) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to get table info: ' + err.message })
+      }
+
+      // Filter out internal columns
+      const csvColumns = columns
+        .map(col => ({ name: col.name }))
+        .filter(col => !['_rowid', 'imported_at', 'is_mapped'].includes(col.name))
+
+      res.json({ success: true, columns: csvColumns })
+    })
+  } catch (error) {
+    console.error('Get staging columns error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save scenario mapping
+ * POST /api/scenarios/save-mapping
+ * Body: { dbPath, tableName, mappings }
+ */
+app.post('/api/scenarios/save-mapping', express.json(), (req, res) => {
+  try {
+    const { dbPath, tableName, mappings } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!tableName || !mappings) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    const mappingJson = JSON.stringify(mappings)
+
+    // Store mapping in a scenarios_mapping table (create if needed)
+    db.serialize(() => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS scenario_mapping (
+          mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          table_name TEXT NOT NULL UNIQUE,
+          column_mapping TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          last_updated TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `, (err) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to create mapping table: ' + err.message })
+        }
+
+        db.run(
+          `INSERT OR REPLACE INTO scenario_mapping (table_name, column_mapping, last_updated)
+           VALUES (?, ?, datetime('now'))`,
+          [tableName, mappingJson],
+          function(err) {
+            db.close()
+
+            if (err) {
+              return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+            }
+
+            res.json({
+              success: true,
+              message: `Mapping saved for ${tableName}`
+            })
+          }
+        )
+      })
+    })
+  } catch (error) {
+    console.error('Save scenario mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get all drivers
+ * GET /api/drivers
+ * Query params: dbPath
+ */
+app.get('/api/drivers', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all('SELECT * FROM driver WHERE is_active = 1 ORDER BY category, code', [], (err, rows) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch drivers: ' + err.message })
+      }
+
+      res.json(rows || [])
+    })
+  } catch (error) {
+    console.error('Get drivers error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save drivers (bulk create/update)
+ * POST /api/drivers
+ * Body: { dbPath, drivers }
+ */
+app.post('/api/drivers', express.json(), (req, res) => {
+  try {
+    const { dbPath, drivers } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!drivers || !Array.isArray(drivers)) {
+      return res.status(400).json({ error: 'Drivers array is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Begin transaction
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION')
+
+      let processedCount = 0
+      let hasError = false
+
+      drivers.forEach((driver) => {
+        if (!driver.code || !driver.name) {
+          hasError = true
+          processedCount++
+          return
+        }
+
+        if (driver.driver_id) {
+          // Update existing driver
+          db.run(
+            `UPDATE driver
+             SET code = ?, name = ?, description = ?, category = ?
+             WHERE driver_id = ?`,
+            [driver.code, driver.name, driver.description || '', driver.category, driver.driver_id],
+            (err) => {
+              if (err) {
+                console.error('Update driver error:', err)
+                hasError = true
+              }
+              processedCount++
+
+              if (processedCount === drivers.length) {
+                finishTransaction()
+              }
+            }
+          )
+        } else {
+          // Insert new driver
+          db.run(
+            `INSERT INTO driver (code, name, description, category)
+             VALUES (?, ?, ?, ?)`,
+            [driver.code, driver.name, driver.description || '', driver.category],
+            (err) => {
+              if (err) {
+                console.error('Insert driver error:', err)
+                hasError = true
+              }
+              processedCount++
+
+              if (processedCount === drivers.length) {
+                finishTransaction()
+              }
+            }
+          )
+        }
+      })
+
+      function finishTransaction() {
+        if (hasError) {
+          db.run('ROLLBACK', () => {
+            db.close()
+            res.status(500).json({ error: 'Failed to save drivers' })
+          })
+        } else {
+          db.run('COMMIT', () => {
+            db.close()
+            res.json({
+              success: true,
+              message: `Successfully saved ${drivers.length} driver(s)`
+            })
+          })
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Save drivers error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get entity hierarchy levels
+ * GET /api/entity-levels
+ * Query: dbPath
+ */
+app.get('/api/entity-levels', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT DISTINCT granularity_level FROM entity WHERE granularity_level IS NOT NULL ORDER BY granularity_level`,
+      [],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch entity levels: ' + err.message })
+        }
+
+        const levels = rows.map(row => row.granularity_level)
+        res.json({ success: true, levels })
+      }
+    )
+  } catch (error) {
+    console.error('Get entity levels error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get unique values from a column in a staging table
+ * GET /api/scenarios/unique-values
+ * Query: dbPath, tableName, columnName
+ */
+app.get('/api/scenarios/unique-values', (req, res) => {
+  try {
+    const { dbPath, tableName, columnName } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!tableName || !columnName) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get distinct values from the specified column
+    db.all(
+      `SELECT DISTINCT "${columnName}" as value FROM "${tableName}" WHERE "${columnName}" IS NOT NULL ORDER BY "${columnName}"`,
+      [],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch unique values: ' + err.message })
+        }
+
+        const values = rows.map(row => row.value)
+        res.json({ success: true, values })
+      }
+    )
+  } catch (error) {
+    console.error('Get unique values error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save scenario file configuration and variable mappings
+ * POST /api/scenarios/save-file-config
+ * Body: { dbPath, config: { tableName, scenarioColumn, variableColumn, classificationColumns }, mappings: [{ variableValue, driverCode }] }
+ */
+app.post('/api/scenarios/save-file-config', express.json(), (req, res) => {
+  try {
+    const { dbPath, config, mappings } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!config || !mappings) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.serialize(() => {
+      // Create table if it doesn't exist
+      db.run(
+        `CREATE TABLE IF NOT EXISTS scenario_file_config (
+          config_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          table_name TEXT NOT NULL UNIQUE,
+          scenario_column TEXT NOT NULL,
+          variable_column TEXT NOT NULL,
+          classification_columns TEXT,
+          variable_mappings TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          last_updated TEXT NOT NULL DEFAULT (datetime('now'))
+        )`,
+        (err) => {
+          if (err) {
+            db.close()
+            return res.status(500).json({ error: 'Failed to create config table: ' + err.message })
+          }
+
+          // Prepare data
+          const classificationColumnsJson = JSON.stringify(config.classificationColumns || [])
+          const variableMappingsJson = JSON.stringify(mappings)
+
+          // Insert or replace configuration
+          db.run(
+            `INSERT OR REPLACE INTO scenario_file_config
+             (table_name, scenario_column, variable_column, classification_columns, variable_mappings, last_updated)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+            [
+              config.tableName,
+              config.scenarioColumn,
+              config.variableColumn,
+              classificationColumnsJson,
+              variableMappingsJson
+            ],
+            (err) => {
+              db.close()
+
+              if (err) {
+                return res.status(500).json({ error: 'Failed to save configuration: ' + err.message })
+              }
+
+              res.json({
+                success: true,
+                message: `Configuration saved for ${config.tableName}`
+              })
+            }
+          )
+        }
+      )
+    })
+  } catch (error) {
+    console.error('Save file config error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {
