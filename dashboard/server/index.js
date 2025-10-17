@@ -1530,6 +1530,104 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
 })
 
 /**
+ * Get preview of a staged file by fetching from its staging table
+ * GET /api/staged-files/:fileId/preview
+ * Query params: dbPath
+ */
+app.get('/api/staged-files/:fileId/preview', (req, res) => {
+  try {
+    const { fileId } = req.params
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // First, get the file info to determine which staging table to query
+    db.get(
+      `SELECT file_name, file_type FROM staged_file WHERE file_id = ?`,
+      [fileId],
+      (err, file) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to retrieve file info: ' + err.message })
+        }
+
+        if (!file) {
+          db.close()
+          return res.status(404).json({ error: 'File not found' })
+        }
+
+        // Determine staging table name based on file type
+        let stagingTableName
+        if (file.file_type === 'pnl' || file.file_type === 'balance_sheet' ||
+            file.file_type === 'cashflow' || file.file_type === 'carbon') {
+          stagingTableName = `staging_statement_${file.file_type}`
+        } else if (file.file_type === 'scenario') {
+          stagingTableName = 'staging_scenario'
+        } else if (file.file_type === 'location') {
+          stagingTableName = 'staging_location'
+        } else if (file.file_type === 'damage_curve') {
+          stagingTableName = 'staging_damage_curve'
+        } else {
+          db.close()
+          return res.status(400).json({ error: 'Unknown file type: ' + file.file_type })
+        }
+
+        // Query the staging table to get all data
+        db.all(`SELECT * FROM ${stagingTableName} LIMIT 1000`, [], (err, rows) => {
+          if (err) {
+            db.close()
+            return res.status(500).json({ error: 'Failed to retrieve staging data: ' + err.message })
+          }
+
+          // Convert rows back to CSV format
+          if (!rows || rows.length === 0) {
+            db.close()
+            return res.json({ success: true, csvText: '' })
+          }
+
+          // Get column names (exclude internal columns)
+          const columns = Object.keys(rows[0]).filter(
+            col => !['_rowid', 'staging_id', 'id', 'file_id', 'imported_at', 'is_mapped'].includes(col)
+          )
+
+          // Build CSV text
+          const csvLines = [columns.join(',')]
+          for (const row of rows) {
+            const values = columns.map(col => {
+              const val = row[col]
+              // Escape values that contain commas or quotes
+              if (val && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
+                return `"${val.replace(/"/g, '""')}"`
+              }
+              return val || ''
+            })
+            csvLines.push(values.join(','))
+          }
+
+          db.close()
+          res.json({
+            success: true,
+            csvText: csvLines.join('\n'),
+            fileName: file.file_name
+          })
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Get staged file preview error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Get list of scenario staging tables with filenames
  * GET /api/scenarios/staging-tables
  * Query params: dbPath
