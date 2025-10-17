@@ -1982,6 +1982,411 @@ app.post('/api/scenarios/save-file-config', express.json(), (req, res) => {
   }
 })
 
+// =====================================================
+// LOCATION & DAMAGE CURVE ENDPOINTS
+// =====================================================
+
+/**
+ * Load location CSV into staging_location table
+ * POST /api/locations/load
+ * Body: dbPath
+ * File: CSV file
+ */
+app.post('/api/locations/load', upload.single('file'), async (req, res) => {
+  console.log('Received location upload request')
+
+  try {
+    const { dbPath } = req.body
+    const file = req.file
+
+    if (!file || !dbPath) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    // Read and parse CSV
+    const fileContent = fs.readFileSync(file.path, 'utf-8')
+    const records = parse(fileContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true
+    })
+
+    if (records.length === 0) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'CSV file is empty' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: `Database not found at ${dbPath}` })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        fs.unlinkSync(file.path)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.serialize(() => {
+      // Insert file record into staged_file
+      db.run(
+        `INSERT INTO staged_file (file_name, file_type, row_count) VALUES (?, 'location', ?)`,
+        [file.originalname, records.length],
+        function(err) {
+          if (err) {
+            console.error('Error inserting staged_file:', err)
+            db.close()
+            fs.unlinkSync(file.path)
+            return res.status(500).json({ error: 'Failed to record file' })
+          }
+
+          const fileId = this.lastID
+
+          // Create staging table with dynamic columns
+          const columns = Object.keys(records[0])
+          // Sanitize and deduplicate column names
+          const sanitizedColumns = []
+          const seenColumns = new Map()
+          columns.forEach(col => {
+            let sanitized = col.replace(/[^a-zA-Z0-9_]/g, '_')
+            const lowerSanitized = sanitized.toLowerCase()
+            if (seenColumns.has(lowerSanitized)) {
+              const count = seenColumns.get(lowerSanitized)
+              sanitized = `${sanitized}_${count}`
+              seenColumns.set(lowerSanitized, count + 1)
+            } else {
+              seenColumns.set(lowerSanitized, 1)
+            }
+            sanitizedColumns.push(sanitized)
+          })
+          const columnDefs = sanitizedColumns.map(col => `"${col}" TEXT`).join(', ')
+
+          db.run(`DROP TABLE IF EXISTS staging_location`, (err) => {
+            if (err) {
+              console.error('Drop table error:', err)
+              db.close()
+              fs.unlinkSync(file.path)
+              return res.status(500).json({ error: 'Failed to drop old staging table' })
+            }
+
+            db.run(`CREATE TABLE staging_location (
+              staging_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              file_id INTEGER,
+              ${columnDefs},
+              imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              is_mapped INTEGER DEFAULT 0,
+              FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
+            )`, (err) => {
+            if (err) {
+              console.error('Create table error:', err)
+              db.close()
+              fs.unlinkSync(file.path)
+              return res.status(500).json({ error: 'Failed to create staging table' })
+            }
+
+            // Insert records
+            const placeholders = sanitizedColumns.map(() => '?').join(', ')
+            const columnNames = sanitizedColumns.map(c => `"${c}"`).join(', ')
+            const stmt = db.prepare(
+              `INSERT INTO staging_location (file_id, ${columnNames}) VALUES (?, ${placeholders})`
+            )
+
+            let inserted = 0
+            for (const record of records) {
+              const values = [fileId, ...columns.map(col => record[col])]
+              stmt.run(values, (err) => {
+                if (err) {
+                  console.error('Insert error:', err)
+                }
+                inserted++
+                if (inserted === records.length) {
+                  stmt.finalize()
+                  db.close()
+                  fs.unlinkSync(file.path)
+                  res.json({
+                    success: true,
+                    fileId,
+                    rowCount: records.length,
+                    columns
+                  })
+                }
+              })
+            }
+            })
+          })
+        }
+      )
+    })
+  } catch (error) {
+    console.error('Load location error:', error)
+    if (req.file) fs.unlinkSync(req.file.path)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get location staging data preview
+ * GET /api/locations/staging-preview
+ * Query params: dbPath, limit (optional)
+ */
+app.get('/api/locations/staging-preview', (req, res) => {
+  try {
+    const { dbPath, limit = 10 } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT * FROM staging_location LIMIT ?`,
+      [limit],
+      (err, rows) => {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+        }
+        res.json({ success: true, data: rows })
+      }
+    )
+  } catch (error) {
+    console.error('Staging preview error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save location mapping configuration
+ * POST /api/locations/save-mapping
+ * Body: { dbPath, fileId, columnMapping, entityMapping }
+ */
+app.post('/api/locations/save-mapping', async (req, res) => {
+  try {
+    const { dbPath, fileId, columnMapping, entityMapping } = req.body
+
+    if (!dbPath || !fileId || !columnMapping || !entityMapping) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Save mapping configuration
+    db.run(
+      `INSERT OR REPLACE INTO location_mapping (file_id, column_mapping, entity_mapping) VALUES (?, ?, ?)`,
+      [fileId, JSON.stringify(columnMapping), JSON.stringify(entityMapping)],
+      function(err) {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+        }
+        res.json({ success: true, mappingId: this.lastID })
+      }
+    )
+  } catch (error) {
+    console.error('Save mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Load damage curve CSV into staging_damage_curve table
+ * POST /api/damage-curves/load
+ * Body: dbPath
+ * File: CSV file
+ */
+app.post('/api/damage-curves/load', upload.single('file'), async (req, res) => {
+  console.log('Received damage curve upload request')
+
+  try {
+    const { dbPath } = req.body
+    const file = req.file
+
+    if (!file || !dbPath) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const fileContent = fs.readFileSync(file.path, 'utf-8')
+    const records = parse(fileContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true
+    })
+
+    if (records.length === 0) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'CSV file is empty' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: `Database not found at ${dbPath}` })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        fs.unlinkSync(file.path)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.serialize(() => {
+      // Insert file record
+      db.run(
+        `INSERT INTO staged_file (file_name, file_type, row_count) VALUES (?, 'damage_curve', ?)`,
+        [file.originalname, records.length],
+        function(err) {
+          if (err) {
+            db.close()
+            fs.unlinkSync(file.path)
+            return res.status(500).json({ error: 'Failed to record file' })
+          }
+
+          const fileId = this.lastID
+          const columns = Object.keys(records[0])
+          const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ')
+
+          db.run(`DROP TABLE IF EXISTS staging_damage_curve`)
+
+          db.run(`CREATE TABLE staging_damage_curve (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER,
+            ${columnDefs},
+            imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_mapped INTEGER DEFAULT 0,
+            FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
+          )`, (err) => {
+            if (err) {
+              db.close()
+              fs.unlinkSync(file.path)
+              return res.status(500).json({ error: 'Failed to create staging table' })
+            }
+
+            const placeholders = columns.map(() => '?').join(', ')
+            const columnNames = columns.map(c => `"${c}"`).join(', ')
+            const stmt = db.prepare(
+              `INSERT INTO staging_damage_curve (file_id, ${columnNames}) VALUES (?, ${placeholders})`
+            )
+
+            let inserted = 0
+            for (const record of records) {
+              const values = [fileId, ...columns.map(col => record[col])]
+              stmt.run(values, (err) => {
+                if (err) console.error('Insert error:', err)
+                inserted++
+                if (inserted === records.length) {
+                  stmt.finalize()
+                  db.close()
+                  fs.unlinkSync(file.path)
+                  res.json({
+                    success: true,
+                    fileId,
+                    rowCount: records.length,
+                    columns
+                  })
+                }
+              })
+            }
+          })
+        }
+      )
+    })
+  } catch (error) {
+    console.error('Load damage curve error:', error)
+    if (req.file) fs.unlinkSync(req.file.path)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get damage curve staging data preview
+ * GET /api/damage-curves/staging-preview
+ * Query params: dbPath, limit (optional)
+ */
+app.get('/api/damage-curves/staging-preview', (req, res) => {
+  try {
+    const { dbPath, limit = 100 } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT * FROM staging_damage_curve LIMIT ?`,
+      [limit],
+      (err, rows) => {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+        }
+        res.json({ success: true, data: rows })
+      }
+    )
+  } catch (error) {
+    console.error('Staging preview error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save damage curve mapping configuration
+ * POST /api/damage-curves/save-mapping
+ * Body: { dbPath, fileId, columnMapping, perilDriverMapping }
+ */
+app.post('/api/damage-curves/save-mapping', async (req, res) => {
+  try {
+    const { dbPath, fileId, columnMapping, perilDriverMapping } = req.body
+
+    if (!dbPath || !fileId || !columnMapping) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.run(
+      `INSERT OR REPLACE INTO damage_curve_mapping (file_id, column_mapping, peril_driver_mapping) VALUES (?, ?, ?)`,
+      [fileId, JSON.stringify(columnMapping), JSON.stringify(perilDriverMapping)],
+      function(err) {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+        }
+        res.json({ success: true, mappingId: this.lastID })
+      }
+    )
+  } catch (error) {
+    console.error('Save curve mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 /**
  * Health check endpoint
  */

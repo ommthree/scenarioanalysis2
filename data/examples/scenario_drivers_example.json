@@ -1,0 +1,84 @@
+{
+  "physical_drivers": [
+    {
+      "code": "FLOOD",
+      "name": "Flood Risk",
+      "description": "Physical flood risk measured in meters of water depth",
+      "category": "physical"
+    },
+    {
+      "code": "STORM",
+      "name": "Storm Severity",
+      "description": "Storm wind speed severity measured in meters per second (ms-1)",
+      "category": "physical"
+    },
+    {
+      "code": "WILDFIRE",
+      "name": "Wildfire Risk",
+      "description": "Wildfire risk intensity index",
+      "category": "physical"
+    },
+    {
+      "code": "DROUGHT",
+      "name": "Drought Severity",
+      "description": "Drought conditions measured by water scarcity index",
+      "category": "physical"
+    },
+    {
+      "code": "HEATWAVE",
+      "name": "Heatwave Intensity",
+      "description": "Temperature extremes measured in degrees Celsius above baseline",
+      "category": "physical"
+    }
+  ],
+  "transition_drivers": [
+    {
+      "code": "PHARMA_VOLUME",
+      "name": "Pharmaceutical Volume Growth",
+      "description": "Growth rate in pharmaceutical production volume relative to baseline",
+      "category": "transition"
+    },
+    {
+      "code": "PHARMA_PRICE",
+      "name": "Pharmaceutical Price Index",
+      "description": "Price level changes in pharmaceutical products relative to baseline",
+      "category": "transition"
+    },
+    {
+      "code": "ENERGY_PRICE",
+      "name": "Energy Price Index",
+      "description": "Energy cost changes relative to baseline, reflecting carbon pricing and energy transition",
+      "category": "transition"
+    },
+    {
+      "code": "INFLATION",
+      "name": "General Inflation Rate",
+      "description": "General price level changes across the economy",
+      "category": "transition"
+    },
+    {
+      "code": "GDP_GROWTH",
+      "name": "GDP Growth Rate",
+      "description": "Economic growth rate reflecting transition impacts on overall economy",
+      "category": "transition"
+    },
+    {
+      "code": "CARBON_PRICE",
+      "name": "Carbon Price",
+      "description": "Carbon pricing level in local currency per tonne CO2",
+      "category": "transition"
+    },
+    {
+      "code": "RENEWABLE_SHARE",
+      "name": "Renewable Energy Share",
+      "description": "Percentage of energy from renewable sources",
+      "category": "transition"
+    },
+    {
+      "code": "TECH_CAPEX",
+      "name": "Technology Capital Expenditure",
+      "description": "Required capital investment in green technologies",
+      "category": "transition"
+    }
+  ]
+}

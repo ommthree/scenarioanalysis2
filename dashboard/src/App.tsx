@@ -5,6 +5,10 @@ import Dashboard from './pages/Dashboard'
 import Database from './pages/Database'
 import LoadStatements from './pages/LoadStatements'
 import LoadScenarios from './pages/LoadScenarios'
+import LoadLocations from './pages/LoadLocations'
+import MapLocations from './pages/MapLocations'
+import LoadDamageCurves from './pages/LoadDamageCurves'
+import MapDamageCurves from './pages/MapDamageCurves'
 import DefineStatements from './pages/DefineStatements'
 import DefineEntities from './pages/DefineEntities'
 import DefineFormulas from './pages/DefineFormulas'
@@ -39,8 +43,10 @@ function App() {
           <Route path="/inputs/map-statements" element={<MapStatements />} />
           <Route path="/inputs/scenarios" element={<LoadScenarios />} />
           <Route path="/inputs/map-scenarios" element={<MapScenarios />} />
-          <Route path="/inputs/damage-curves" element={<Dashboard />} />
-          <Route path="/inputs/map-damage-curves" element={<Dashboard />} />
+          <Route path="/inputs/locations" element={<LoadLocations />} />
+          <Route path="/inputs/map-locations" element={<MapLocations />} />
+          <Route path="/inputs/damage-curves" element={<LoadDamageCurves />} />
+          <Route path="/inputs/map-damage-curves" element={<MapDamageCurves />} />
           <Route path="/definitions/statements" element={<DefineStatements />} />
           <Route path="/definitions/formulas" element={<DefineFormulas />} />
           <Route path="/definitions/entities" element={<DefineEntities />} />
