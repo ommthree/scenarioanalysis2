@@ -2,8 +2,18 @@ import { useState, useEffect } from 'react'
 import { TrendingUp, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { parse } from 'csv-parse/sync'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts'
 
 interface CsvData {
   headers: string[]
@@ -15,11 +25,6 @@ interface ScenarioFile {
   name: string
   csvData: CsvData | null
   isValid: boolean
-}
-
-interface SelectedRow {
-  scenarioIdx: number
-  rowIdx: number
 }
 
 interface StagedFile {
@@ -36,8 +41,11 @@ export default function LoadScenarios() {
   const [isLoading, setIsLoading] = useState(false)
   const [loadSuccess, setLoadSuccess] = useState(false)
   const [loadMessage, setLoadMessage] = useState('')
-  const [selectedRows, setSelectedRows] = useState<SelectedRow[]>([])
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
+  const [selectedFileId, setSelectedFileId] = useState<number | null>(null)
+  const [previewData, setPreviewData] = useState<CsvData | null>(null)
+  const [selectedXAxis, setSelectedXAxis] = useState<string>('')
+  const [selectedRows, setSelectedRows] = useState<number[]>([])
 
   // Load staged files when component mounts
   useEffect(() => {
@@ -58,7 +66,8 @@ export default function LoadScenarios() {
     }
   }
 
-  const handleDeleteStagedFile = async (fileId: number) => {
+  const handleDeleteStagedFile = async (fileId: number, event: React.MouseEvent) => {
+    event.stopPropagation()
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
       const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`, {
@@ -67,12 +76,59 @@ export default function LoadScenarios() {
       const result = await response.json()
 
       if (result.success) {
-        // Refresh the list
+        if (selectedFileId === fileId) {
+          setSelectedFileId(null)
+          setPreviewData(null)
+        }
         fetchStagedFiles()
       }
     } catch (error) {
       console.error('Failed to delete staged file:', error)
     }
+  }
+
+  const handleSelectStagedFile = async (fileId: number) => {
+    setSelectedFileId(fileId)
+    setSelectedRows([]) // Clear row selections when switching files
+    try {
+      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+      const result = await response.json()
+
+      if (result.success && result.csvText) {
+        const parsed = parseCsv(result.csvText)
+        setPreviewData(parsed)
+
+        // Auto-select X-axis (first non-numeric column)
+        if (parsed.headers.length > 0) {
+          let xAxisCol = parsed.headers[0]
+          for (let i = 0; i < parsed.headers.length; i++) {
+            const col = parsed.headers[i]
+            const hasNonNumeric = parsed.rows.some(row => {
+              const val = row[i]
+              return isNaN(parseFloat(val)) || !isFinite(val as any)
+            })
+            if (hasNonNumeric) {
+              xAxisCol = col
+              break
+            }
+          }
+          setSelectedXAxis(xAxisCol)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load staged file preview:', error)
+    }
+  }
+
+  const toggleRowSelection = (rowIdx: number) => {
+    setSelectedRows(prev => {
+      if (prev.includes(rowIdx)) {
+        return prev.filter(idx => idx !== rowIdx)
+      } else {
+        return [...prev, rowIdx]
+      }
+    })
   }
 
   const parseCsv = (text: string): CsvData => {
@@ -179,8 +235,11 @@ export default function LoadScenarios() {
             }
           }
 
+          // Clear the scenario files list
+          setScenarioFiles([])
+
           // Refresh staged files list
-          fetchStagedFiles()
+          await fetchStagedFiles()
         } catch (err) {
           console.error('Failed to record staged files:', err)
         }
@@ -201,56 +260,83 @@ export default function LoadScenarios() {
     }
   }
 
-  // Get chart data for all selected rows
-  const getSelectedRowsChartData = () => {
-    if (selectedRows.length === 0) return null
+  // Prepare chart data for Recharts based on selected rows
+  const getChartData = () => {
+    if (!previewData || !selectedXAxis || selectedRows.length === 0) return []
 
-    const allRowData = selectedRows
-      .map((selection) => {
-        const scenario = scenarioFiles[selection.scenarioIdx]
-        if (!scenario || !scenario.isValid || !scenario.csvData) return null
+    const xAxisIdx = previewData.headers.indexOf(selectedXAxis)
+    if (xAxisIdx === -1) return []
 
-        const row = scenario.csvData.rows[selection.rowIdx]
-        if (!row) return null
+    // Find continuous numeric columns from the end of the table backwards
+    const numericCols: string[] = []
+    const numericColIndices: number[] = []
+    for (let i = previewData.headers.length - 1; i >= 0; i--) {
+      const col = previewData.headers[i]
+      if (col === selectedXAxis) continue
 
-        // Find the last non-numeric column, then start plotting from the next column
-        let lastNonNumericCol = -1
-        for (let colIdx = scenario.csvData.headers.length - 1; colIdx >= 0; colIdx--) {
-          const hasNonNumeric = scenario.csvData.rows.some(r => {
-            const val = r[colIdx]
-            return isNaN(parseFloat(val)) || !isFinite(val as any)
-          })
-          if (hasNonNumeric) {
-            lastNonNumericCol = colIdx
-            break
-          }
-        }
+      // Check if this column is numeric (check first row)
+      const firstValue = previewData.rows[0]?.[i]
+      const isNumeric = !isNaN(parseFloat(firstValue)) && isFinite(parseFloat(firstValue))
 
-        const firstNumericCol = lastNonNumericCol + 1
+      if (isNumeric) {
+        numericCols.unshift(col) // Add to beginning to maintain order
+        numericColIndices.unshift(i)
+      } else {
+        // Stop when we hit a non-numeric column
+        break
+      }
+    }
 
-        // Get the row label (first non-numeric value)
-        const rowLabel = row.slice(0, firstNumericCol).join(' - ')
+    // Create data points for the chart
+    // Each data point represents one numeric column (X-axis point)
+    // Each selected row becomes a line (dataKey) with values across columns
+    const chartData = numericCols.map((col, colArrayIdx) => {
+      const colIdx = numericColIndices[colArrayIdx]
+      const dataPoint: any = { name: col }
 
-        // Plot only from first numeric column onwards
-        return {
-          scenarioName: scenario.name.replace('.csv', ''),
-          rowLabel: rowLabel,
-          data: scenario.csvData.headers.slice(firstNumericCol).map((header, idx) => ({
-            variable: header,
-            value: parseFloat(row[firstNumericCol + idx]) || 0,
-            index: firstNumericCol + idx
-          }))
+      // Add value for each selected row
+      selectedRows.forEach(rowIdx => {
+        const row = previewData.rows[rowIdx]
+        if (row) {
+          // Use row index in the label to ensure uniqueness
+          const rowLabel = `${row[xAxisIdx] || 'Row'}-${rowIdx}`
+          const value = parseFloat(row[colIdx])
+          dataPoint[rowLabel] = isNaN(value) ? null : value
         }
       })
-      .filter(s => s !== null)
 
-    return allRowData.length > 0 ? allRowData : null
+      return dataPoint
+    })
+
+    console.log('Final chartData:', JSON.stringify(chartData, null, 2))
+    console.log('Selected rows:', selectedRows)
+    return chartData
   }
 
-  const chartData = getSelectedRowsChartData()
+  // Get line names for the chart (selected row labels)
+  const getLineNames = () => {
+    if (!previewData || !selectedXAxis) return []
+    const xAxisIdx = previewData.headers.indexOf(selectedXAxis)
+    return selectedRows.map(rowIdx => {
+      const row = previewData.rows[rowIdx]
+      // Use row index in the label to ensure uniqueness and match dataPoint keys
+      return row ? `${row[xAxisIdx] || 'Row'}-${rowIdx}` : `Row-${rowIdx}`
+    })
+  }
+
+  const chartData = getChartData()
+  const lineNames = getLineNames()
+  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 
   return (
-    <div className="p-12 max-w-7xl mx-auto">
+    <>
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
+      <div className="p-12 max-w-7xl mx-auto">
       <div className="mb-12" style={{ marginLeft: '1.5rem' }}>
         <h1 className="text-4xl font-bold tracking-tight">Load Scenarios</h1>
         <p className="text-muted-foreground mt-2">Import scenario CSV files and visualize variable progression</p>
@@ -294,44 +380,80 @@ export default function LoadScenarios() {
                   <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: '#94a3b8' }}>
                     Staged Files ({stagedFiles.length})
                   </div>
-                  <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                    {stagedFiles.map((file) => (
-                      <div
-                        key={file.file_id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '8px 12px',
-                          marginBottom: '6px',
-                          backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                          borderRadius: '6px',
-                          border: '1px solid rgba(34, 197, 94, 0.3)'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                          <Check className="w-4 h-4 text-green-500" />
-                          <span className="text-sm" style={{ color: '#ffffff' }}>{file.file_name}</span>
-                          <span className="text-xs text-muted-foreground">({file.row_count} rows)</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteStagedFile(file.file_id)}
-                          style={{ color: '#ef4444', padding: '4px 8px' }}
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    {stagedFiles.map((file) => {
+                      const isSelected = selectedFileId === file.file_id
+                      return (
+                        <div
+                          key={file.file_id}
+                          onClick={() => handleSelectStagedFile(file.file_id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            marginBottom: '8px',
+                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.8)',
+                            borderRadius: '6px',
+                            border: `2px solid ${isSelected ? 'rgba(59, 130, 246, 0.5)' : 'rgba(34, 197, 94, 0.3)'}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
+                              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.8)'
+                              e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)'
+                            }
+                          }}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                            <Check className="w-4 h-4 text-green-500" />
+                            <span className="text-sm font-medium" style={{ color: '#ffffff' }}>{file.file_name}</span>
+                            <span className="text-xs text-muted-foreground">({file.row_count} rows)</span>
+                          </div>
+                          <button
+                            onClick={(e) => handleDeleteStagedFile(file.file_id, e)}
+                            style={{
+                              color: '#ef4444',
+                              padding: '4px',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '4px',
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* File List */}
+              {/* Newly Selected Files (pending upload) */}
               {scenarioFiles.length > 0 && (
                 <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: '#94a3b8' }}>
+                    Ready to Upload ({scenarioFiles.length})
+                  </div>
+                  <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
                     {scenarioFiles.map((scenario, idx) => (
                       <div
                         key={idx}
@@ -343,12 +465,12 @@ export default function LoadScenarios() {
                           marginBottom: '8px',
                           backgroundColor: 'rgba(15, 23, 42, 0.8)',
                           borderRadius: '6px',
-                          border: `1px solid ${scenario.isValid ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                          border: `1px solid ${scenario.isValid ? 'rgba(251, 191, 36, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                           {scenario.isValid ? (
-                            <Check className="w-4 h-4 text-green-500" />
+                            <FileText className="w-4 h-4 text-yellow-500" />
                           ) : (
                             <X className="w-4 h-4 text-red-500" />
                           )}
@@ -357,14 +479,29 @@ export default function LoadScenarios() {
                             <span className="text-xs text-muted-foreground">({scenario.csvData.rows.length} rows)</span>
                           )}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
+                        <button
                           onClick={() => removeFile(idx)}
-                          style={{ color: '#ef4444', padding: '4px 8px' }}
+                          style={{
+                            color: '#ef4444',
+                            padding: '4px',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '4px',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                          }}
                         >
                           <X className="w-4 h-4" />
-                        </Button>
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -415,292 +552,151 @@ export default function LoadScenarios() {
           </CardContent>
         </Card>
 
-        {/* Data Tables and Visualization */}
-        {scenarioFiles.length > 0 && scenarioFiles.some(s => s.isValid) && (
+        {/* Preview Data and Visualization */}
+        {previewData && selectedFileId && (
           <Card className="border-2" style={{ width: '90%', maxWidth: '1200px', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
             <CardContent className="p-8">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', marginLeft: '1.5rem' }}>
                 <FileText className="w-6 h-6 text-blue-500" />
-                <h3 className="font-semibold text-lg">Scenario Data</h3>
-                <span className="text-sm text-muted-foreground">Click a row to visualize</span>
+                <h3 className="font-semibold text-lg">Scenario Preview</h3>
+                <span className="text-sm text-muted-foreground">
+                  {stagedFiles.find(f => f.file_id === selectedFileId)?.file_name}
+                </span>
               </div>
 
-              {/* Scenario Tables */}
-              {scenarioFiles.map((scenario, scenarioIdx) => {
-                if (!scenario.isValid || !scenario.csvData) return null
-
-                return (
-                  <div key={scenarioIdx} style={{ marginBottom: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-                    <div style={{ color: '#3b82f6', fontSize: '14px', fontWeight: 600, marginBottom: '12px' }}>
-                      {scenario.name}
-                    </div>
-                    <ScrollArea className="w-full" style={{ height: '300px' }}>
-                      <div style={{ minWidth: 'max-content' }}>
-                        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '2px solid rgba(59, 130, 246, 0.3)' }}>
-                              {scenario.csvData.headers.map((header, idx) => (
-                                <th
-                                  key={idx}
+              {/* Data Table */}
+              <div style={{ marginBottom: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+                <div style={{ fontSize: '14px', marginBottom: '12px', color: '#94a3b8' }}>
+                  Click rows to visualize them in the chart below
+                </div>
+                <ScrollArea className="w-full" style={{ height: '300px' }}>
+                  <div style={{ minWidth: 'max-content' }}>
+                    <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '2px solid rgba(59, 130, 246, 0.3)' }}>
+                          {previewData.headers.map((header, idx) => (
+                            <th
+                              key={idx}
+                              style={{
+                                padding: '12px 16px',
+                                textAlign: 'left',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: '#3b82f6',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewData.rows.map((row, rowIdx) => {
+                          const isSelected = selectedRows.includes(rowIdx)
+                          return (
+                            <tr
+                              key={rowIdx}
+                              onClick={() => toggleRowSelection(rowIdx)}
+                              style={{
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                                backgroundColor: isSelected
+                                  ? 'rgba(59, 130, 246, 0.2)'
+                                  : rowIdx % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)',
+                                cursor: 'pointer',
+                                transition: 'background-color 0.2s'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) {
+                                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) {
+                                  e.currentTarget.style.backgroundColor = rowIdx % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)'
+                                }
+                              }}
+                            >
+                              {row.map((cell, cellIdx) => (
+                                <td
+                                  key={cellIdx}
                                   style={{
-                                    padding: '12px 16px',
-                                    textAlign: 'left',
-                                    fontSize: '14px',
-                                    fontWeight: 600,
-                                    color: '#3b82f6',
+                                    padding: '10px 16px',
+                                    fontSize: '13px',
+                                    color: '#e2e8f0',
                                     whiteSpace: 'nowrap'
                                   }}
                                 >
-                                  {header}
-                                </th>
+                                  {cell}
+                                </td>
                               ))}
                             </tr>
-                          </thead>
-                          <tbody>
-                            {scenario.csvData.rows.map((row, rowIdx) => (
-                              <tr
-                                key={rowIdx}
-                                onClick={() => {
-                                  const isSelected = selectedRows.some(
-                                    s => s.scenarioIdx === scenarioIdx && s.rowIdx === rowIdx
-                                  )
-                                  if (isSelected) {
-                                    // Remove from selection
-                                    setSelectedRows(prev =>
-                                      prev.filter(s => !(s.scenarioIdx === scenarioIdx && s.rowIdx === rowIdx))
-                                    )
-                                  } else {
-                                    // Add to selection
-                                    setSelectedRows(prev => [...prev, { scenarioIdx, rowIdx }])
-                                  }
-                                }}
-                                style={{
-                                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                                  backgroundColor: selectedRows.some(s => s.scenarioIdx === scenarioIdx && s.rowIdx === rowIdx)
-                                    ? 'rgba(59, 130, 246, 0.2)'
-                                    : rowIdx % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)',
-                                  cursor: 'pointer'
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!selectedRows.some(s => s.scenarioIdx === scenarioIdx && s.rowIdx === rowIdx)) {
-                                    e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!selectedRows.some(s => s.scenarioIdx === scenarioIdx && s.rowIdx === rowIdx)) {
-                                    e.currentTarget.style.backgroundColor = rowIdx % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.02)'
-                                  }
-                                }}
-                              >
-                                {row.map((cell, cellIdx) => (
-                                  <td
-                                    key={cellIdx}
-                                    style={{
-                                      padding: '10px 16px',
-                                      fontSize: '13px',
-                                      color: '#e2e8f0',
-                                      whiteSpace: 'nowrap'
-                                    }}
-                                  >
-                                    {cell}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </ScrollArea>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )
-              })}
+                </ScrollArea>
+              </div>
 
               {/* Chart */}
-              {chartData && chartData.length > 0 && (
-                <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem', marginTop: '32px' }}>
+              {chartData.length > 0 && selectedRows.length > 0 && (
+                <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                     <TrendingUp className="w-5 h-5 text-blue-500" />
-                    <h4 className="font-semibold">Row Visualization</h4>
+                    <h4 className="font-semibold">Scenario Visualization</h4>
                   </div>
                   <div style={{
                     backgroundColor: 'rgba(15, 23, 42, 0.6)',
                     padding: '24px',
                     borderRadius: '8px',
                     border: '1px solid rgba(59, 130, 246, 0.2)',
-                    position: 'relative',
-                    width: '100%'
+                    height: '400px',
+                    animation: 'fadeIn 0.3s ease-in'
                   }}>
-                    <svg
-                      width="100%"
-                      height="300"
-                      viewBox="0 0 1000 300"
-                      preserveAspectRatio="xMidYMid meet"
-                      style={{ display: 'block' }}
-                    >
-                      {(() => {
-                        // Define colors for different scenarios
-                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
-
-                        // Get all data points from all scenarios to calculate range
-                        const allValues = chartData.flatMap(s => s.data.map(p => p.value))
-                        const maxValue = Math.max(...allValues)
-                        const minValue = Math.min(...allValues)
-                        const range = maxValue - minValue
-                        const paddingLeft = 60
-                        const paddingRight = 40
-                        const paddingBottom = 80
-                        const paddingTop = 20
-                        const chartWidth = 1000 - paddingLeft - paddingRight
-                        const chartHeight = 300 - paddingTop - paddingBottom
-
-                        // Use first scenario's data for x-axis labels
-                        const xAxisLabels = chartData[0].data.map(p => p.variable)
-                        const xStep = chartWidth / Math.max(xAxisLabels.length - 1, 1)
-
-                        // Helper function to create smooth Catmull-Rom spline
-                        const createSmoothPath = (points: any[]) => {
-                          if (points.length < 2) return ''
-
-                          let pathD = `M ${points[0].x} ${points[0].y}`
-
-                          if (points.length === 2) {
-                            pathD += ` L ${points[1].x} ${points[1].y}`
-                            return pathD
-                          }
-
-                          // Use cubic bezier curves with control points for smoothing
-                          for (let i = 0; i < points.length - 1; i++) {
-                            const p0 = points[Math.max(i - 1, 0)]
-                            const p1 = points[i]
-                            const p2 = points[i + 1]
-                            const p3 = points[Math.min(i + 2, points.length - 1)]
-
-                            // Calculate control points for smoother curve
-                            const tension = 0.3
-                            const cp1x = p1.x + (p2.x - p0.x) * tension
-                            const cp1y = p1.y + (p2.y - p0.y) * tension
-                            const cp2x = p2.x - (p3.x - p1.x) * tension
-                            const cp2y = p2.y - (p3.y - p1.y) * tension
-
-                            pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
-                          }
-
-                          return pathD
-                        }
-
-                        return (
-                          <>
-                            {/* Grid lines */}
-                            {[0, 0.25, 0.5, 0.75, 1].map((fraction, idx) => {
-                              const y = paddingTop + chartHeight - (fraction * chartHeight)
-                              return (
-                                <line
-                                  key={idx}
-                                  x1={paddingLeft}
-                                  y1={y}
-                                  x2={paddingLeft + chartWidth}
-                                  y2={y}
-                                  stroke="rgba(255, 255, 255, 0.1)"
-                                  strokeWidth="1"
-                                />
-                              )
-                            })}
-
-                            {/* Y-axis labels */}
-                            {[0, 0.25, 0.5, 0.75, 1].map((fraction, idx) => {
-                              const value = minValue + (fraction * range)
-                              const y = paddingTop + chartHeight - (fraction * chartHeight)
-                              return (
-                                <text
-                                  key={idx}
-                                  x={paddingLeft - 10}
-                                  y={y + 4}
-                                  fill="#94a3b8"
-                                  fontSize="12"
-                                  textAnchor="end"
-                                >
-                                  {value.toFixed(1)}
-                                </text>
-                              )
-                            })}
-
-                            {/* Draw lines for each selected row */}
-                            {chartData.map((rowData, rowDataIdx) => {
-                              const points = rowData.data.map((point, idx) => {
-                                const x = paddingLeft + (idx * xStep)
-                                const normalizedValue = range > 0 ? ((point.value - minValue) / range) : 0.5
-                                const y = paddingTop + chartHeight - (normalizedValue * chartHeight)
-                                return { x, y, ...point }
-                              })
-
-                              const pathD = createSmoothPath(points)
-                              const color = colors[rowDataIdx % colors.length]
-
-                              return (
-                                <path
-                                  key={rowDataIdx}
-                                  d={pathD}
-                                  fill="none"
-                                  stroke={color}
-                                  strokeWidth="3"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              )
-                            })}
-
-                            {/* X-axis labels */}
-                            {xAxisLabels.map((label, idx) => {
-                              const x = paddingLeft + (idx * xStep)
-                              return (
-                                <text
-                                  key={idx}
-                                  x={x}
-                                  y={paddingTop + chartHeight + 20}
-                                  fill="#94a3b8"
-                                  fontSize="11"
-                                  textAnchor="end"
-                                  transform={`rotate(-45, ${x}, ${paddingTop + chartHeight + 20})`}
-                                >
-                                  {label}
-                                </text>
-                              )
-                            })}
-
-                            {/* Legend */}
-                            {chartData.length > 0 && (
-                              <g>
-                                {chartData.map((item, idx) => {
-                                  const color = colors[idx % colors.length]
-                                  const legendY = 10 + (idx * 20)
-                                  const label = `${item.scenarioName}: ${item.rowLabel}`
-                                  return (
-                                    <g key={idx}>
-                                      <line
-                                        x1={paddingLeft + chartWidth - 250}
-                                        y1={legendY}
-                                        x2={paddingLeft + chartWidth - 220}
-                                        y2={legendY}
-                                        stroke={color}
-                                        strokeWidth="3"
-                                      />
-                                      <text
-                                        x={paddingLeft + chartWidth - 215}
-                                        y={legendY + 4}
-                                        fill="#e2e8f0"
-                                        fontSize="11"
-                                      >
-                                        {label}
-                                      </text>
-                                    </g>
-                                  )
-                                })}
-                              </g>
-                            )}
-                          </>
-                        )
-                      })()}
-                    </svg>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} key="scenario-chart">
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
+                        <XAxis
+                          dataKey="name"
+                          stroke="#94a3b8"
+                          tick={{ fill: '#94a3b8', fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis
+                          stroke="#94a3b8"
+                          tick={{ fill: '#94a3b8', fontSize: 12 }}
+                          domain={['auto', 'auto']}
+                          scale="linear"
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: '8px',
+                            color: '#ffffff'
+                          }}
+                        />
+                        <Legend
+                          wrapperStyle={{ color: '#ffffff' }}
+                          iconType="line"
+                        />
+                        {lineNames.map((lineName, idx) => (
+                          <Line
+                            key={`line-${lineName}`}
+                            type="monotone"
+                            dataKey={lineName}
+                            stroke={colors[idx % colors.length]}
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                            activeDot={{ r: 6 }}
+                            isAnimationActive={false}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               )}
@@ -709,5 +705,6 @@ export default function LoadScenarios() {
         )}
       </div>
     </div>
+    </>
   )
 }

@@ -760,7 +760,7 @@ app.post('/api/statements/save-mapping', express.json(), (req, res) => {
  */
 app.post('/api/statements/save-hierarchical-mapping', express.json(), (req, res) => {
   try {
-    const { dbPath, templateCode, statementType, companyId, hierarchicalMappings, csvFileName } = req.body
+    const { dbPath, templateCode, statementType, companyId, hierarchicalMappings, csvFileName, columnConfig } = req.body
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -777,7 +777,8 @@ app.post('/api/statements/save-hierarchical-mapping', express.json(), (req, res)
     })
 
     const mappingData = {
-      hierarchical_mappings: hierarchicalMappings
+      hierarchical_mappings: hierarchicalMappings,
+      column_config: columnConfig || null
     }
     const mappingJson = JSON.stringify(mappingData)
 
@@ -851,6 +852,7 @@ app.get('/api/statements/get-hierarchical-mapping', (req, res) => {
             mapping: {
               companyId: row.company_id,
               hierarchicalMappings: mappingData.hierarchical_mappings,
+              columnConfig: mappingData.column_config || null,
               csvFileName: row.csv_file_name,
               lastUpdated: row.last_updated
             }
@@ -914,6 +916,7 @@ app.get('/api/statements/get-all-mappings', (req, res) => {
               statementType: row.statement_type,
               companyId: row.company_id,
               hierarchicalMappings: mappingData.hierarchical_mappings,
+              columnConfig: mappingData.column_config || null,
               csvFileName: row.csv_file_name,
               lastUpdated: row.last_updated
             }
@@ -2481,6 +2484,60 @@ app.post('/api/damage-curves/save-mapping', async (req, res) => {
     )
   } catch (error) {
     console.error('Save curve mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Claude AI proxy endpoint
+ * POST /api/claude/messages
+ * Body: { prompt, csvSample, lineItems, companyName }
+ */
+app.post('/api/claude/messages', express.json(), async (req, res) => {
+  try {
+    const { prompt, csvSample, lineItems, companyName } = req.body
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' })
+    }
+
+    // Load API key from environment
+    const apiKey = process.env.CLAUDE_API_KEY
+
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Claude API key not configured. Set CLAUDE_API_KEY environment variable.' })
+    }
+
+    // Forward request to Claude API
+    const fetch = (await import('node-fetch')).default
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      console.error('Claude API error:', error)
+      return res.status(response.status).json({ error: error.error?.message || 'AI mapping failed' })
+    }
+
+    const result = await response.json()
+    res.json(result)
+
+  } catch (error) {
+    console.error('Claude proxy error:', error)
     res.status(500).json({ error: error.message })
   }
 })
