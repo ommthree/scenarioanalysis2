@@ -290,9 +290,37 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
       }
     })
 
+    // Parse all files first and collect their metadata
+    const filesData = []
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const fileContent = fs.readFileSync(files[i].path, 'utf-8')
+        const records = parse(fileContent, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true
+        })
+
+        if (records.length === 0) {
+          files.forEach(f => fs.unlinkSync(f.path))
+          return res.status(400).json({ error: `File ${files[i].originalname} is empty` })
+        }
+
+        filesData.push({
+          fileName: files[i].originalname,
+          filePath: files[i].path,
+          records,
+          columns: Object.keys(records[0])
+        })
+      } catch (error) {
+        files.forEach(f => fs.unlinkSync(f.path))
+        return res.status(400).json({ error: `Failed to parse ${files[i].originalname}: ${error.message}` })
+      }
+    }
+
     db.serialize(() => {
-      // First, drop all existing staging_scenario_* tables
-      db.all(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'staging_scenario_%'`, (err, tables) => {
+      // Find the next available table number
+      db.all(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'staging_scenario_%'`, [], (err, tables) => {
         if (err) {
           console.error('Error listing tables:', err)
           db.close()
@@ -300,127 +328,92 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
           return res.status(500).json({ error: 'Failed to list staging tables' })
         }
 
-        // Drop each staging table synchronously
-        const dropPromises = tables.map(table => {
-          return new Promise((resolve, reject) => {
-            db.run(`DROP TABLE IF EXISTS ${table.name}`, (err) => {
-              if (err) reject(err)
-              else resolve()
+        // Find highest existing table number
+        let maxTableNum = 0
+        for (const table of tables) {
+          const match = table.name.match(/^staging_scenario_(\d+)$/)
+          if (match) {
+            const num = parseInt(match[1])
+            if (num > maxTableNum) maxTableNum = num
+          }
+        }
+
+        // Process each file
+        let fileIdx = 0
+        const insertNextFile = () => {
+          if (fileIdx >= filesData.length) {
+            // All done
+            db.close()
+            files.forEach(f => fs.unlinkSync(f.path))
+            return res.json({
+              success: true,
+              message: `Successfully loaded ${files.length} scenario file(s) into staging area.`,
+              fileCount: files.length
             })
-          })
-        })
+          }
 
-        // Wait for all drops to complete before processing files
-        Promise.all(dropPromises).then(() => {
-          // Now process each file
-          let processedCount = 0
-          let hasError = false
+          const fileData = filesData[fileIdx]
+          const tableNum = maxTableNum + fileIdx + 1
+          const stagingTableName = `staging_scenario_${tableNum}`
+          const columnDefs = fileData.columns.map(col => `"${col}" TEXT`).join(', ')
 
-        files.forEach((file, idx) => {
-          const scenarioNumber = idx + 1
-          const stagingTableName = `staging_scenario_${scenarioNumber}`
-
-          try {
-            // Read and parse CSV
-            const fileContent = fs.readFileSync(file.path, 'utf-8')
-            const records = parse(fileContent, {
-              columns: true,
-              skip_empty_lines: true,
-              trim: true
-            })
-
-            if (records.length === 0) {
-              hasError = true
-              processedCount++
-              if (processedCount === files.length) {
-                db.close()
-                files.forEach(f => fs.unlinkSync(f.path))
-                return res.status(400).json({ error: 'One or more CSV files are empty' })
-              }
-              return
-            }
-
-            // Get columns from first record
-            const columns = Object.keys(records[0])
-            const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ')
-
-            // Create staging table
-            db.run(`CREATE TABLE ${stagingTableName} (
-              _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-              ${columnDefs},
-              imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              is_mapped INTEGER DEFAULT 0
-            )`, (err) => {
-              if (err) {
-                console.error('Create table error:', err)
-                hasError = true
-                processedCount++
-                if (processedCount === files.length) {
-                  db.close()
-                  files.forEach(f => fs.unlinkSync(f.path))
-                  return res.status(500).json({ error: 'Failed to create staging tables' })
-                }
-                return
-              }
-
-              // Insert records
-              const placeholders = columns.map(() => '?').join(', ')
-              const columnNames = columns.map(c => `"${c}"`).join(', ')
-              const stmt = db.prepare(`INSERT INTO ${stagingTableName} (${columnNames}) VALUES (${placeholders})`)
-
-              for (const record of records) {
-                const values = columns.map(col => record[col])
-                stmt.run(values, (err) => {
-                  if (err) {
-                    console.error('Insert error:', err)
-                    hasError = true
-                  }
-                })
-              }
-
-              stmt.finalize((err) => {
-                if (err) {
-                  console.error('Finalize error:', err)
-                  hasError = true
-                }
-
-                processedCount++
-
-                // If all files processed, send response
-                if (processedCount === files.length) {
-                  db.close()
-                  files.forEach(f => fs.unlinkSync(f.path))
-
-                  if (hasError) {
-                    return res.status(500).json({ error: 'Some scenarios failed to load' })
-                  }
-
-                  res.json({
-                    success: true,
-                    message: `Successfully loaded ${files.length} scenario file(s) into staging area.`,
-                    fileCount: files.length
-                  })
-                }
-              })
-            })
-          } catch (error) {
-            console.error('File processing error:', error)
-            hasError = true
-            processedCount++
-
-            if (processedCount === files.length) {
+          // Create table for this file
+          db.run(`CREATE TABLE ${stagingTableName} (
+            _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+            ${columnDefs},
+            imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_mapped INTEGER DEFAULT 0
+          )`, (err) => {
+            if (err) {
+              console.error('Create table error:', err)
               db.close()
               files.forEach(f => fs.unlinkSync(f.path))
-              return res.status(500).json({ error: 'Failed to process files' })
+              return res.status(500).json({ error: 'Failed to create staging table' })
             }
-          }
-        })
-        }).catch(err => {
-          console.error('Error dropping tables:', err)
-          db.close()
-          files.forEach(f => fs.unlinkSync(f.path))
-          return res.status(500).json({ error: 'Failed to drop staging tables' })
-        })
+
+            // Create staged_file entry with table number as file_id
+            db.run(
+              `INSERT INTO staged_file (file_id, file_name, file_type, row_count) VALUES (?, ?, ?, ?)`,
+              [tableNum, fileData.fileName, 'scenario', fileData.records.length],
+              function(err) {
+                if (err) {
+                  console.error('Failed to create staged_file entry:', err)
+                  db.close()
+                  files.forEach(f => fs.unlinkSync(f.path))
+                  return res.status(500).json({ error: 'Failed to record staged file' })
+                }
+
+                // Insert records
+                const placeholders = fileData.columns.map(() => '?').join(', ')
+                const columnNames = fileData.columns.map(c => `"${c}"`).join(', ')
+                const stmt = db.prepare(`INSERT INTO ${stagingTableName} (${columnNames}) VALUES (${placeholders})`)
+
+                for (const record of fileData.records) {
+                  const values = fileData.columns.map(col => record[col])
+                  stmt.run(values, (err) => {
+                    if (err) {
+                      console.error('Insert error:', err)
+                    }
+                  })
+                }
+
+                stmt.finalize((err) => {
+                  if (err) {
+                    console.error('Finalize error:', err)
+                    db.close()
+                    files.forEach(f => fs.unlinkSync(f.path))
+                    return res.status(500).json({ error: 'Failed to insert data' })
+                  }
+
+                  fileIdx++
+                  insertNextFile()
+                })
+              }
+            )
+          })
+        }
+
+        insertNextFile()
       })
     })
 
@@ -1569,11 +1562,15 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
 
         // Determine staging table name based on file type
         let stagingTableName
+        let useFileIdFilter = true
+
         if (file.file_type === 'pnl' || file.file_type === 'balance_sheet' ||
             file.file_type === 'cashflow' || file.file_type === 'carbon') {
           stagingTableName = `staging_statement_${file.file_type}`
         } else if (file.file_type === 'scenario') {
-          stagingTableName = 'staging_scenario'
+          // Scenarios use numbered tables
+          stagingTableName = `staging_scenario_${fileId}`
+          useFileIdFilter = false
         } else if (file.file_type === 'location') {
           stagingTableName = 'staging_location'
         } else if (file.file_type === 'damage_curve') {
@@ -1583,8 +1580,13 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
           return res.status(400).json({ error: 'Unknown file type: ' + file.file_type })
         }
 
-        // Query the staging table to get all data
-        db.all(`SELECT * FROM ${stagingTableName} LIMIT 1000`, [], (err, rows) => {
+        // Query the staging table
+        const query = useFileIdFilter
+          ? `SELECT * FROM ${stagingTableName} WHERE file_id = ? LIMIT 1000`
+          : `SELECT * FROM ${stagingTableName} LIMIT 1000`
+        const params = useFileIdFilter ? [fileId] : []
+
+        db.all(query, params, (err, rows) => {
           if (err) {
             db.close()
             return res.status(500).json({ error: 'Failed to retrieve staging data: ' + err.message })

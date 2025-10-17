@@ -46,6 +46,7 @@ export default function LoadScenarios() {
   const [previewData, setPreviewData] = useState<CsvData | null>(null)
   const [selectedXAxis, setSelectedXAxis] = useState<string>('')
   const [selectedRows, setSelectedRows] = useState<number[]>([])
+  const [selectedPendingFileIndex, setSelectedPendingFileIndex] = useState<number | null>(null)
 
   // Load staged files when component mounts
   useEffect(() => {
@@ -146,14 +147,18 @@ export default function LoadScenarios() {
   }
 
   const handleBrowse = () => {
+    console.log('handleBrowse called!')
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.csv'
     input.multiple = true
+    console.log('File input created')
 
     input.onchange = async (e: Event) => {
+      console.log('File input changed!')
       const target = e.target as HTMLInputElement
       const files = Array.from(target.files || [])
+      console.log('Files selected:', files.length)
 
       const newScenarios: ScenarioFile[] = []
 
@@ -177,7 +182,42 @@ export default function LoadScenarios() {
         }
       }
 
-      setScenarioFiles(prev => [...prev, ...newScenarios])
+      // Auto-select the first NEW file for preview (before adding to state)
+      if (newScenarios.length > 0) {
+        const scenario = newScenarios[0]
+        setSelectedFileId(null)
+
+        if (scenario && scenario.csvData) {
+          setPreviewData(scenario.csvData)
+          setSelectedRows([])
+
+          // Auto-select X-axis
+          if (scenario.csvData.headers.length > 0) {
+            let xAxisCol = scenario.csvData.headers[0]
+            for (let i = 0; i < scenario.csvData.headers.length; i++) {
+              const col = scenario.csvData.headers[i]
+              const hasNonNumeric = scenario.csvData.rows.some(row => {
+                const val = row[i]
+                return isNaN(parseFloat(val)) || !isFinite(val as any)
+              })
+              if (hasNonNumeric) {
+                xAxisCol = col
+                break
+              }
+            }
+            setSelectedXAxis(xAxisCol)
+          }
+        }
+      }
+
+      setScenarioFiles(prev => {
+        const newList = [...prev, ...newScenarios]
+        // Update selected index to point to first of the newly added files
+        if (newScenarios.length > 0) {
+          setSelectedPendingFileIndex(prev.length) // Index of first new file
+        }
+        return newList
+      })
     }
 
     input.click()
@@ -185,6 +225,45 @@ export default function LoadScenarios() {
 
   const removeFile = (index: number) => {
     setScenarioFiles(prev => prev.filter((_, i) => i !== index))
+    if (selectedPendingFileIndex === index) {
+      setSelectedPendingFileIndex(null)
+      setPreviewData(null)
+      setSelectedRows([])
+    }
+  }
+
+  const handleSelectPendingFile = (index: number) => {
+    console.log('handleSelectPendingFile called with index:', index)
+    const scenario = scenarioFiles[index]
+    console.log('Selected scenario:', scenario)
+    setSelectedPendingFileIndex(index)
+    setSelectedFileId(null) // Clear staged file selection
+
+    if (scenario && scenario.csvData) {
+      console.log('Setting preview data:', scenario.csvData)
+      setPreviewData(scenario.csvData)
+      setSelectedRows([])
+
+      // Auto-select X-axis (first non-numeric column)
+      if (scenario.csvData.headers.length > 0) {
+        let xAxisCol = scenario.csvData.headers[0]
+        for (let i = 0; i < scenario.csvData.headers.length; i++) {
+          const col = scenario.csvData.headers[i]
+          const hasNonNumeric = scenario.csvData.rows.some(row => {
+            const val = row[i]
+            return isNaN(parseFloat(val)) || !isFinite(val as any)
+          })
+          if (hasNonNumeric) {
+            xAxisCol = col
+            break
+          }
+        }
+        setSelectedXAxis(xAxisCol)
+        console.log('X-axis set to:', xAxisCol)
+      }
+    } else {
+      console.log('No CSV data available for this file')
+    }
   }
 
   const handleLoad = async () => {
@@ -218,31 +297,11 @@ export default function LoadScenarios() {
         setLoadSuccess(true)
         setLoadMessage(result.message)
 
-        // Record each staged file
-        try {
-          for (const scenario of scenarioFiles) {
-            if (scenario.isValid && scenario.csvData) {
-              await fetch('http://localhost:3001/api/staged-files', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  dbPath,
-                  fileName: scenario.name,
-                  fileType: 'scenario',
-                  rowCount: scenario.csvData.rows.length
-                })
-              })
-            }
-          }
+        // Clear the scenario files list
+        setScenarioFiles([])
 
-          // Clear the scenario files list
-          setScenarioFiles([])
-
-          // Refresh staged files list
-          await fetchStagedFiles()
-        } catch (err) {
-          console.error('Failed to record staged files:', err)
-        }
+        // Refresh staged files list (server already created staged_file entries)
+        await fetchStagedFiles()
 
         setTimeout(() => {
           setLoadSuccess(false)
@@ -278,14 +337,19 @@ export default function LoadScenarios() {
       const firstValue = previewData.rows[0]?.[i]
       const isNumeric = !isNaN(parseFloat(firstValue)) && isFinite(parseFloat(firstValue))
 
+      console.log(`Column ${i} (${col}): value="${firstValue}", isNumeric=${isNumeric}`)
+
       if (isNumeric) {
         numericCols.unshift(col) // Add to beginning to maintain order
         numericColIndices.unshift(i)
       } else {
         // Stop when we hit a non-numeric column
+        console.log(`Stopping at column ${i} (${col}) - non-numeric`)
         break
       }
     }
+
+    console.log('Numeric columns detected:', numericCols)
 
     // Create data points for the chart
     // Each data point represents one numeric column (X-axis point)
@@ -454,56 +518,81 @@ export default function LoadScenarios() {
                     Ready to Upload ({scenarioFiles.length})
                   </div>
                   <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                    {scenarioFiles.map((scenario, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '8px 12px',
-                          marginBottom: '8px',
-                          backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                          borderRadius: '6px',
-                          border: `1px solid ${scenario.isValid ? 'rgba(251, 191, 36, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                          {scenario.isValid ? (
-                            <FileText className="w-4 h-4 text-yellow-500" />
-                          ) : (
-                            <X className="w-4 h-4 text-red-500" />
-                          )}
-                          <span className="text-sm" style={{ color: '#ffffff' }}>{scenario.name}</span>
-                          {scenario.csvData && (
-                            <span className="text-xs text-muted-foreground">({scenario.csvData.rows.length} rows)</span>
-                          )}
-                        </div>
+                    {scenarioFiles.map((scenario, idx) => {
+                      const isSelected = selectedPendingFileIndex === idx
+                      return (
                         <button
-                          onClick={() => removeFile(idx)}
+                          key={idx}
+                          onClick={() => handleSelectPendingFile(idx)}
                           style={{
-                            color: '#ef4444',
-                            padding: '4px',
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
+                            width: '100%',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '4px',
-                            transition: 'background-color 0.2s'
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            marginBottom: '8px',
+                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.8)',
+                            borderRadius: '6px',
+                            border: isSelected
+                              ? '2px solid rgba(59, 130, 246, 0.5)'
+                              : `1px solid ${scenario.isValid ? 'rgba(251, 191, 36, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            textAlign: 'left'
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                            if (!isSelected) {
+                              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'
+                              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                            }
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent'
+                            if (!isSelected) {
+                              e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.8)'
+                              e.currentTarget.style.borderColor = scenario.isValid ? 'rgba(251, 191, 36, 0.3)' : 'rgba(239, 68, 68, 0.3)'
+                            }
                           }}
                         >
-                          <X className="w-4 h-4" />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                            {scenario.isValid ? (
+                              <FileText className="w-4 h-4" style={{ color: '#ffffff' }} />
+                            ) : (
+                              <X className="w-4 h-4 text-red-500" />
+                            )}
+                            <span className="text-sm" style={{ color: '#ffffff' }}>{scenario.name}</span>
+                            {scenario.csvData && (
+                              <span className="text-xs text-muted-foreground">({scenario.csvData.rows.length} rows)</span>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeFile(idx)
+                            }}
+                            style={{
+                              color: '#ef4444',
+                              padding: '4px',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '4px',
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -553,14 +642,18 @@ export default function LoadScenarios() {
         </Card>
 
         {/* Preview Data and Visualization */}
-        {previewData && selectedFileId && (
+        {previewData && (selectedFileId || selectedPendingFileIndex !== null) && (
           <Card className="border-2" style={{ width: '90%', maxWidth: '1200px', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
             <CardContent className="p-8">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', marginLeft: '1.5rem' }}>
                 <FileText className="w-6 h-6 text-blue-500" />
                 <h3 className="font-semibold text-lg">Scenario Preview</h3>
                 <span className="text-sm text-muted-foreground">
-                  {stagedFiles.find(f => f.file_id === selectedFileId)?.file_name}
+                  {selectedFileId
+                    ? stagedFiles.find(f => f.file_id === selectedFileId)?.file_name
+                    : selectedPendingFileIndex !== null
+                    ? scenarioFiles[selectedPendingFileIndex]?.name
+                    : ''}
                 </span>
               </div>
 
@@ -571,7 +664,7 @@ export default function LoadScenarios() {
                 </div>
                 <ScrollArea className="w-full" style={{ height: '300px' }}>
                   <div style={{ minWidth: 'max-content' }}>
-                    <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                    <table className="w-full" style={{ borderCollapse: 'collapse' }} key={`table-${selectedFileId}`}>
                       <thead>
                         <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '2px solid rgba(59, 130, 246, 0.3)' }}>
                           {previewData.headers.map((header, idx) => (
@@ -660,10 +753,11 @@ export default function LoadScenarios() {
                         <XAxis
                           dataKey="name"
                           stroke="#94a3b8"
-                          tick={{ fill: '#94a3b8', fontSize: 12 }}
+                          tick={{ fill: '#94a3b8', fontSize: 11 }}
                           angle={-45}
                           textAnchor="end"
                           height={80}
+                          interval={0}
                         />
                         <YAxis
                           stroke="#94a3b8"
