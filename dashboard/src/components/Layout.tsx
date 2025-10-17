@@ -63,7 +63,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/inputs/statements', icon: FileJson, label: 'Load Statements' },
         { path: '/inputs/map-statements', icon: ArrowRightLeft, label: 'Map Statements' },
-        { path: '/inputs/scenarios', icon: List, label: 'Load Scenarios' },
+        { path: '/inputs/scenarios', icon: Activity, label: 'Load Scenarios' },
         { path: '/inputs/map-scenarios', icon: ArrowRightLeft, label: 'Map Scenarios' },
         { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
         { path: '/inputs/locations', icon: MapPin, label: 'Load Locations' },

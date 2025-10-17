@@ -732,20 +732,9 @@ Respond with ONLY the JSON object, no other text`
       }))
 
       // Display column mappings in the message
-      const columnSummary = columnMappings
-        .filter((c: any) => c.column_type === 'data')
-        .map((c: any) => c.csv_column_name)
-        .join(', ')
-
-      const message = [
-        `AI mapping completed!`,
-        `Row mappings: ${rowMappings.length}`,
-        columnMappings.length > 0 ? `Data columns: ${columnSummary}` : ''
-      ].filter(Boolean).join(' | ')
-
       setAiMappingMessage(prev => ({
         ...prev,
-        [statementType]: message
+        [statementType]: 'AI mapping completed!'
       }))
       setTimeout(() => setAiMappingMessage(prev => ({ ...prev, [statementType]: '' })), 5000)
 

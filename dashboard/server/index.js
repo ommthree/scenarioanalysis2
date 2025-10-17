@@ -1,3 +1,12 @@
+import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+import { dirname } from 'path'
+
+// Load environment variables from api-keys.env
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+dotenv.config({ path: '../../env/api-keys.env' })
+
 import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
@@ -2503,11 +2512,11 @@ app.post('/api/claude/messages', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' })
     }
 
-    // Load API key from environment
-    const apiKey = process.env.CLAUDE_API_KEY
+    // Load API key from environment (check both CLAUDE_API_KEY and ANTHROPIC_API_KEY)
+    const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'Claude API key not configured. Set CLAUDE_API_KEY environment variable.' })
+      return res.status(500).json({ error: 'Claude API key not configured. Set CLAUDE_API_KEY or ANTHROPIC_API_KEY environment variable.' })
     }
 
     // Forward request to Claude API
