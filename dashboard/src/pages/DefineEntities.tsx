@@ -228,7 +228,7 @@ export default function DefineEntities() {
                 )}
                 {!hasChildren && <div style={{ width: '28px' }} />}
 
-                <Building2 className="w-4 h-4" style={{ color: '#22c55e', marginRight: '8px', marginLeft: '-4px' }} />
+                <Building2 className="w-4 h-4" style={{ color: '#22c55e', marginRight: '8px', marginLeft: '-6px' }} />
 
                 <div style={{ flex: 1 }}>
                   <div className="text-sm font-medium">{entity.name}</div>
@@ -359,7 +359,9 @@ export default function DefineEntities() {
                     <option value="group">Group</option>
                     <option value="company">Company</option>
                     <option value="division">Division</option>
+                    <option value="subdivision">Subdivision</option>
                     <option value="region">Region</option>
+                    <option value="product_group">Product Group</option>
                     <option value="product">Product</option>
                   </select>
                 </div>

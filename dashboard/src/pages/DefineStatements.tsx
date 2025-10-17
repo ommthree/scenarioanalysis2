@@ -287,18 +287,18 @@ export default function DefineStatements() {
         {/* Left Panel: Template List */}
         <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.4)', minWidth: 0 }}>
           <CardContent style={{ padding: '2.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
-              <List className="w-8 h-8 text-blue-500" style={{ flexShrink: 0, marginTop: '15px' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '0px' }}>
+              <List className="w-8 h-8 text-blue-500" style={{ flexShrink: 0, marginTop: '17px' }} />
               <div>
-                <h3 className="font-semibold text-lg">Statement Templates</h3>
-                <p className="text-sm text-muted-foreground">Select a template to edit</p>
+                <h3 className="font-semibold text-lg" style={{ marginBottom: '0px', lineHeight: '1.2' }}>Statement Templates</h3>
               </div>
             </div>
+            <p className="text-sm text-muted-foreground" style={{ marginTop: '4px', marginBottom: '16px' }}>Select a template to edit</p>
 
             <Button
               onClick={handleNewTemplate}
               size="sm"
-              style={{ width: '100%', marginBottom: '16px', backgroundColor: '#3b82f6', border: 'none', color: '#ffffff' }}
+              style={{ marginBottom: '16px', backgroundColor: '#3b82f6', border: 'none', color: '#ffffff' }}
             >
               <Plus className="w-4 h-4 mr-2" />
               New Template
@@ -328,19 +328,17 @@ export default function DefineStatements() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                           <div style={{ paddingRight: '12px', flex: 1 }}>
                             <p className="font-medium text-sm">{template.code}</p>
-                            <p className="text-xs text-muted-foreground mt-1">{template.statement_type || 'unified'} | v{template.version || '1.0'}</p>
+                            <p className="text-xs text-muted-foreground mt-1">v{template.version || '1.0'}</p>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                          <button
                             onClick={(e) => {
                               e.stopPropagation()
                               handleDelete(template.code)
                             }}
-                            style={{ padding: '4px', position: 'absolute', bottom: '16px', right: '8px' }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', position: 'absolute', bottom: '36px', right: '8px' }}
                           >
-                            <Trash2 className="w-4 h-4 text-red-400" />
-                          </Button>
+                            <Trash2 className="w-4 h-4" style={{ color: '#ef4444' }} />
+                          </button>
                         </div>
                       </CardContent>
                     </Card>
@@ -354,13 +352,13 @@ export default function DefineStatements() {
         {/* Right Panel: Template Edit Form */}
         <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)', minWidth: 0 }}>
           <CardContent style={{ padding: '2.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
-              <FileText className="w-8 h-8 text-green-500" style={{ flexShrink: 0, marginTop: '15px' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '0px' }}>
+              <FileText className="w-8 h-8 text-green-500" style={{ flexShrink: 0, marginTop: '17px' }} />
               <div>
-                <h3 className="font-semibold text-lg">Template Details</h3>
-                <p className="text-sm text-muted-foreground">Basic template metadata</p>
+                <h3 className="font-semibold text-lg" style={{ marginBottom: '0px', lineHeight: '1.2' }}>Template Details</h3>
               </div>
             </div>
+            <p className="text-sm text-muted-foreground" style={{ marginTop: '4px', marginBottom: '16px' }}>Basic template metadata</p>
 
             {isEditing ? (
               <>
@@ -458,13 +456,13 @@ export default function DefineStatements() {
         <div style={{ paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
           <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(139, 92, 246, 0.4)' }}>
             <CardContent style={{ padding: '2.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '28px', marginLeft: '1.5rem' }}>
-                <FileText className="w-8 h-8 text-violet-500" style={{ flexShrink: 0, marginTop: '15px' }} />
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '0px', marginLeft: '1.5rem' }}>
+                <FileText className="w-8 h-8 text-violet-500" style={{ flexShrink: 0, marginTop: '17px' }} />
                 <div>
-                  <h3 className="font-semibold text-lg">Line Items</h3>
-                  <p className="text-sm text-muted-foreground">Define line items for each section</p>
+                  <h3 className="font-semibold text-lg" style={{ marginBottom: '0px', lineHeight: '1.2' }}>Line Items</h3>
                 </div>
               </div>
+              <p className="text-sm text-muted-foreground" style={{ marginTop: '4px', marginBottom: '16px', marginLeft: '1.5rem' }}>Define line items for each section</p>
 
               {/* Section Tabs */}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
@@ -573,34 +571,47 @@ export default function DefineStatements() {
                                   </select>
                                 </div>
                                 <div>
-                                  <label className="text-sm font-medium text-muted-foreground">Data Source Type</label>
-                                  <select
-                                    value={item.is_computed ? 'true' : 'false'}
-                                    onChange={(e) => updateLineItem(index, 'is_computed', e.target.value === 'true')}
-                                    style={{
-                                      width: '100%',
-                                      marginTop: '8px',
-                                      fontSize: '14px',
-                                      padding: '8px 12px',
-                                      backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                                      color: '#ffffff',
-                                      border: '1px solid rgba(16, 185, 129, 0.2)',
-                                      borderRadius: '6px'
-                                    }}
-                                  >
-                                    <option value="false">External Data (can map CSV/scenarios)</option>
-                                    <option value="true">Purely Derived (formula from other rows only)</option>
-                                  </select>
+                                  <label className="text-sm font-medium text-muted-foreground">Derived Mode</label>
+                                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <button
+                                      onClick={() => updateLineItem(index, 'is_computed', !item.is_computed)}
+                                      style={{
+                                        position: 'relative',
+                                        width: '44px',
+                                        height: '24px',
+                                        backgroundColor: item.is_computed ? '#22c55e' : '#64748b',
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        transition: 'background-color 0.2s',
+                                        padding: 0
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          top: '2px',
+                                          left: item.is_computed ? '22px' : '2px',
+                                          width: '20px',
+                                          height: '20px',
+                                          backgroundColor: '#ffffff',
+                                          borderRadius: '50%',
+                                          transition: 'left 0.2s'
+                                        }}
+                                      />
+                                    </button>
+                                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+                                      {item.is_computed ? 'Purely derived (formula only)' : 'Can use any data'}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
+                              <button
                                 onClick={() => removeLineItem(index)}
-                                style={{ padding: '8px', marginTop: '20px' }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', marginTop: '16px' }}
                               >
-                                <Trash2 className="w-4 h-4 text-red-400" />
-                              </Button>
+                                <Trash2 className="w-4 h-4" style={{ color: '#ef4444' }} />
+                              </button>
                             </div>
                           </CardContent>
                         </Card>
