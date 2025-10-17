@@ -2500,6 +2500,61 @@ app.post('/api/damage-curves/save-mapping', async (req, res) => {
 })
 
 /**
+ * Save scenario mappings
+ * POST /api/scenario-mappings/save
+ * Body: { dbPath, fileId, driverColumn, valueColumns, variableMappings }
+ */
+app.post('/api/scenario-mappings/save', express.json(), (req, res) => {
+  try {
+    const { dbPath, fileId, driverColumn, valueColumns, variableMappings } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!fileId || !driverColumn || !valueColumns || !variableMappings) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    const valueColumnsJson = JSON.stringify(valueColumns)
+    const variableMappingsJson = JSON.stringify(variableMappings)
+
+    db.run(
+      `INSERT INTO scenario_mapping (file_id, driver_column, value_columns, variable_mappings)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(file_id) DO UPDATE SET
+         driver_column = excluded.driver_column,
+         value_columns = excluded.value_columns,
+         variable_mappings = excluded.variable_mappings,
+         last_updated = datetime('now')`,
+      [fileId, driverColumn, valueColumnsJson, variableMappingsJson],
+      function(err) {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to save scenario mapping: ' + err.message })
+        }
+
+        res.json({
+          success: true,
+          message: `Scenario mapping saved for file ${fileId}`,
+          mappingId: this.lastID
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Save scenario mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Claude AI proxy endpoint
  * POST /api/claude/messages
  * Body: { prompt, csvSample, lineItems, companyName }

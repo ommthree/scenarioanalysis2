@@ -1,770 +1,497 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { ArrowRight, Save, Sparkles, Activity, Trash2, Check } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, AlertCircle, GripVertical } from 'lucide-react'
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent
-} from '@dnd-kit/core'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { parse } from 'csv-parse/sync'
 
 interface Driver {
   driver_id: number
   code: string
   name: string
-  description: string
   category: string
 }
 
-interface TableInfo {
-  tableName: string
-  fileName: string
-  fileId: number
+interface CsvRow {
+  [key: string]: any
 }
 
-interface FileConfig {
-  tableName: string
-  scenarioColumn: string
-  variableColumn: string
-  classificationColumns: { column: string; entityLevel: string }[]
+interface StagedFile {
+  file_id: number
+  file_name: string
+  file_type: string
+  row_count: number
+  uploaded_at: string
 }
 
 interface VariableMapping {
-  variableValue: string
-  driverCode: string
+  csv_row_index: number
+  driver_code: string
 }
 
-const MapScenarios: React.FC = () => {
+export default function MapScenarios() {
   const [drivers, setDrivers] = useState<Driver[]>([])
-  const [availableTables, setAvailableTables] = useState<TableInfo[]>([])
-  const [selectedTable, setSelectedTable] = useState<string>('')
-  const [selectedFileName, setSelectedFileName] = useState<string>('')
-  const [tableColumns, setTableColumns] = useState<string[]>([])
-  const [uniqueVariables, setUniqueVariables] = useState<string[]>([])
-  const [entityLevels, setEntityLevels] = useState<string[]>([])
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
+  const [selectedFileId, setSelectedFileId] = useState<number | null>(null)
+  const [csvData, setCsvData] = useState<CsvRow[]>([])
+  const [csvColumns, setCsvColumns] = useState<string[]>([])
+  const [csvFileName, setCsvFileName] = useState<string>('')
 
-  // Configuration state
-  const [scenarioColumn, setScenarioColumn] = useState<string>('')
-  const [variableColumn, setVariableColumn] = useState<string>('')
+  // Column configuration
+  const [driverColumn, setDriverColumn] = useState<string | null>(null)
+  const [valueColumns, setValueColumns] = useState<string[]>([])
 
-  // Drag and drop state for classification columns
-  const [columnBuckets, setColumnBuckets] = useState<{ [key: string]: string[] }>({
-    'not-mapped': []
-  })
+  // Row mappings
+  const [variableMappings, setVariableMappings] = useState<VariableMapping[]>([])
+  const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
 
-  // Drag and drop state for variable mapping
-  const [variableMappings, setVariableMappings] = useState<{ [driverCode: string]: string[] }>({})
-  const [unmappedVariables, setUnmappedVariables] = useState<string[]>([])
+  // AI mapping
+  const [aiMappingInProgress, setAiMappingInProgress] = useState(false)
+  const [aiMappingMessage, setAiMappingMessage] = useState<string>('')
 
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+  // Save status
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  )
-
-  // Fetch available staging tables
+  // Load staged files
   useEffect(() => {
-    fetch(`http://localhost:3001/api/scenarios/staging-tables?dbPath=${encodeURIComponent(dbPath)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setAvailableTables(data.tables || [])
-        }
-      })
-      .catch(err => console.error('Error fetching staging tables:', err))
+    fetchStagedFiles()
   }, [])
 
-  // Fetch drivers
+  // Load drivers
   useEffect(() => {
     fetch(`http://localhost:3001/api/drivers?dbPath=${encodeURIComponent(dbPath)}`)
       .then(res => res.json())
-      .then(data => {
-        setDrivers(data || [])
-      })
+      .then(data => setDrivers(data || []))
       .catch(err => console.error('Error fetching drivers:', err))
   }, [])
 
-  // Fetch entity levels
-  useEffect(() => {
-    fetch(`http://localhost:3001/api/entity-levels?dbPath=${encodeURIComponent(dbPath)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          const levels = data.levels || []
-          setEntityLevels(levels)
-
-          // Initialize buckets for each entity level
-          const buckets: { [key: string]: string[] } = { 'not-mapped': [] }
-          levels.forEach((level: string) => {
-            buckets[level] = []
-          })
-          setColumnBuckets(buckets)
-        }
-      })
-      .catch(err => console.error('Error fetching entity levels:', err))
-  }, [])
-
-  // Fetch columns when table selected
-  useEffect(() => {
-    if (!selectedTable) return
-
-    fetch(`http://localhost:3001/api/scenarios/staging-columns?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(selectedTable)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          const cols = (data.columns || []).map((c: any) => c.name)
-          setTableColumns(cols)
-
-          // Put all non-year columns in "not-mapped" bucket initially
-          const nonYearCols = cols.filter((col: string) => !col.toLowerCase().startsWith('y') && col !== '_rowid')
-          setColumnBuckets(prev => ({
-            ...prev,
-            'not-mapped': nonYearCols
-          }))
-        }
-      })
-      .catch(err => console.error('Error fetching columns:', err))
-  }, [selectedTable])
-
-  // Fetch unique variable values when variable column is selected
-  useEffect(() => {
-    if (!selectedTable || !variableColumn) return
-
-    fetch(`http://localhost:3001/api/scenarios/unique-values?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(selectedTable)}&columnName=${encodeURIComponent(variableColumn)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          const values = data.values || []
-          setUniqueVariables(values)
-          setUnmappedVariables(values)
-
-          // Initialize empty mappings for all drivers
-          const mappings: { [driverCode: string]: string[] } = {}
-          drivers.forEach(driver => {
-            mappings[driver.code] = []
-          })
-          setVariableMappings(mappings)
-        }
-      })
-      .catch(err => console.error('Error fetching unique values:', err))
-  }, [selectedTable, variableColumn, drivers])
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string)
-  }
-
-  const handleDragEndClassification = (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveId(null)
-
-    if (!over) return
-
-    const activeColumn = active.id as string
-    const targetBucket = over.id as string
-
-    // Find which bucket the column is currently in
-    let sourceBucket: string | null = null
-    for (const [bucket, columns] of Object.entries(columnBuckets)) {
-      if (columns.includes(activeColumn)) {
-        sourceBucket = bucket
-        break
+  const fetchStagedFiles = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/staged-files/scenario?dbPath=${encodeURIComponent(dbPath)}`)
+      const result = await response.json()
+      if (result.success) {
+        setStagedFiles(result.files || [])
       }
+    } catch (error) {
+      console.error('Failed to fetch staged files:', error)
     }
-
-    if (!sourceBucket || sourceBucket === targetBucket) return
-
-    // Remove from scenario/variable column selections if being moved
-    if (activeColumn === scenarioColumn) setScenarioColumn('')
-    if (activeColumn === variableColumn) setVariableColumn('')
-
-    // Move column between buckets
-    setColumnBuckets(prev => ({
-      ...prev,
-      [sourceBucket]: prev[sourceBucket].filter(col => col !== activeColumn),
-      [targetBucket]: [...prev[targetBucket], activeColumn]
-    }))
   }
 
-  const handleDragEndVariableMapping = (event: DragEndEvent) => {
-    const { active, over } = event
-    setActiveId(null)
+  const handleFileSelect = async (fileId: number) => {
+    setSelectedFileId(fileId)
+    setVariableMappings([])
 
-    if (!over) return
+    try {
+      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+      const result = await response.json()
 
-    const variable = active.id as string
-    const targetDriverCode = over.id as string
+      if (result.success && result.csvText) {
+        const records = parse(result.csvText, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true
+        }) as CsvRow[]
 
-    // Remove from unmapped if present
-    if (unmappedVariables.includes(variable)) {
-      setUnmappedVariables(prev => prev.filter(v => v !== variable))
-      setVariableMappings(prev => ({
-        ...prev,
-        [targetDriverCode]: [...(prev[targetDriverCode] || []), variable]
-      }))
+        const columns = records.length > 0 ? Object.keys(records[0]) : []
+
+        setCsvData(records)
+        setCsvColumns(columns)
+        setCsvFileName(result.fileName)
+
+        // Auto-detect driver column (look for "driver", "variable", "drivername")
+        const driverCol = columns.find(col =>
+          col.toLowerCase().includes('driver') ||
+          col.toLowerCase().includes('variable') ||
+          col.toLowerCase() === 'drivername'
+        )
+        if (driverCol) {
+          setDriverColumn(driverCol)
+        }
+
+        // Auto-detect value columns (numeric columns)
+        const valueCols = columns.filter(col => {
+          const firstValue = records[0]?.[col]
+          return !isNaN(parseFloat(firstValue)) && isFinite(parseFloat(firstValue))
+        })
+        setValueColumns(valueCols)
+      }
+    } catch (error) {
+      console.error('Failed to load scenario file:', error)
+    }
+  }
+
+  const handleRoleDragStart = (role: 'driver' | 'value') => {
+    // For future drag-and-drop column assignment
+  }
+
+  const handleColumnDrop = (columnName: string) => {
+    // For future drag-and-drop column assignment
+  }
+
+  const toggleRowMapping = (rowIdx: number, driverCode: string) => {
+    setVariableMappings(prev => {
+      const existing = prev.find(m => m.csv_row_index === rowIdx)
+      if (existing) {
+        if (existing.driver_code === driverCode) {
+          // Remove mapping
+          return prev.filter(m => m.csv_row_index !== rowIdx)
+        } else {
+          // Update mapping
+          return prev.map(m =>
+            m.csv_row_index === rowIdx
+              ? { ...m, driver_code: driverCode }
+              : m
+          )
+        }
+      } else {
+        // Add new mapping
+        return [...prev, { csv_row_index: rowIdx, driver_code: driverCode }]
+      }
+    })
+  }
+
+  const handleAIMapping = async () => {
+    if (!driverColumn || csvData.length === 0 || drivers.length === 0) {
+      setAiMappingMessage('Please select a file and configure the driver column first')
+      setTimeout(() => setAiMappingMessage(''), 3000)
       return
     }
 
-    // Find which driver this variable is currently mapped to
-    let sourceDriver: string | null = null
-    for (const [driverCode, variables] of Object.entries(variableMappings)) {
-      if (variables.includes(variable)) {
-        sourceDriver = driverCode
-        break
-      }
-    }
+    setAiMappingInProgress(true)
+    setAiMappingMessage('Analyzing with AI...')
 
-    if (sourceDriver === targetDriverCode) return
-
-    if (sourceDriver) {
-      // Move between drivers
-      setVariableMappings(prev => ({
-        ...prev,
-        [sourceDriver]: prev[sourceDriver].filter(v => v !== variable),
-        [targetDriverCode]: [...(prev[targetDriverCode] || []), variable]
+    try {
+      const csvSample = csvData.slice(0, 20).map((row, idx) => ({
+        index: idx,
+        data: row
       }))
+
+      const prompt = `You are a scenario mapping assistant. Analyze the CSV data and map driver variables to the defined drivers.
+
+CSV Columns: ${csvColumns.join(', ')}
+Driver Column: ${driverColumn}
+CSV Sample (first 20 rows):
+${JSON.stringify(csvSample, null, 2)}
+
+Available Drivers to map:
+${drivers.map(d => `- ${d.code}: ${d.name} (${d.category})`).join('\n')}
+
+Instructions:
+1. Analyze the "${driverColumn}" column values in the CSV
+2. Map each CSV row to the most appropriate driver code
+3. Return ONLY a JSON object with this format:
+{
+  "row_mappings": [
+    {
+      "csv_row_index": 0,
+      "driver_code": "REVENUE_GROWTH",
+      "confidence": "high"
+    },
+    {
+      "csv_row_index": 1,
+      "driver_code": "COGS_MARGIN",
+      "confidence": "high"
+    }
+  ]
+}
+
+Rules:
+- Only map rows where you have reasonable confidence
+- driver_code must match one of the available driver codes
+- confidence can be "high", "medium", or "low"
+- Look for semantic matches between variable names and driver descriptions
+
+Respond with ONLY the JSON object, no other text`
+
+      const response = await fetch('http://localhost:3001/api/claude/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'AI mapping failed')
+      }
+
+      const result = await response.json()
+      const content = result.content[0].text
+
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('Invalid response format from AI')
+      }
+
+      const aiResponse = JSON.parse(jsonMatch[0])
+      const rowMappings = aiResponse.row_mappings || []
+
+      // Apply the AI-suggested mappings
+      setVariableMappings(rowMappings.map((m: any) => ({
+        csv_row_index: m.csv_row_index,
+        driver_code: m.driver_code
+      })))
+
+      setAiMappingMessage('AI mapping completed!')
+      setTimeout(() => setAiMappingMessage(''), 5000)
+
+    } catch (error) {
+      console.error('AI mapping error:', error)
+      setAiMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`)
+      setTimeout(() => setAiMappingMessage(''), 5000)
+    } finally {
+      setAiMappingInProgress(false)
     }
   }
 
   const handleSave = async () => {
-    setSaveStatus('saving')
+    if (!selectedFileId || variableMappings.length === 0) {
+      setSaveMessage('No mappings to save')
+      setTimeout(() => setSaveMessage(''), 3000)
+      return
+    }
+
+    setIsSaving(true)
+    setSaveMessage('Saving mappings...')
 
     try {
-      // Build classification columns config
-      const classificationColumns: { column: string; entityLevel: string }[] = []
-      Object.entries(columnBuckets).forEach(([bucket, columns]) => {
-        if (bucket !== 'not-mapped') {
-          columns.forEach(col => {
-            classificationColumns.push({ column: col, entityLevel: bucket })
-          })
-        }
-      })
-
-      const config: FileConfig = {
-        tableName: selectedTable,
-        scenarioColumn,
-        variableColumn,
-        classificationColumns
-      }
-
-      // Build variable mappings
-      const mappings: VariableMapping[] = []
-      Object.entries(variableMappings).forEach(([driverCode, variables]) => {
-        variables.forEach(variable => {
-          mappings.push({ variableValue: variable, driverCode })
-        })
-      })
-
-      const response = await fetch('http://localhost:3001/api/scenarios/save-file-config', {
+      const response = await fetch('http://localhost:3001/api/scenario-mappings/save', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
           dbPath,
-          config,
-          mappings
+          fileId: selectedFileId,
+          driverColumn,
+          valueColumns,
+          variableMappings
         })
       })
 
-      if (!response.ok) throw new Error('Failed to save configuration')
+      const result = await response.json()
 
-      setSaveStatus('success')
-      setTimeout(() => setSaveStatus('idle'), 2000)
-    } catch (err) {
-      console.error('Error saving:', err)
-      setSaveStatus('error')
-      setTimeout(() => setSaveStatus('idle'), 3000)
+      if (response.ok && result.success) {
+        setSaveMessage('Mappings saved successfully!')
+        setTimeout(() => setSaveMessage(''), 3000)
+      } else {
+        setSaveMessage(`Error: ${result.error || 'Failed to save mappings'}`)
+        setTimeout(() => setSaveMessage(''), 5000)
+      }
+    } catch (error) {
+      console.error('Save error:', error)
+      setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
+      setTimeout(() => setSaveMessage(''), 5000)
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const physicalDrivers = drivers.filter(d => d.category === 'physical')
-  const transitionDrivers = drivers.filter(d => d.category === 'transition')
-
-  const DraggableColumn = ({ column }: { column: string }) => (
-    <div
-      style={{
-        padding: '10px 12px',
-        backgroundColor: 'rgba(59, 130, 246, 0.2)',
-        border: '1px solid rgba(59, 130, 246, 0.4)',
-        borderRadius: '6px',
-        color: '#60a5fa',
-        fontSize: '13px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        cursor: 'grab',
-        transition: 'all 0.2s'
-      }}
-    >
-      <GripVertical className="w-4 h-4" />
-      {column}
-    </div>
-  )
-
-  const DraggableVariable = ({ variable }: { variable: string }) => (
-    <div
-      style={{
-        padding: '10px 12px',
-        backgroundColor: 'rgba(168, 85, 247, 0.2)',
-        border: '1px solid rgba(168, 85, 247, 0.4)',
-        borderRadius: '6px',
-        color: '#a855f7',
-        fontSize: '13px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        cursor: 'grab',
-        transition: 'all 0.2s'
-      }}
-    >
-      <GripVertical className="w-4 h-4" />
-      {variable}
-    </div>
-  )
-
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      padding: '40px'
-    }}>
-      <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{
-            fontSize: '32px',
-            fontWeight: '700',
-            color: '#ffffff',
-            marginBottom: '8px'
-          }}>
-            Map Scenario Data
-          </h1>
-          <p style={{ color: '#94a3b8', fontSize: '16px' }}>
-            Configure how scenario CSV files are structured and map variable names to defined drivers
-          </p>
+    <div className="p-12 max-w-[1800px] mx-auto">
+      <div className="mb-8" style={{ marginLeft: '1.5rem' }}>
+        <h1 className="text-4xl font-bold tracking-tight">Map Scenarios</h1>
+        <p className="text-muted-foreground mt-2">Map scenario variables to drivers</p>
+      </div>
+
+      <div className="grid grid-cols-12 gap-6">
+        {/* Left Panel - File Selection */}
+        <div className="col-span-3">
+          <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+            <CardContent className="p-6">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <Activity className="w-6 h-6 text-blue-500" />
+                <h3 className="font-semibold text-lg">Scenario Files</h3>
+              </div>
+
+              {stagedFiles.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No staged scenarios found</p>
+              ) : (
+                <ScrollArea style={{ height: 'calc(100vh - 300px)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {stagedFiles.map(file => {
+                      const isSelected = selectedFileId === file.file_id
+                      return (
+                        <button
+                          key={file.file_id}
+                          onClick={() => handleFileSelect(file.file_id)}
+                          style={{
+                            padding: '12px',
+                            backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                            border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isSelected && <Check className="w-4 h-4 text-green-500" />}
+                            <span style={{ fontSize: '14px', color: isSelected ? '#10b981' : '#e2e8f0', fontWeight: isSelected ? 600 : 500 }}>
+                              {file.file_name}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                            {file.row_count} rows
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
-        {/* No Data Warning */}
-        {availableTables.length === 0 && (
-          <Card className="border-2" style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.6)',
-            backdropFilter: 'blur(10px)',
-            borderColor: 'rgba(239, 68, 68, 0.3)',
-            marginBottom: '32px'
-          }}>
-            <CardContent style={{ padding: '32px' }}>
-              <div style={{
-                padding: '24px',
-                textAlign: 'center',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '8px'
-              }}>
-                <AlertCircle style={{ width: '32px', height: '32px', color: '#ef4444', margin: '0 auto 12px' }} />
-                <div style={{ color: '#fca5a5', fontSize: '14px' }}>
-                  No scenario data loaded. Please upload scenario CSV files first in the "Load Scenarios" page.
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Right Panel - Mapping Interface */}
+        <div className="col-span-9">
+          {!selectedFileId ? (
+            <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)', padding: '48px', textAlign: 'center' }}>
+              <p className="text-muted-foreground">Select a scenario file to begin mapping</p>
+            </Card>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Column Configuration */}
+              <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+                <CardContent className="p-6">
+                  <h3 className="font-semibold text-lg mb-4">Column Configuration</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', alignItems: 'center' }}>
+                    <div className="text-sm text-muted-foreground">Driver/Variable Column:</div>
+                    <div className="text-sm font-medium" style={{ color: '#10b981' }}>{driverColumn || 'Not configured'}</div>
 
-        {/* Step 1: Select File */}
-        {availableTables.length > 0 && (
-          <Card className="border-2" style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.6)',
-            backdropFilter: 'blur(10px)',
-            borderColor: 'rgba(100, 116, 139, 0.3)',
-            marginBottom: '24px'
-          }}>
-            <CardContent style={{ padding: '32px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '16px' }}>
-                Step 1: Select Scenario File
-              </h3>
-              <select
-                value={selectedTable}
-                onChange={(e) => {
-                  const tableName = e.target.value
-                  const tableInfo = availableTables.find(t => t.tableName === tableName)
-                  setSelectedTable(tableName)
-                  setSelectedFileName(tableInfo?.fileName || '')
-                  setScenarioColumn('')
-                  setVariableColumn('')
-                }}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
+                    <div className="text-sm text-muted-foreground">Value Columns:</div>
+                    <div className="text-sm">{valueColumns.length > 0 ? valueColumns.join(', ') : 'None detected'}</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* AI Mapping and Save */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <Button
+                  onClick={handleAIMapping}
+                  disabled={aiMappingInProgress || !driverColumn}
+                  style={{
+                    backgroundColor: aiMappingInProgress ? '#6b7280' : '#8b5cf6',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  {aiMappingInProgress ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      AI Mapping...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      AI Mapping
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving || variableMappings.length === 0}
+                  style={{
+                    backgroundColor: isSaving ? '#6b7280' : '#10b981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Save className="w-4 h-4" />
+                  {isSaving ? 'Saving...' : 'Save Mappings'}
+                </Button>
+              </div>
+
+              {(aiMappingMessage || saveMessage) && (
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  borderRadius: '8px',
                   fontSize: '14px',
-                  backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                  color: '#ffffff',
-                  border: '1px solid rgba(100, 116, 139, 0.3)',
-                  borderRadius: '8px'
-                }}
-              >
-                <option value="">-- Select File --</option>
-                {availableTables.map(table => (
-                  <option key={table.tableName + table.fileId} value={table.tableName}>
-                    {table.fileName}
-                  </option>
-                ))}
-              </select>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 2: Identify Columns */}
-        {selectedTable && tableColumns.length > 0 && (
-          <Card className="border-2" style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.6)',
-            backdropFilter: 'blur(10px)',
-            borderColor: 'rgba(100, 116, 139, 0.3)',
-            marginBottom: '24px'
-          }}>
-            <CardContent style={{ padding: '32px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '16px' }}>
-                Step 2: Identify Column Structure
-              </h3>
-
-              <div style={{ display: 'grid', gap: '20px' }}>
-                {/* Scenario Column */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '14px', color: '#94a3b8', marginBottom: '8px', fontWeight: '500' }}>
-                    Scenario Identifier Column *
-                  </label>
-                  <select
-                    value={scenarioColumn}
-                    onChange={(e) => setScenarioColumn(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      fontSize: '14px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(100, 116, 139, 0.3)',
-                      borderRadius: '6px'
-                    }}
-                  >
-                    <option value="">-- Select Column --</option>
-                    {columnBuckets['not-mapped']?.map(col => (
-                      <option key={col} value={col}>{col}</option>
-                    ))}
-                  </select>
+                  color: '#60a5fa'
+                }}>
+                  {aiMappingMessage || saveMessage}
                 </div>
+              )}
 
-                {/* Variable Column */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '14px', color: '#94a3b8', marginBottom: '8px', fontWeight: '500' }}>
-                    Variable Name Column *
-                  </label>
-                  <select
-                    value={variableColumn}
-                    onChange={(e) => setVariableColumn(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      fontSize: '14px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(100, 116, 139, 0.3)',
-                      borderRadius: '6px'
-                    }}
-                  >
-                    <option value="">-- Select Column --</option>
-                    {columnBuckets['not-mapped']?.filter(col => col !== scenarioColumn).map(col => (
-                      <option key={col} value={col}>{col}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              {/* Mapping Table */}
+              <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+                <CardContent className="p-6">
+                  <h3 className="font-semibold text-lg mb-4">Variable to Driver Mapping</h3>
+                  <ScrollArea style={{ height: '600px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '2px solid rgba(59, 130, 246, 0.3)' }}>
+                          <th style={{ padding: '12px', textAlign: 'left', fontSize: '14px', fontWeight: 600, color: '#3b82f6' }}>
+                            Variable Name
+                          </th>
+                          {drivers.slice(0, 5).map(driver => (
+                            <th key={driver.code} style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: 600, color: '#3b82f6' }}>
+                              {driver.name}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvData.map((row, rowIdx) => {
+                          const variableName = driverColumn ? row[driverColumn] : ''
+                          const mapping = variableMappings.find(m => m.csv_row_index === rowIdx)
 
-        {/* Step 3: Map Classification Columns with Drag & Drop */}
-        {selectedTable && tableColumns.length > 0 && scenarioColumn && variableColumn && (
-          <Card className="border-2" style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.6)',
-            backdropFilter: 'blur(10px)',
-            borderColor: 'rgba(59, 130, 246, 0.3)',
-            marginBottom: '24px'
-          }}>
-            <CardContent style={{ padding: '32px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '8px' }}>
-                Step 3: Map Classification Columns to Entity Hierarchy
-              </h3>
-              <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '20px' }}>
-                Drag columns to entity levels. Columns in "Not Mapped" will be ignored.
-              </p>
-
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEndClassification}
-              >
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-                  {/* Not Mapped Bucket */}
-                  <div style={{
-                    padding: '16px',
-                    backgroundColor: 'rgba(100, 116, 139, 0.1)',
-                    border: '2px dashed rgba(100, 116, 139, 0.3)',
-                    borderRadius: '8px',
-                    minHeight: '150px'
-                  }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8', marginBottom: '12px' }}>
-                      Not Mapped
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {columnBuckets['not-mapped']
-                        ?.filter(col => col !== scenarioColumn && col !== variableColumn)
-                        .map(col => (
-                          <div key={col} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', col)}>
-                            <DraggableColumn column={col} />
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-
-                  {/* Entity Level Buckets */}
-                  {entityLevels.map(level => (
-                    <div
-                      key={level}
-                      style={{
-                        padding: '16px',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        border: '2px solid rgba(59, 130, 246, 0.3)',
-                        borderRadius: '8px',
-                        minHeight: '150px'
-                      }}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault()
-                        const col = e.dataTransfer.getData('text/plain')
-                        handleDragEndClassification({
-                          active: { id: col },
-                          over: { id: level }
-                        } as any)
-                      }}
-                    >
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#60a5fa', marginBottom: '12px', textTransform: 'capitalize' }}>
-                        {level}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {columnBuckets[level]?.map(col => (
-                          <div key={col} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', col)}>
-                            <DraggableColumn column={col} />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </DndContext>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 4: Map Variables to Drivers with Drag & Drop */}
-        {uniqueVariables.length > 0 && (
-          <Card className="border-2" style={{
-            backgroundColor: 'rgba(30, 41, 59, 0.6)',
-            backdropFilter: 'blur(10px)',
-            borderColor: 'rgba(168, 85, 247, 0.3)',
-            marginBottom: '24px'
-          }}>
-            <CardContent style={{ padding: '32px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '8px' }}>
-                Step 4: Map Variables to Defined Drivers
-              </h3>
-              <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '20px' }}>
-                Drag variable names onto drivers. Unmapped variables will be ignored.
-              </p>
-
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEndVariableMapping}
-              >
-                <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '24px' }}>
-                  {/* Unmapped Variables */}
-                  <div style={{
-                    padding: '16px',
-                    backgroundColor: 'rgba(100, 116, 139, 0.1)',
-                    border: '2px dashed rgba(100, 116, 139, 0.3)',
-                    borderRadius: '8px',
-                    height: 'fit-content',
-                    maxHeight: '600px',
-                    overflowY: 'auto'
-                  }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#94a3b8', marginBottom: '12px' }}>
-                      Unmapped Variables ({unmappedVariables.length})
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {unmappedVariables.map(variable => (
-                        <div key={variable} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', variable)}>
-                          <DraggableVariable variable={variable} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Driver Targets */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {/* Physical Drivers */}
-                    {physicalDrivers.length > 0 && (
-                      <div>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#60a5fa', marginBottom: '12px' }}>
-                          Physical Risk Drivers
-                        </h4>
-                        <div style={{ display: 'grid', gap: '12px' }}>
-                          {physicalDrivers.map(driver => (
-                            <div
-                              key={driver.code}
+                          return (
+                            <tr
+                              key={rowIdx}
                               style={{
-                                padding: '16px',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                border: '2px solid rgba(59, 130, 246, 0.3)',
-                                borderRadius: '8px'
-                              }}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDrop={(e) => {
-                                e.preventDefault()
-                                const variable = e.dataTransfer.getData('text/plain')
-                                handleDragEndVariableMapping({
-                                  active: { id: variable },
-                                  over: { id: driver.code }
-                                } as any)
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                                backgroundColor: mapping ? 'rgba(16, 185, 129, 0.1)' : 'transparent'
                               }}
                             >
-                              <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff', marginBottom: '4px' }}>
-                                {driver.name}
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                                {driver.description}
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                {variableMappings[driver.code]?.map(variable => (
-                                  <div
-                                    key={variable}
-                                    draggable
-                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', variable)}
-                                    style={{
-                                      padding: '6px 10px',
-                                      backgroundColor: 'rgba(59, 130, 246, 0.3)',
-                                      border: '1px solid rgba(59, 130, 246, 0.5)',
-                                      borderRadius: '4px',
-                                      color: '#60a5fa',
-                                      fontSize: '12px',
-                                      cursor: 'grab'
-                                    }}
-                                  >
-                                    {variable}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Transition Drivers */}
-                    {transitionDrivers.length > 0 && (
-                      <div>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#a855f7', marginBottom: '12px' }}>
-                          Transition Risk Drivers
-                        </h4>
-                        <div style={{ display: 'grid', gap: '12px' }}>
-                          {transitionDrivers.map(driver => (
-                            <div
-                              key={driver.code}
-                              style={{
-                                padding: '16px',
-                                backgroundColor: 'rgba(168, 85, 247, 0.1)',
-                                border: '2px solid rgba(168, 85, 247, 0.3)',
-                                borderRadius: '8px'
-                              }}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDrop={(e) => {
-                                e.preventDefault()
-                                const variable = e.dataTransfer.getData('text/plain')
-                                handleDragEndVariableMapping({
-                                  active: { id: variable },
-                                  over: { id: driver.code }
-                                } as any)
-                              }}
-                            >
-                              <div style={{ fontSize: '14px', fontWeight: '600', color: '#ffffff', marginBottom: '4px' }}>
-                                {driver.name}
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                                {driver.description}
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                {variableMappings[driver.code]?.map(variable => (
-                                  <div
-                                    key={variable}
-                                    draggable
-                                    onDragStart={(e) => e.dataTransfer.setData('text/plain', variable)}
-                                    style={{
-                                      padding: '6px 10px',
-                                      backgroundColor: 'rgba(168, 85, 247, 0.3)',
-                                      border: '1px solid rgba(168, 85, 247, 0.5)',
-                                      borderRadius: '4px',
-                                      color: '#a855f7',
-                                      fontSize: '12px',
-                                      cursor: 'grab'
-                                    }}
-                                  >
-                                    {variable}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </DndContext>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Save Button */}
-        {uniqueVariables.length > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              onClick={handleSave}
-              disabled={saveStatus === 'saving' || !scenarioColumn || !variableColumn}
-              className="transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              style={{
-                backgroundColor: saveStatus === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)',
-                color: '#10b981',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                padding: '12px 32px',
-                fontSize: '16px'
-              }}
-            >
-              <Save className="w-5 h-5" style={{ marginRight: '8px' }} />
-              {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'success' ? 'Saved!' : saveStatus === 'error' ? 'Error - Retry' : 'Save Configuration'}
-            </Button>
-          </div>
-        )}
+                              <td style={{ padding: '10px 12px', fontSize: '13px', color: '#e2e8f0' }}>
+                                {variableName}
+                              </td>
+                              {drivers.slice(0, 5).map(driver => {
+                                const isMapped = mapping?.driver_code === driver.code
+                                return (
+                                  <td key={driver.code} style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                    <button
+                                      onClick={() => toggleRowMapping(rowIdx, driver.code)}
+                                      style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '4px',
+                                        backgroundColor: isMapped ? '#10b981' : 'rgba(71, 85, 105, 0.3)',
+                                        border: isMapped ? '2px solid #10b981' : '1px solid rgba(71, 85, 105, 0.5)',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        margin: '0 auto'
+                                      }}
+                                    >
+                                      {isMapped && <Check className="w-4 h-4 text-white" />}
+                                    </button>
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
-
-export default MapScenarios
