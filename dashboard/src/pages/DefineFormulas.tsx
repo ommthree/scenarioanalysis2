@@ -54,7 +54,8 @@ const DefineFormulas: React.FC = () => {
 
   // Fetch drivers on mount
   useEffect(() => {
-    fetch('http://localhost:3001/api/drivers')
+    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    fetch(`http://localhost:3001/api/drivers?dbPath=${encodeURIComponent(dbPath)}`)
       .then(res => res.json())
       .then(data => setDrivers(data))
       .catch(err => console.error('Error fetching drivers:', err))
