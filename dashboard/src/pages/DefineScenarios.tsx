@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, Plus, Trash2, Upload, Download } from 'lucide-react'
+import { Save, Plus, Trash2, Upload, Download, GitBranch } from 'lucide-react'
 
 interface Driver {
   driver_id?: number
@@ -198,7 +198,7 @@ const DefineScenarios: React.FC = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', marginBottom: '12px' }}>
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">
-                        Driver Code *
+                        Driver Code
                       </label>
                       <input
                         type="text"
@@ -219,7 +219,7 @@ const DefineScenarios: React.FC = () => {
                     </div>
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">
-                        Display Name *
+                        Display Name
                       </label>
                       <input
                         type="text"
@@ -239,7 +239,7 @@ const DefineScenarios: React.FC = () => {
                       />
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '16px', alignItems: 'end' }}>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'start' }}>
                     <div style={{ flex: 1 }}>
                       <label className="text-sm font-medium text-muted-foreground">
                         Description
@@ -262,17 +262,18 @@ const DefineScenarios: React.FC = () => {
                         }}
                       />
                     </div>
-                    <Button
+                    <button
                       onClick={() => removeDriver(category, index)}
-                      variant="ghost"
-                      size="sm"
                       style={{
-                        color: '#ef4444',
-                        padding: '8px'
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '8px',
+                        marginTop: '31px'
                       }}
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                      <Trash2 className="w-4 h-4" style={{ color: '#ef4444' }} />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -305,7 +306,7 @@ const DefineScenarios: React.FC = () => {
               Define physical and transition risk drivers for scenario analysis
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '35px' }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -314,47 +315,34 @@ const DefineScenarios: React.FC = () => {
               style={{ display: 'none' }}
             />
             <Button
+              variant="outline"
               onClick={() => fileInputRef.current?.click()}
-              className="transition-all duration-200 hover:scale-105 active:scale-95"
-              style={{
-                backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                color: '#3b82f6',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                padding: '12px 24px',
-                fontSize: '16px'
-              }}
+              size="sm"
+              style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
             >
-              <Upload className="w-5 h-5" style={{ marginRight: '8px' }} />
-              Upload JSON
+              <Upload className="w-4 h-4 mr-2" />
+              Import JSON
             </Button>
             <Button
+              variant="outline"
               onClick={handleDownloadJSON}
-              className="transition-all duration-200 hover:scale-105 active:scale-95"
-              style={{
-                backgroundColor: 'rgba(168, 85, 247, 0.2)',
-                color: '#a855f7',
-                border: '1px solid rgba(168, 85, 247, 0.3)',
-                padding: '12px 24px',
-                fontSize: '16px'
-              }}
+              size="sm"
+              style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)' }}
             >
-              <Download className="w-5 h-5" style={{ marginRight: '8px' }} />
-              Download JSON
+              <Download className="w-4 h-4 mr-2" />
+              Export JSON
             </Button>
             <Button
               onClick={handleSave}
-              disabled={saveStatus === 'saving'}
-              className="transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              size="sm"
               style={{
-                backgroundColor: saveStatus === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)',
-                color: '#10b981',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                padding: '12px 24px',
-                fontSize: '16px'
+                backgroundColor: '#22c55e',
+                border: 'none',
+                color: '#ffffff'
               }}
             >
-              <Save className="w-5 h-5" style={{ marginRight: '8px' }} />
-              {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'success' ? 'Saved!' : saveStatus === 'error' ? 'Error - Retry' : 'Save All Drivers'}
+              <Save className="w-4 h-4 mr-2" />
+              Save to Database
             </Button>
           </div>
         </div>

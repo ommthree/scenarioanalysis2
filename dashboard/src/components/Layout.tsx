@@ -54,8 +54,8 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/definitions/entities', icon: Building2, label: 'Entities' },
         { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
-        { path: '/definitions/scenarios', icon: Cloud, label: 'Scenarios' },
-        { path: '/definitions/actions', icon: Activity, label: 'Actions' },
+        { path: '/definitions/scenarios', icon: Activity, label: 'Scenarios' },
+        { path: '/definitions/actions', icon: Settings, label: 'Actions' },
       ]
     },
     {
@@ -137,7 +137,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
             {navSections.map((section, idx) => (
               <div key={section.title}>
                 {idx > 0 && <Separator className="my-4" />}
-                <div style={{ marginBottom: '4px' }}>
+                <div style={{ marginBottom: '-12px' }}>
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
                     {section.title}
                   </h3>
