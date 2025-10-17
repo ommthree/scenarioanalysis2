@@ -2762,6 +2762,121 @@ app.post('/api/claude/messages', express.json(), async (req, res) => {
 })
 
 /**
+ * AI Formula Suggestion endpoint
+ */
+app.post('/api/ai/suggest-formula', async (req, res) => {
+  try {
+    const { context } = req.body
+
+    if (!context) {
+      return res.status(400).json({ error: 'Context is required' })
+    }
+
+    const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      console.error('Claude API key not found in environment')
+      return res.status(500).json({ error: 'Claude API key not configured. Set CLAUDE_API_KEY or ANTHROPIC_API_KEY environment variable.' })
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 1024,
+        messages: [{
+          role: 'user',
+          content: context
+        }]
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      console.error('Claude API error:', error)
+      return res.status(response.status).json({ error: error.error?.message || 'AI suggestion failed' })
+    }
+
+    const result = await response.json()
+    const suggestion = result.content[0].text
+
+    res.json({ suggestion })
+
+  } catch (error) {
+    console.error('Formula suggestion error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Update statement template formula for a line item
+ * PUT /api/statement-templates/:code
+ */
+app.put('/api/statement-templates/:code', (req, res) => {
+  const { code } = req.params
+  const { dbPath, lineItemCode, formula } = req.body
+
+  if (!dbPath || !lineItemCode || formula === undefined) {
+    return res.status(400).json({ error: 'Database path, line item code, and formula required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  // First, get the current template
+  db.get('SELECT json_structure FROM statement_template WHERE code = ?', [code], (err, row) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: err.message })
+    }
+
+    if (!row) {
+      db.close()
+      return res.status(404).json({ error: 'Template not found' })
+    }
+
+    try {
+      const jsonStructure = JSON.parse(row.json_structure)
+
+      // Find and update the line item's formula
+      const lineItem = jsonStructure.line_items.find(item => item.code === lineItemCode)
+      if (!lineItem) {
+        db.close()
+        return res.status(404).json({ error: 'Line item not found' })
+      }
+
+      lineItem.formula = formula || null
+
+      // Update the database with the modified json_structure
+      const updatedJson = JSON.stringify(jsonStructure)
+      db.run(
+        'UPDATE statement_template SET json_structure = ?, updated_at = datetime("now") WHERE code = ?',
+        [updatedJson, code],
+        function(err) {
+          db.close()
+
+          if (err) {
+            return res.status(500).json({ error: err.message })
+          }
+
+          res.json({ success: true, message: 'Formula updated successfully' })
+        }
+      )
+    } catch (e) {
+      db.close()
+      return res.status(500).json({ error: 'Failed to parse or update JSON structure' })
+    }
+  })
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {

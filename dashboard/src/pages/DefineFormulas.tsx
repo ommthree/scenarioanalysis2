@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, AlertCircle, Plus } from 'lucide-react'
+import { Save, AlertCircle, Plus, Sparkles } from 'lucide-react'
 
 interface LineItem {
   code: string
@@ -30,6 +30,7 @@ const DefineFormulas: React.FC = () => {
   const [formula, setFormula] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+  const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'error'>('idle')
 
   // Fetch templates on mount
   useEffect(() => {
@@ -171,7 +172,21 @@ const DefineFormulas: React.FC = () => {
     setSaveStatus('saving')
 
     try {
-      // Update the line item formula in the template
+      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+
+      const response = await fetch(`http://localhost:3001/api/statement-templates/${selectedTemplate.template_code}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          lineItemCode: selectedLineItem.code,
+          formula: formula || ''
+        })
+      })
+
+      if (!response.ok) throw new Error('Failed to save formula')
+
+      // Update local state
       const updatedLineItems = selectedTemplate.line_items.map(item =>
         item.code === selectedLineItem.code
           ? { ...item, formula: formula || null }
@@ -183,15 +198,6 @@ const DefineFormulas: React.FC = () => {
         line_items: updatedLineItems
       }
 
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${selectedTemplate.template_code}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedTemplate)
-      })
-
-      if (!response.ok) throw new Error('Failed to save formula')
-
-      // Update local state
       setTemplates(prev => prev.map(t =>
         t.template_code === selectedTemplate.template_code ? updatedTemplate : t
       ))
@@ -209,6 +215,73 @@ const DefineFormulas: React.FC = () => {
 
   const addToFormula = (value: string) => {
     setFormula(prev => prev + value)
+  }
+
+  // AI suggestion handler
+  const handleAiSuggestion = async () => {
+    if (!selectedLineItem || !selectedTemplate) return
+
+    setAiStatus('loading')
+
+    try {
+      // Gather context for AI
+      const existingFormulas = selectedTemplate.line_items
+        .filter(item => item.formula)
+        .map(item => `${item.code} (${item.display_name}): ${item.formula}`)
+        .join('\n')
+
+      const availableLineItems = selectedTemplate.line_items
+        .map(item => `${item.code} - ${item.display_name}`)
+        .join('\n')
+
+      const availableDrivers = drivers
+        .map(d => `driver:${d.code} - ${d.display_name}`)
+        .join('\n')
+
+      const context = `
+I need a formula suggestion for the following line item:
+
+Line Item: ${selectedLineItem.code} - ${selectedLineItem.display_name}
+Section: ${selectedLineItem.section}
+Type: ${selectedLineItem.is_computed ? 'Purely Derived (can only use current period rows, no [t-1] or driver: references)' : 'External Data (can use any references)'}
+
+Available line items in this template:
+${availableLineItems}
+
+Available drivers:
+${availableDrivers}
+
+Existing formulas in this template:
+${existingFormulas || 'None defined yet'}
+
+Current formula (if any):
+${formula || 'None'}
+
+Please suggest an appropriate formula for this line item. Return ONLY the formula expression, with no explanation or markdown formatting. The formula should use:
+- Line item codes directly (e.g., REV_001)
+- Prior period references with [t-1] suffix (e.g., REV_001[t-1])
+- Driver references with driver: prefix (e.g., driver:REVENUE_GROWTH)
+- Standard math operators: +, -, *, /, (, )
+
+${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so you MUST NOT use [t-1] or driver: references.' : ''}
+`
+
+      const response = await fetch('http://localhost:3001/api/ai/suggest-formula', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context })
+      })
+
+      if (!response.ok) throw new Error('Failed to get AI suggestion')
+
+      const data = await response.json()
+      setFormula(data.suggestion.trim())
+      setAiStatus('idle')
+    } catch (err) {
+      console.error('Error getting AI suggestion:', err)
+      setAiStatus('error')
+      setTimeout(() => setAiStatus('idle'), 3000)
+    }
   }
 
   return (
@@ -425,6 +498,20 @@ const DefineFormulas: React.FC = () => {
                       </div>
                     )}
                     <div style={{ marginTop: '16px', display: 'flex', gap: '12px' }}>
+                      <Button
+                        onClick={handleAiSuggestion}
+                        disabled={aiStatus === 'loading'}
+                        style={{
+                          backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                          color: '#a855f7',
+                          border: '1px solid rgba(168, 85, 247, 0.3)',
+                          padding: '8px 16px',
+                          fontSize: '14px'
+                        }}
+                      >
+                        <Sparkles className="w-4 h-4" style={{ marginRight: '8px' }} />
+                        {aiStatus === 'loading' ? 'Thinking...' : aiStatus === 'error' ? 'Error' : 'AI Suggest'}
+                      </Button>
                       <Button
                         onClick={handleSave}
                         disabled={saveStatus === 'saving'}
