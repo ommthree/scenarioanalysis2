@@ -1013,60 +1013,24 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                     </Button>
                   </div>
 
+
+                  {/* Add Financial Transformation Button */}
                   {(isEditing || isCreatingNew) && selectedTemplate && (
-                    <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: 'rgba(30, 41, 59, 0.3)', borderRadius: '6px' }}>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                          Formula (drag items from right panel)
-                        </label>
-                        <textarea
-                          value={currentFormula}
-                          onChange={(e) => setCurrentFormula(e.target.value)}
-                          onDrop={(e) => handleDrop(e, 'formula')}
-                          onDragOver={handleDragOver}
-                          rows={3}
-                          placeholder="e.g., 290000 or OPERATING_EXPENSES * 0.9"
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '14px',
-                            fontFamily: 'monospace',
-                            resize: 'vertical'
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                          Comment (optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={currentComment}
-                          onChange={(e) => setCurrentComment(e.target.value)}
-                          placeholder="e.g., LED: -10k OpEx"
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
+                    <div style={{ marginBottom: '16px' }}>
                       <Button
-                        onClick={addTransformation}
+                        onClick={() => {
+                          const newTransform: Transformation = {
+                            line_item: '',
+                            type: 'formula_override',
+                            new_formula: '',
+                            comment: ''
+                          }
+                          setFinancialTransformations([...financialTransformations, newTransform])
+                        }}
                         size="sm"
                         style={{ backgroundColor: '#10b981', border: 'none' }}
                       >
-                        <Plus className="w-4 h-4 mr-1" /> Add Transformation
+                        <Plus className="w-4 h-4 mr-1" /> Add Financial Transformation
                       </Button>
                     </div>
                   )}
@@ -1099,6 +1063,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                 <input
                                   type="text"
                                   value={t.line_item}
+                                  onChange={(e) => {
+                                    const updated = [...financialTransformations]
+                                    updated[idx] = { ...updated[idx], line_item: e.target.value }
+                                    setFinancialTransformations(updated)
+                                  }}
                                   disabled={!isEditing && !isCreatingNew}
                                   placeholder="Line Item"
                                   style={{
@@ -1111,7 +1080,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     fontSize: '13px',
                                     fontWeight: '600'
                                   }}
-                                  readOnly
+                                  readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
                               <div>
@@ -1121,6 +1090,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                 <input
                                   type="text"
                                   value={t.new_formula}
+                                  onChange={(e) => {
+                                    const updated = [...financialTransformations]
+                                    updated[idx] = { ...updated[idx], new_formula: e.target.value }
+                                    setFinancialTransformations(updated)
+                                  }}
                                   disabled={!isEditing && !isCreatingNew}
                                   placeholder="Formula"
                                   style={{
@@ -1133,7 +1107,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     fontSize: '12px',
                                     fontFamily: 'monospace'
                                   }}
-                                  readOnly
+                                  readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
                               <div>
@@ -1143,6 +1117,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                 <input
                                   type="text"
                                   value={t.comment || ''}
+                                  onChange={(e) => {
+                                    const updated = [...financialTransformations]
+                                    updated[idx] = { ...updated[idx], comment: e.target.value }
+                                    setFinancialTransformations(updated)
+                                  }}
                                   disabled={!isEditing && !isCreatingNew}
                                   placeholder="Comment (optional)"
                                   style={{
@@ -1154,7 +1133,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     color: 'rgba(255,255,255,0.7)',
                                     fontSize: '11px'
                                   }}
-                                  readOnly
+                                  readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
                             </div>
@@ -1170,6 +1149,27 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Add Carbon Transformation Button */}
+                  {(isEditing || isCreatingNew) && selectedTemplate && (
+                    <div style={{ marginBottom: '16px' }}>
+                      <Button
+                        onClick={() => {
+                          const newTransform: Transformation = {
+                            line_item: '',
+                            type: 'carbon_formula_override',
+                            new_formula: '',
+                            comment: ''
+                          }
+                          setCarbonTransformations([...carbonTransformations, newTransform])
+                        }}
+                        size="sm"
+                        style={{ backgroundColor: '#22c55e', border: 'none' }}
+                      >
+                        <Plus className="w-4 h-4 mr-1" /> Add Carbon Transformation
+                      </Button>
                     </div>
                   )}
 
@@ -1201,6 +1201,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                 <input
                                   type="text"
                                   value={t.line_item}
+                                  onChange={(e) => {
+                                    const updated = [...carbonTransformations]
+                                    updated[idx] = { ...updated[idx], line_item: e.target.value }
+                                    setCarbonTransformations(updated)
+                                  }}
                                   disabled={!isEditing && !isCreatingNew}
                                   placeholder="Line Item"
                                   style={{
@@ -1213,7 +1218,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     fontSize: '13px',
                                     fontWeight: '600'
                                   }}
-                                  readOnly
+                                  readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
                               <div>
@@ -1223,6 +1228,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                 <input
                                   type="text"
                                   value={t.new_formula}
+                                  onChange={(e) => {
+                                    const updated = [...carbonTransformations]
+                                    updated[idx] = { ...updated[idx], new_formula: e.target.value }
+                                    setCarbonTransformations(updated)
+                                  }}
                                   disabled={!isEditing && !isCreatingNew}
                                   placeholder="Formula"
                                   style={{
@@ -1235,7 +1245,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     fontSize: '12px',
                                     fontFamily: 'monospace'
                                   }}
-                                  readOnly
+                                  readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
                               <div>
@@ -1245,6 +1255,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                 <input
                                   type="text"
                                   value={t.comment || ''}
+                                  onChange={(e) => {
+                                    const updated = [...carbonTransformations]
+                                    updated[idx] = { ...updated[idx], comment: e.target.value }
+                                    setCarbonTransformations(updated)
+                                  }}
                                   disabled={!isEditing && !isCreatingNew}
                                   placeholder="Comment (optional)"
                                   style={{
@@ -1256,7 +1271,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     color: 'rgba(255,255,255,0.7)',
                                     fontSize: '11px'
                                   }}
-                                  readOnly
+                                  readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
                             </div>
