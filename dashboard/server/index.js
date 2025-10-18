@@ -2877,6 +2877,125 @@ app.put('/api/statement-templates/:code', (req, res) => {
 })
 
 /**
+ * Get all validation rules
+ * GET /api/validation-rules?dbPath=...
+ */
+app.get('/api/validation-rules', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      console.error('Error opening database:', err)
+      return res.status(500).json({ error: 'Failed to open database' })
+    }
+  })
+
+  db.all(
+    'SELECT * FROM validation_rule ORDER BY rule_code',
+    [],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        console.error('Error fetching validation rules:', err)
+        return res.status(500).json({ error: 'Failed to fetch validation rules' })
+      }
+
+      const rules = rows.map(row => ({
+        rule_id: row.rule_id,
+        rule_code: row.rule_code,
+        rule_name: row.rule_name,
+        rule_type: row.rule_type,
+        description: row.description,
+        formula: row.formula,
+        required_line_items: row.required_line_items ? JSON.parse(row.required_line_items) : [],
+        tolerance: row.tolerance,
+        severity: row.severity,
+        is_active: row.is_active === 1
+      }))
+
+      res.json(rules)
+    }
+  )
+})
+
+/**
+ * Create a new validation rule
+ * POST /api/validation-rules
+ * Body: { dbPath, rule_code, rule_name, rule_type, description, formula, tolerance, severity, is_active }
+ */
+app.post('/api/validation-rules', (req, res) => {
+  const { dbPath, rule_code, rule_name, rule_type, description, formula, tolerance, severity, is_active } = req.body
+
+  if (!dbPath || !rule_code || !rule_name || !formula) {
+    return res.status(400).json({ error: 'dbPath, rule_code, rule_name, and formula are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      console.error('Error opening database:', err)
+      return res.status(500).json({ error: 'Failed to open database' })
+    }
+  })
+
+  db.run(
+    `INSERT INTO validation_rule (rule_code, rule_name, rule_type, description, formula, tolerance, severity, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [rule_code, rule_name, rule_type, description || '', formula, tolerance || 0.01, severity || 'error', is_active ? 1 : 0],
+    function(err) {
+      db.close()
+      if (err) {
+        console.error('Error creating validation rule:', err)
+        return res.status(500).json({ error: 'Failed to create validation rule' })
+      }
+
+      res.json({ success: true, rule_id: this.lastID })
+    }
+  )
+})
+
+/**
+ * Update a validation rule
+ * PUT /api/validation-rules/:ruleId
+ * Body: { dbPath, rule_code, rule_name, rule_type, description, formula, tolerance, severity, is_active }
+ */
+app.put('/api/validation-rules/:ruleId', (req, res) => {
+  const { ruleId } = req.params
+  const { dbPath, rule_code, rule_name, rule_type, description, formula, tolerance, severity, is_active } = req.body
+
+  if (!dbPath || !rule_code || !rule_name || !formula) {
+    return res.status(400).json({ error: 'dbPath, rule_code, rule_name, and formula are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      console.error('Error opening database:', err)
+      return res.status(500).json({ error: 'Failed to open database' })
+    }
+  })
+
+  db.run(
+    `UPDATE validation_rule
+     SET rule_code = ?, rule_name = ?, rule_type = ?, description = ?, formula = ?,
+         tolerance = ?, severity = ?, is_active = ?
+     WHERE rule_id = ?`,
+    [rule_code, rule_name, rule_type, description || '', formula, tolerance || 0.01, severity || 'error', is_active ? 1 : 0, ruleId],
+    (err) => {
+      db.close()
+      if (err) {
+        console.error('Error updating validation rule:', err)
+        return res.status(500).json({ error: 'Failed to update validation rule' })
+      }
+
+      res.json({ success: true })
+    }
+  )
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {

@@ -14,7 +14,8 @@ import {
   ArrowRightLeft,
   Building2,
   Calculator,
-  MapPin
+  MapPin,
+  CheckCircle2
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -66,6 +67,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/inputs/scenarios', icon: Activity, label: 'Load Scenarios' },
         { path: '/inputs/map-scenarios', icon: ArrowRightLeft, label: 'Map Scenarios' },
         { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
+        { path: '/definitions/validation', icon: CheckCircle2, label: 'Validation' },
         { path: '/inputs/locations', icon: MapPin, label: 'Load Locations' },
         { path: '/inputs/map-locations', icon: ArrowRightLeft, label: 'Map Locations' },
         { path: '/inputs/damage-curves', icon: Cloud, label: 'Load Damage Curves' },

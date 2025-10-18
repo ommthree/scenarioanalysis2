@@ -12,6 +12,7 @@ import MapDamageCurves from './pages/MapDamageCurves'
 import DefineStatements from './pages/DefineStatements'
 import DefineEntities from './pages/DefineEntities'
 import DefineFormulas from './pages/DefineFormulas'
+import DefineValidation from './pages/DefineValidation'
 import DefineScenarios from './pages/DefineScenarios'
 import MapStatements from './pages/MapStatements'
 import MapScenarios from './pages/MapScenarios'
@@ -49,6 +50,7 @@ function App() {
           <Route path="/inputs/map-damage-curves" element={<MapDamageCurves />} />
           <Route path="/definitions/statements" element={<DefineStatements />} />
           <Route path="/definitions/formulas" element={<DefineFormulas />} />
+          <Route path="/definitions/validation" element={<DefineValidation />} />
           <Route path="/definitions/entities" element={<DefineEntities />} />
           <Route path="/definitions/scenarios" element={<DefineScenarios />} />
           <Route path="/definitions/actions" element={<Dashboard />} />
