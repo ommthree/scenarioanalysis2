@@ -507,11 +507,6 @@ ${triggerCondition && triggerCondition.trim() ? `User's request or partial condi
 
 Please interpret this as instructions or a starting point for the condition formula.` : 'No existing condition or user instructions.'}
 
-${currentFormula && currentFormula.trim() ? `User's request or partial transformation:
-"${currentFormula}"
-
-Please interpret this as instructions or a starting point for the transformation formula.` : 'No existing transformation or user instructions.'}
-
 Please suggest:
 1. A trigger condition formula (if trigger type is CONDITIONAL)
 2. Financial transformation formulas (which line items to modify and how)
@@ -540,7 +535,12 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
 
       // Parse AI response
       const lines = suggestion.split('\n')
+      let pendingLineItem = ''
       let pendingFormula = ''
+      let pendingType = ''
+
+      const newFinancialTransforms: Transformation[] = []
+      const newCarbonTransforms: Transformation[] = []
 
       lines.forEach(line => {
         if (line.startsWith('TRIGGER_CONDITION:')) {
@@ -548,24 +548,73 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
           if (cond !== 'N/A') {
             setTriggerCondition(cond)
           }
+        } else if (line.startsWith('FINANCIAL_LINE_ITEM:')) {
+          // Save previous transformation if any
+          if (pendingLineItem && pendingFormula && pendingType === 'financial') {
+            newFinancialTransforms.push({
+              line_item: pendingLineItem,
+              type: 'formula_override',
+              new_formula: pendingFormula,
+              comment: ''
+            })
+          }
+          pendingLineItem = line.substring('FINANCIAL_LINE_ITEM:'.length).trim()
+          pendingFormula = ''
+          pendingType = 'financial'
         } else if (line.startsWith('FINANCIAL_FORMULA:')) {
-          // If we have a pending formula, that means we're moving from one to another
-          if (pendingFormula) {
-            setCurrentFormula(pendingFormula)
-          }
           pendingFormula = line.substring('FINANCIAL_FORMULA:'.length).trim()
-        } else if (line.startsWith('CARBON_FORMULA:')) {
-          // Set the pending formula as the current one (this will be the financial formula)
-          if (pendingFormula) {
-            setCurrentFormula(pendingFormula)
+        } else if (line.startsWith('CARBON_LINE_ITEM:')) {
+          // Save previous transformation if any
+          if (pendingLineItem && pendingFormula) {
+            if (pendingType === 'financial') {
+              newFinancialTransforms.push({
+                line_item: pendingLineItem,
+                type: 'formula_override',
+                new_formula: pendingFormula,
+                comment: ''
+              })
+            } else if (pendingType === 'carbon') {
+              newCarbonTransforms.push({
+                line_item: pendingLineItem,
+                type: 'carbon_formula_override',
+                new_formula: pendingFormula,
+                comment: ''
+              })
+            }
           }
+          pendingLineItem = line.substring('CARBON_LINE_ITEM:'.length).trim()
+          pendingFormula = ''
+          pendingType = 'carbon'
+        } else if (line.startsWith('CARBON_FORMULA:')) {
           pendingFormula = line.substring('CARBON_FORMULA:'.length).trim()
         }
       })
 
-      // Set the last pending formula
-      if (pendingFormula) {
-        setCurrentFormula(pendingFormula)
+      // Save last pending transformation
+      if (pendingLineItem && pendingFormula) {
+        if (pendingType === 'financial') {
+          newFinancialTransforms.push({
+            line_item: pendingLineItem,
+            type: 'formula_override',
+            new_formula: pendingFormula,
+            comment: ''
+          })
+        } else if (pendingType === 'carbon') {
+          newCarbonTransforms.push({
+            line_item: pendingLineItem,
+            type: 'carbon_formula_override',
+            new_formula: pendingFormula,
+            comment: ''
+          })
+        }
+      }
+
+      // Add new transformations to existing arrays
+      if (newFinancialTransforms.length > 0) {
+        setFinancialTransformations([...financialTransformations, ...newFinancialTransforms])
+      }
+      if (newCarbonTransforms.length > 0) {
+        setCarbonTransformations([...carbonTransformations, ...newCarbonTransforms])
       }
 
       setAiStatus('idle')
