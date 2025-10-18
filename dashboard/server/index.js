@@ -1584,15 +1584,20 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
           stagingTableName = 'staging_location'
         } else if (file.file_type === 'damage_curve') {
           stagingTableName = 'staging_damage_curve'
+        } else if (file.file_type === 'hazard_map') {
+          stagingTableName = 'staging_hazard_map'
         } else {
           db.close()
           return res.status(400).json({ error: 'Unknown file type: ' + file.file_type })
         }
 
         // Query the staging table
+        // For hazard maps, we need all data for proper map visualization
+        // For other types, limit to 1000 rows for preview
+        const rowLimit = file.file_type === 'hazard_map' ? 500000 : 1000
         const query = useFileIdFilter
-          ? `SELECT * FROM ${stagingTableName} WHERE file_id = ? LIMIT 1000`
-          : `SELECT * FROM ${stagingTableName} LIMIT 1000`
+          ? `SELECT * FROM ${stagingTableName} WHERE file_id = ? LIMIT ${rowLimit}`
+          : `SELECT * FROM ${stagingTableName} LIMIT ${rowLimit}`
         const params = useFileIdFilter ? [fileId] : []
 
         db.all(query, params, (err, rows) => {
@@ -2993,6 +2998,152 @@ app.put('/api/validation-rules/:ruleId', (req, res) => {
       res.json({ success: true })
     }
   )
+})
+
+/**
+ * Load hazard map CSV into staging_hazard_map table
+ * POST /api/hazard-maps/load
+ * Body: dbPath
+ * File: CSV file
+ */
+app.post('/api/hazard-maps/load', upload.single('file'), async (req, res) => {
+  console.log('Received hazard map upload request')
+
+  try {
+    const { dbPath } = req.body
+    const file = req.file
+
+    if (!file || !dbPath) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    // Read and parse CSV
+    const fileContent = fs.readFileSync(file.path, 'utf-8')
+    const records = parse(fileContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true
+    })
+
+    if (records.length === 0) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'CSV file is empty' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: `Database not found at ${dbPath}` })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        fs.unlinkSync(file.path)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.serialize(() => {
+      // Insert file record into staged_file
+      db.run(
+        `INSERT INTO staged_file (file_name, file_type, row_count) VALUES (?, 'hazard_map', ?)`,
+        [file.originalname, records.length],
+        function(err) {
+          if (err) {
+            console.error('Error inserting staged_file:', err)
+            db.close()
+            fs.unlinkSync(file.path)
+            return res.status(500).json({ error: 'Failed to record file' })
+          }
+
+          const fileId = this.lastID
+
+          // Create staging table with dynamic columns
+          const columns = Object.keys(records[0])
+          // Sanitize and deduplicate column names
+          const sanitizedColumns = []
+          const seenColumns = new Map()
+          columns.forEach(col => {
+            let sanitized = col.replace(/[^a-zA-Z0-9_]/g, '_')
+            const lowerSanitized = sanitized.toLowerCase()
+            if (seenColumns.has(lowerSanitized)) {
+              const count = seenColumns.get(lowerSanitized)
+              sanitized = `${sanitized}_${count}`
+              seenColumns.set(lowerSanitized, count + 1)
+            } else {
+              seenColumns.set(lowerSanitized, 1)
+            }
+            sanitizedColumns.push(sanitized)
+          })
+          const columnDefs = sanitizedColumns.map(col => `"${col}" TEXT`).join(', ')
+
+          db.run(`DROP TABLE IF EXISTS staging_hazard_map`, (err) => {
+            if (err) {
+              console.error('Drop table error:', err)
+              db.close()
+              fs.unlinkSync(file.path)
+              return res.status(500).json({ error: 'Failed to drop old staging table' })
+            }
+
+            db.run(`CREATE TABLE staging_hazard_map (
+              staging_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              file_id INTEGER,
+              ${columnDefs},
+              imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              is_mapped INTEGER DEFAULT 0,
+              FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
+            )`, (err) => {
+            if (err) {
+              console.error('Create table error:', err)
+              db.close()
+              fs.unlinkSync(file.path)
+              return res.status(500).json({ error: 'Failed to create staging table' })
+            }
+
+            // Insert records
+            const placeholders = sanitizedColumns.map(() => '?').join(', ')
+            const columnNames = sanitizedColumns.map(c => `"${c}"`).join(', ')
+            const stmt = db.prepare(
+              `INSERT INTO staging_hazard_map (file_id, ${columnNames}) VALUES (?, ${placeholders})`
+            )
+
+            let inserted = 0
+            for (const record of records) {
+              const values = [fileId, ...columns.map(col => record[col])]
+              stmt.run(values, (err) => {
+                if (err) {
+                  console.error('Insert error:', err)
+                }
+              })
+              inserted++
+            }
+
+            stmt.finalize((err) => {
+              if (err) {
+                console.error('Finalize error:', err)
+                db.close()
+                fs.unlinkSync(file.path)
+                return res.status(500).json({ error: 'Failed to insert records' })
+              }
+
+              db.close()
+              fs.unlinkSync(file.path)
+
+              console.log(`Successfully imported ${inserted} hazard map records`)
+              res.json({
+                success: true,
+                message: `Successfully imported ${inserted} records`,
+                rowCount: inserted,
+                fileId: fileId
+              })
+            })
+          })
+        })
+      })
+    })
+  } catch (error) {
+    console.error('Hazard map import error:', error)
+    res.status(500).json({ error: error.message })
+  }
 })
 
 /**

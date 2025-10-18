@@ -15,7 +15,8 @@ import {
   Building2,
   Calculator,
   MapPin,
-  CheckCircle2
+  CheckCircle2,
+  Map
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -70,6 +71,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/definitions/validation', icon: CheckCircle2, label: 'Validation' },
         { path: '/inputs/locations', icon: MapPin, label: 'Load Locations' },
         { path: '/inputs/map-locations', icon: ArrowRightLeft, label: 'Map Locations' },
+        { path: '/inputs/hazard-maps', icon: Map, label: 'Load Hazard Maps' },
         { path: '/inputs/damage-curves', icon: Cloud, label: 'Load Damage Curves' },
         { path: '/inputs/map-damage-curves', icon: ArrowRightLeft, label: 'Map Damage Curves' },
       ]
