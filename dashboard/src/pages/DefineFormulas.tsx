@@ -254,10 +254,12 @@ ${availableDrivers}
 Existing formulas in this template:
 ${existingFormulas || 'None defined yet'}
 
-Current formula (if any):
-${formula || 'None'}
+${formula && formula.trim() ? `User's request or partial formula:
+"${formula}"
 
-Please suggest an appropriate formula for this line item. Return ONLY the formula expression, with no explanation or markdown formatting. The formula should use:
+Please interpret this as instructions or a starting point for the formula.` : 'No existing formula or user instructions.'}
+
+Please suggest an appropriate formula for this line item. ${formula && formula.trim() ? 'Take the user\'s input above into account - they may have typed instructions like "make equal to previous period" or a partial formula to build upon.' : ''} Return ONLY the formula expression, with no explanation or markdown formatting. The formula should use:
 - Line item codes directly (e.g., REV_001)
 - Prior period references with [t-1] suffix (e.g., REV_001[t-1])
 - Driver references with driver: prefix (e.g., driver:REVENUE_GROWTH)

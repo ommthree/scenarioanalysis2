@@ -55,26 +55,26 @@ public:
         // Header
         csv << "Metric,Opening,Period 1,Period 2,Period 3\n";
 
-        // P&L metrics
-        csv << "REVENUE,";
+        // P&L metrics (no opening balance for flow metrics)
+        csv << "REVENUE,,";
         for (const auto& result : results) {
             csv << std::fixed << std::setprecision(2) << result.get_value("REVENUE") << ",";
         }
         csv << "\n";
 
-        csv << "COST_OF_GOODS_SOLD,";
+        csv << "COST_OF_GOODS_SOLD,,";
         for (const auto& result : results) {
             csv << std::fixed << std::setprecision(2) << result.get_value("COST_OF_GOODS_SOLD") << ",";
         }
         csv << "\n";
 
-        csv << "DEPRECIATION,";
+        csv << "DEPRECIATION,,";
         for (const auto& result : results) {
             csv << std::fixed << std::setprecision(2) << result.get_value("DEPRECIATION") << ",";
         }
         csv << "\n";
 
-        csv << "NET_INCOME,";
+        csv << "NET_INCOME,,";
         for (const auto& result : results) {
             csv << std::fixed << std::setprecision(2) << result.get_value("NET_INCOME") << ",";
         }
@@ -99,14 +99,14 @@ public:
         }
         csv << "\n";
 
-        // Cash flow metrics
-        csv << "CASH_FLOW_OPERATING,";
+        // Cash flow metrics (no opening balance for flow metrics)
+        csv << "CASH_FLOW_OPERATING,,";
         for (const auto& result : results) {
             csv << std::fixed << std::setprecision(2) << result.get_value("CASH_FLOW_OPERATING") << ",";
         }
         csv << "\n";
 
-        csv << "CASH_FLOW_NET,";
+        csv << "CASH_FLOW_NET,,";
         for (const auto& result : results) {
             csv << std::fixed << std::setprecision(2) << result.get_value("CASH_FLOW_NET") << ",";
         }
@@ -174,9 +174,9 @@ TEST_CASE("Level 4: Unified Mega-DAG with Working Capital", "[level4][unified][s
     };
 
     std::vector<PeriodData> test_periods = {
-        {1, 100000.0, -50000.0, -10000.0, -5000.0},   // Period 1
-        {2, 110000.0, -55000.0, -11000.0, -5000.0},   // Period 2
-        {3, 120000.0, -60000.0, -12000.0, -5000.0}    // Period 3
+        {1, 100000.0, 0.0, 0.0, -5000.0},   // Period 1
+        {2, 110000.0, 0.0, 0.0, -5000.0},   // Period 2
+        {3, 120000.0, 0.0, 0.0, -5000.0}    // Period 3
     };
 
     // Insert drivers into scenario_drivers table
