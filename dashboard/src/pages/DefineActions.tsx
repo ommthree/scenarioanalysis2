@@ -83,8 +83,8 @@ const DefineActions: React.FC = () => {
   const [carbonTransformations, setCarbonTransformations] = useState<Transformation[]>([])
   const [triggerType, setTriggerType] = useState<'UNCONDITIONAL' | 'TIMED' | 'CONDITIONAL'>('UNCONDITIONAL')
   const [triggerCondition, setTriggerCondition] = useState('')
-  const [triggerPeriod, setTriggerPeriod] = useState<number>(1)
-  const [triggerSticky, setTriggerSticky] = useState(true)
+  const [triggerStartPeriod, setTriggerStartPeriod] = useState<number>(1)
+  const [triggerEndPeriod, setTriggerEndPeriod] = useState<number>(10)
 
   // Current editing transformation
   const [currentTransformType, setCurrentTransformType] = useState<'financial' | 'carbon'>('financial')
@@ -165,20 +165,61 @@ const DefineActions: React.FC = () => {
     loadActionToForm(action)
   }
 
-  const loadActionToForm = (action: ManagementAction) => {
+  const loadActionToForm = async (action: ManagementAction) => {
     setActionCode(action.action_code)
     setActionName(action.action_name)
     setActionCategory(action.action_category)
     setDescription(action.description)
     setIsActive(action.is_active)
     setIsMacRelevant(action.is_mac_relevant)
-    // Reset transformations - will be loaded separately if needed
-    setFinancialTransformations([])
-    setCarbonTransformations([])
-    setTriggerType('UNCONDITIONAL')
-    setTriggerCondition('')
-    setTriggerPeriod(1)
-    setTriggerSticky(true)
+
+    // Load transformations
+    try {
+      const transResponse = await fetch(`http://localhost:3001/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`)
+      if (transResponse.ok) {
+        const transformations = await transResponse.json()
+        setFinancialTransformations(transformations.filter((t: Transformation) => t.type !== 'carbon_formula_override'))
+        setCarbonTransformations(transformations.filter((t: Transformation) => t.type === 'carbon_formula_override'))
+      } else {
+        setFinancialTransformations([])
+        setCarbonTransformations([])
+      }
+    } catch (err) {
+      console.error('Error loading transformations:', err)
+      setFinancialTransformations([])
+      setCarbonTransformations([])
+    }
+
+    // Load triggers
+    try {
+      const triggerResponse = await fetch(`http://localhost:3001/api/action-triggers?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`)
+      if (triggerResponse.ok) {
+        const triggers = await triggerResponse.json()
+        if (triggers.length > 0) {
+          const trigger = triggers[0]
+          setTriggerType(trigger.trigger_type)
+          setTriggerCondition(trigger.condition_formula || '')
+          setTriggerStartPeriod(trigger.start_period || 1)
+          setTriggerEndPeriod(trigger.end_period || 10)
+        } else {
+          setTriggerType('UNCONDITIONAL')
+          setTriggerCondition('')
+          setTriggerStartPeriod(1)
+          setTriggerEndPeriod(10)
+        }
+      } else {
+        setTriggerType('UNCONDITIONAL')
+        setTriggerCondition('')
+        setTriggerStartPeriod(1)
+        setTriggerEndPeriod(10)
+      }
+    } catch (err) {
+      console.error('Error loading triggers:', err)
+      setTriggerType('UNCONDITIONAL')
+      setTriggerCondition('')
+      setTriggerStartPeriod(1)
+      setTriggerEndPeriod(10)
+    }
   }
 
   const handleNewAction = () => {
@@ -195,8 +236,8 @@ const DefineActions: React.FC = () => {
     setCarbonTransformations([])
     setTriggerType('UNCONDITIONAL')
     setTriggerCondition('')
-    setTriggerPeriod(1)
-    setTriggerSticky(true)
+    setTriggerStartPeriod(1)
+    setTriggerEndPeriod(10)
     setValidationError(null)
   }
 
@@ -340,13 +381,22 @@ const DefineActions: React.FC = () => {
   }
 
   const addTransformation = () => {
-    if (!currentLineItem || !currentFormula) {
-      setValidationError('Line item and formula are required')
+    if (!currentFormula) {
+      setValidationError('Formula is required')
+      return
+    }
+
+    // Extract the first line item code from the formula
+    const lineItemCodes = selectedTemplate?.line_items.map(item => item.code) || []
+    const foundLineItem = lineItemCodes.find(code => currentFormula.includes(code))
+
+    if (!foundLineItem) {
+      setValidationError('Formula must reference at least one line item')
       return
     }
 
     const newTransform: Transformation = {
-      line_item: currentLineItem,
+      line_item: foundLineItem,
       type: 'formula_override',
       new_formula: currentFormula,
       comment: currentComment
@@ -358,7 +408,6 @@ const DefineActions: React.FC = () => {
       setCarbonTransformations([...carbonTransformations, newTransform])
     }
 
-    setCurrentLineItem('')
     setCurrentFormula('')
     setCurrentComment('')
     setValidationError(null)
@@ -487,28 +536,33 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
 
       // Parse AI response
       const lines = suggestion.split('\n')
+      let pendingFormula = ''
+
       lines.forEach(line => {
         if (line.startsWith('TRIGGER_CONDITION:')) {
           const cond = line.substring('TRIGGER_CONDITION:'.length).trim()
           if (cond !== 'N/A') {
             setTriggerCondition(cond)
           }
-        } else if (line.startsWith('FINANCIAL_LINE_ITEM:')) {
-          setCurrentTransformType('financial')
-          setCurrentLineItem(line.substring('FINANCIAL_LINE_ITEM:'.length).trim())
         } else if (line.startsWith('FINANCIAL_FORMULA:')) {
-          setCurrentFormula(line.substring('FINANCIAL_FORMULA:'.length).trim())
-        } else if (line.startsWith('CARBON_LINE_ITEM:')) {
-          // If we already have financial transform, add it first
-          if (currentLineItem && currentFormula) {
-            addTransformation()
+          // If we have a pending formula, that means we're moving from one to another
+          if (pendingFormula) {
+            setCurrentFormula(pendingFormula)
           }
-          setCurrentTransformType('carbon')
-          setCurrentLineItem(line.substring('CARBON_LINE_ITEM:'.length).trim())
+          pendingFormula = line.substring('FINANCIAL_FORMULA:'.length).trim()
         } else if (line.startsWith('CARBON_FORMULA:')) {
-          setCurrentFormula(line.substring('CARBON_FORMULA:'.length).trim())
+          // Set the pending formula as the current one (this will be the financial formula)
+          if (pendingFormula) {
+            setCurrentFormula(pendingFormula)
+          }
+          pendingFormula = line.substring('CARBON_FORMULA:'.length).trim()
         }
       })
+
+      // Set the last pending formula
+      if (pendingFormula) {
+        setCurrentFormula(pendingFormula)
+      }
 
       setAiStatus('idle')
     } catch (err) {
@@ -527,7 +581,6 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
     <div style={{
       minHeight: '100vh',
       width: '100%',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
       padding: '40px'
     }}>
       <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
@@ -541,7 +594,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr 360px', gap: '24px', height: 'calc(100vh - 200px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 320px', gap: '24px', height: 'calc(100vh - 200px)' }}>
           {/* Left Panel - Actions List */}
           <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <CardContent style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -577,12 +630,12 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                       {action.action_code} • {action.action_category}
                     </div>
                     <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                      {action.is_active && (
+                      {!!action.is_active && (
                         <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: 'rgba(34, 197, 94, 0.2)', color: '#22c55e', borderRadius: '4px' }}>
                           ACTIVE
                         </span>
                       )}
-                      {action.is_mac_relevant && (
+                      {!!action.is_mac_relevant && (
                         <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', borderRadius: '4px' }}>
                           MAC
                         </span>
@@ -605,7 +658,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   </h3>
 
                   {/* Buttons below title */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
                     {!isEditing && !isCreatingNew && (
                       <>
                         <Button
@@ -642,14 +695,17 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                           <Download className="w-4 h-4 mr-2" />
                           Export JSON
                         </Button>
-                        <Button
+                        <button
                           onClick={handleDelete}
-                          size="sm"
-                          style={{ backgroundColor: '#ef4444', border: 'none', color: '#ffffff' }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '8px'
+                          }}
                         >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </Button>
+                          <Trash2 className="w-4 h-4" style={{ color: '#ef4444' }} />
+                        </button>
                       </>
                     )}
                     {(isEditing || isCreatingNew) && (
@@ -778,7 +834,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                       />
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#fff' }}>
                         Active
                       </label>
@@ -789,7 +845,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                       />
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#fff' }}>
                         MAC Relevant
                       </label>
@@ -798,6 +854,30 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                         onCheckedChange={setIsMacRelevant}
                         disabled={!isEditing && !isCreatingNew}
                       />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
+                        Select Template for Line Items
+                      </label>
+                      <select
+                        value={selectedTemplate?.template_code || ''}
+                        onChange={(e) => handleTemplateSelect(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                          border: '1px solid rgba(59, 130, 246, 0.3)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          fontSize: '14px'
+                        }}
+                      >
+                        <option value="">Select template...</option>
+                        {templates.map(t => (
+                          <option key={t.template_code} value={t.template_code}>{t.template_name}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </CardContent>
@@ -810,7 +890,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                     Trigger Conditions
                   </h3>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr auto', gap: '16px', marginBottom: '16px', alignItems: 'end' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 1fr', gap: '16px', marginBottom: '16px', alignItems: 'end' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
                         Trigger Type
@@ -836,39 +916,48 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                     </div>
 
                     {triggerType === 'TIMED' && (
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                          Trigger Period
-                        </label>
-                        <input
-                          type="number"
-                          value={triggerPeriod}
-                          onChange={(e) => setTriggerPeriod(parseInt(e.target.value))}
-                          disabled={!isEditing && !isCreatingNew}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {triggerType !== 'UNCONDITIONAL' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <label style={{ fontSize: '14px', color: '#fff' }}>
-                          Sticky
-                        </label>
-                        <Switch
-                          checked={triggerSticky}
-                          onCheckedChange={setTriggerSticky}
-                          disabled={!isEditing && !isCreatingNew}
-                        />
-                      </div>
+                      <>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
+                            Start Period
+                          </label>
+                          <input
+                            type="number"
+                            value={triggerStartPeriod}
+                            onChange={(e) => setTriggerStartPeriod(parseInt(e.target.value))}
+                            disabled={!isEditing && !isCreatingNew}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              borderRadius: '6px',
+                              color: '#fff',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
+                            End Period
+                          </label>
+                          <input
+                            type="number"
+                            value={triggerEndPeriod}
+                            onChange={(e) => setTriggerEndPeriod(parseInt(e.target.value))}
+                            disabled={!isEditing && !isCreatingNew}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              borderRadius: '6px',
+                              color: '#fff',
+                              fontSize: '14px'
+                            }}
+                          />
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -911,7 +1000,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                     </h3>
                     <Button
                       onClick={handleAiSuggestion}
-                      disabled={aiStatus === 'loading' || !selectedTemplate}
+                      disabled={aiStatus === 'loading' || !selectedTemplate || (!isEditing && !isCreatingNew)}
                       size="sm"
                       style={{ backgroundColor: '#8b5cf6', border: 'none' }}
                     >
@@ -920,84 +1009,8 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                     </Button>
                   </div>
 
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                      Select Template for Line Items
-                    </label>
-                    <select
-                      value={selectedTemplate?.template_code || ''}
-                      onChange={(e) => handleTemplateSelect(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        borderRadius: '6px',
-                        color: '#fff',
-                        fontSize: '14px'
-                      }}
-                    >
-                      <option value="">Select template...</option>
-                      {templates.map(t => (
-                        <option key={t.template_code} value={t.template_code}>{t.template_name}</option>
-                      ))}
-                    </select>
-                  </div>
-
                   {(isEditing || isCreatingNew) && selectedTemplate && (
                     <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: 'rgba(30, 41, 59, 0.3)', borderRadius: '6px' }}>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                          Type
-                        </label>
-                        <div style={{ display: 'flex', gap: '16px' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                            <input
-                              type="radio"
-                              checked={currentTransformType === 'financial'}
-                              onChange={() => setCurrentTransformType('financial')}
-                              style={{ width: '14px', height: '14px' }}
-                            />
-                            <span style={{ fontSize: '14px', color: '#fff' }}>Financial</span>
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                            <input
-                              type="radio"
-                              checked={currentTransformType === 'carbon'}
-                              onChange={() => setCurrentTransformType('carbon')}
-                              style={{ width: '14px', height: '14px' }}
-                            />
-                            <span style={{ fontSize: '14px', color: '#fff' }}>Carbon</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                          Line Item
-                        </label>
-                        <select
-                          value={currentLineItem}
-                          onChange={(e) => setCurrentLineItem(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            borderRadius: '6px',
-                            color: '#fff',
-                            fontSize: '14px'
-                          }}
-                        >
-                          <option value="">Select line item...</option>
-                          {selectedTemplate.line_items.map(item => (
-                            <option key={item.code} value={item.code}>
-                              {item.code} - {item.display_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
                       <div style={{ marginBottom: '12px' }}>
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
                           Formula (drag items from right panel)
@@ -1194,7 +1207,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'rgba(59, 130, 246, 1)', marginBottom: '8px' }}>
                     Current Period Rows
                   </h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '300px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {selectedTemplate.line_items.map(item => (
                       <div
                         key={item.code}
@@ -1230,7 +1243,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'rgba(168, 85, 247, 1)', marginBottom: '8px' }}>
                     Prior Period Rows
                   </h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '300px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {selectedTemplate.line_items.map(item => (
                       <div
                         key={`${item.code}-prior`}
@@ -1267,7 +1280,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'rgba(34, 197, 94, 1)', marginBottom: '8px' }}>
                       Drivers
                     </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '300px', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {drivers.map(driver => (
                         <div
                           key={driver.code}
