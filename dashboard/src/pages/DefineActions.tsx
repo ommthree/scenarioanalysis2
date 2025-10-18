@@ -533,6 +533,8 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
       const data = await response.json()
       const suggestion = data.suggestion.trim()
 
+      console.log('AI Suggestion received:', suggestion)
+
       // Parse AI response
       const lines = suggestion.split('\n')
       let pendingLineItem = ''
@@ -543,12 +545,15 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
       const newCarbonTransforms: Transformation[] = []
 
       lines.forEach(line => {
-        if (line.startsWith('TRIGGER_CONDITION:')) {
-          const cond = line.substring('TRIGGER_CONDITION:'.length).trim()
+        // Remove markdown formatting (**, ##, etc)
+        const cleanLine = line.replace(/\*\*/g, '').trim()
+
+        if (cleanLine.startsWith('TRIGGER_CONDITION:')) {
+          const cond = cleanLine.substring('TRIGGER_CONDITION:'.length).trim()
           if (cond !== 'N/A') {
             setTriggerCondition(cond)
           }
-        } else if (line.startsWith('FINANCIAL_LINE_ITEM:')) {
+        } else if (cleanLine.startsWith('FINANCIAL_LINE_ITEM:')) {
           // Save previous transformation if any
           if (pendingLineItem && pendingFormula && pendingType === 'financial') {
             newFinancialTransforms.push({
@@ -558,12 +563,12 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
               comment: ''
             })
           }
-          pendingLineItem = line.substring('FINANCIAL_LINE_ITEM:'.length).trim()
+          pendingLineItem = cleanLine.substring('FINANCIAL_LINE_ITEM:'.length).trim()
           pendingFormula = ''
           pendingType = 'financial'
-        } else if (line.startsWith('FINANCIAL_FORMULA:')) {
-          pendingFormula = line.substring('FINANCIAL_FORMULA:'.length).trim()
-        } else if (line.startsWith('CARBON_LINE_ITEM:')) {
+        } else if (cleanLine.startsWith('FINANCIAL_FORMULA:')) {
+          pendingFormula = cleanLine.substring('FINANCIAL_FORMULA:'.length).trim()
+        } else if (cleanLine.startsWith('CARBON_LINE_ITEM:')) {
           // Save previous transformation if any
           if (pendingLineItem && pendingFormula) {
             if (pendingType === 'financial') {
@@ -582,11 +587,11 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
               })
             }
           }
-          pendingLineItem = line.substring('CARBON_LINE_ITEM:'.length).trim()
+          pendingLineItem = cleanLine.substring('CARBON_LINE_ITEM:'.length).trim()
           pendingFormula = ''
           pendingType = 'carbon'
-        } else if (line.startsWith('CARBON_FORMULA:')) {
-          pendingFormula = line.substring('CARBON_FORMULA:'.length).trim()
+        } else if (cleanLine.startsWith('CARBON_FORMULA:')) {
+          pendingFormula = cleanLine.substring('CARBON_FORMULA:'.length).trim()
         }
       })
 
@@ -610,6 +615,9 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
       }
 
       // Add new transformations to existing arrays
+      console.log('Financial transforms to add:', newFinancialTransforms)
+      console.log('Carbon transforms to add:', newCarbonTransforms)
+
       if (newFinancialTransforms.length > 0) {
         setFinancialTransformations([...financialTransformations, ...newFinancialTransforms])
       }
