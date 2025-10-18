@@ -57,7 +57,11 @@ interface ScenarioAssignment {
   trigger_sticky: boolean
 }
 
-const DefineActions: React.FC = () => {
+interface DefineActionsProps {
+  dbPath: string | null
+}
+
+const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   const [actions, setActions] = useState<ManagementAction[]>([])
   const [selectedAction, setSelectedAction] = useState<ManagementAction | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
@@ -1083,28 +1087,82 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                               border: '1px solid rgba(59, 130, 246, 0.3)',
                               borderRadius: '6px',
                               display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center'
+                              gap: '8px',
+                              alignItems: 'flex-start'
                             }}
                           >
-                            <div>
-                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>
-                                {t.line_item}
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Line Item
+                                </label>
+                                <input
+                                  type="text"
+                                  value={t.line_item}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  placeholder="Line Item"
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '4px',
+                                    color: '#fff',
+                                    fontSize: '13px',
+                                    fontWeight: '600'
+                                  }}
+                                  readOnly
+                                />
                               </div>
-                              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
-                                {t.new_formula}
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Formula
+                                </label>
+                                <input
+                                  type="text"
+                                  value={t.new_formula}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  placeholder="Formula"
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '4px',
+                                    color: 'rgba(255,255,255,0.9)',
+                                    fontSize: '12px',
+                                    fontFamily: 'monospace'
+                                  }}
+                                  readOnly
+                                />
                               </div>
-                              {t.comment && (
-                                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                                  {t.comment}
-                                </div>
-                              )}
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Comment
+                                </label>
+                                <input
+                                  type="text"
+                                  value={t.comment || ''}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  placeholder="Comment (optional)"
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '4px',
+                                    color: 'rgba(255,255,255,0.7)',
+                                    fontSize: '11px'
+                                  }}
+                                  readOnly
+                                />
+                              </div>
                             </div>
                             {(isEditing || isCreatingNew) && (
                               <Button
                                 onClick={() => removeTransformation(idx, 'financial')}
                                 size="sm"
-                                style={{ backgroundColor: '#ef4444', border: 'none', padding: '4px 8px' }}
+                                style={{ backgroundColor: '#ef4444', border: 'none', padding: '4px 8px', marginTop: '4px' }}
                               >
                                 <X className="w-3 h-3" />
                               </Button>
@@ -1131,28 +1189,82 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                               border: '1px solid rgba(34, 197, 94, 0.3)',
                               borderRadius: '6px',
                               display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center'
+                              gap: '8px',
+                              alignItems: 'flex-start'
                             }}
                           >
-                            <div>
-                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff', marginBottom: '2px' }}>
-                                {t.line_item}
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Line Item
+                                </label>
+                                <input
+                                  type="text"
+                                  value={t.line_item}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  placeholder="Line Item"
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: '4px',
+                                    color: '#fff',
+                                    fontSize: '13px',
+                                    fontWeight: '600'
+                                  }}
+                                  readOnly
+                                />
                               </div>
-                              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
-                                {t.new_formula}
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Formula
+                                </label>
+                                <input
+                                  type="text"
+                                  value={t.new_formula}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  placeholder="Formula"
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: '4px',
+                                    color: 'rgba(255,255,255,0.9)',
+                                    fontSize: '12px',
+                                    fontFamily: 'monospace'
+                                  }}
+                                  readOnly
+                                />
                               </div>
-                              {t.comment && (
-                                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                                  {t.comment}
-                                </div>
-                              )}
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Comment
+                                </label>
+                                <input
+                                  type="text"
+                                  value={t.comment || ''}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  placeholder="Comment (optional)"
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                                    borderRadius: '4px',
+                                    color: 'rgba(255,255,255,0.7)',
+                                    fontSize: '11px'
+                                  }}
+                                  readOnly
+                                />
+                              </div>
                             </div>
                             {(isEditing || isCreatingNew) && (
                               <Button
                                 onClick={() => removeTransformation(idx, 'carbon')}
                                 size="sm"
-                                style={{ backgroundColor: '#ef4444', border: 'none', padding: '4px 8px' }}
+                                style={{ backgroundColor: '#ef4444', border: 'none', padding: '4px 8px', marginTop: '4px' }}
                               >
                                 <X className="w-3 h-3" />
                               </Button>

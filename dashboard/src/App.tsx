@@ -15,6 +15,7 @@ import DefineEntities from './pages/DefineEntities'
 import DefineFormulas from './pages/DefineFormulas'
 import DefineValidation from './pages/DefineValidation'
 import DefineScenarios from './pages/DefineScenarios'
+import DefineActions from './pages/DefineActions'
 import MapStatements from './pages/MapStatements'
 import MapScenarios from './pages/MapScenarios'
 
@@ -55,7 +56,7 @@ function App() {
           <Route path="/definitions/validation" element={<DefineValidation />} />
           <Route path="/definitions/entities" element={<DefineEntities />} />
           <Route path="/definitions/scenarios" element={<DefineScenarios />} />
-          <Route path="/definitions/actions" element={<Dashboard />} />
+          <Route path="/definitions/actions" element={<DefineActions dbPath={dbPath} />} />
           <Route path="/run/definition" element={<Dashboard />} />
           <Route path="/run/execute" element={<Dashboard />} />
           <Route path="/run/open" element={<Dashboard />} />

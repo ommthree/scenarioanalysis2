@@ -3147,6 +3147,431 @@ app.post('/api/hazard-maps/load', upload.single('file'), async (req, res) => {
 })
 
 /**
+ * Get all management actions
+ * GET /api/management-actions
+ */
+app.get('/api/management-actions', (req, res) => {
+  const dbPath = req.query.dbPath
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT action_id, action_code, action_name, action_category, description,
+            is_active, is_mac_relevant, created_at
+     FROM management_action
+     ORDER BY action_category, action_name`,
+    [],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch actions: ' + err.message })
+      }
+      res.json(rows)
+    }
+  )
+})
+
+/**
+ * Get a single management action with its scenario assignments
+ * GET /api/management-actions/:actionCode
+ */
+app.get('/api/management-actions/:actionCode', (req, res) => {
+  const { actionCode } = req.params
+  const dbPath = req.query.dbPath
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Get action details
+  db.get(
+    `SELECT * FROM management_action WHERE action_code = ?`,
+    [actionCode],
+    (err, action) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to fetch action: ' + err.message })
+      }
+
+      if (!action) {
+        db.close()
+        return res.status(404).json({ error: 'Action not found' })
+      }
+
+      // Get scenario assignments for this action
+      db.all(
+        `SELECT * FROM scenario_action WHERE action_code = ?`,
+        [actionCode],
+        (err, scenarios) => {
+          db.close()
+          if (err) {
+            return res.status(500).json({ error: 'Failed to fetch scenario assignments: ' + err.message })
+          }
+
+          // Parse JSON transformations
+          const scenariosWithParsedJson = scenarios.map(s => ({
+            ...s,
+            financial_transformations: s.financial_transformations ? JSON.parse(s.financial_transformations) : [],
+            carbon_transformations: s.carbon_transformations ? JSON.parse(s.carbon_transformations) : []
+          }))
+
+          res.json({
+            ...action,
+            scenario_assignments: scenariosWithParsedJson
+          })
+        }
+      )
+    }
+  )
+})
+
+/**
+ * Create a new management action
+ * POST /api/management-actions
+ */
+app.post('/api/management-actions', (req, res) => {
+  const { dbPath, action_code, action_name, action_category, description, is_active, is_mac_relevant } = req.body
+
+  if (!dbPath || !action_code || !action_name || !action_category) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.run(
+    `INSERT INTO management_action (action_code, action_name, action_category, description, is_active, is_mac_relevant)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [action_code, action_name, action_category, description || '', is_active ? 1 : 0, is_mac_relevant ? 1 : 0],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to create action: ' + err.message })
+      }
+      res.json({ success: true, action_id: this.lastID })
+    }
+  )
+})
+
+/**
+ * Update a management action
+ * PUT /api/management-actions/:actionCode
+ */
+app.put('/api/management-actions/:actionCode', (req, res) => {
+  const { actionCode } = req.params
+  const { dbPath, action_name, action_category, description, is_active, is_mac_relevant } = req.body
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.run(
+    `UPDATE management_action
+     SET action_name = ?, action_category = ?, description = ?, is_active = ?, is_mac_relevant = ?
+     WHERE action_code = ?`,
+    [action_name, action_category, description, is_active ? 1 : 0, is_mac_relevant ? 1 : 0, actionCode],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to update action: ' + err.message })
+      }
+      res.json({ success: true, changes: this.changes })
+    }
+  )
+})
+
+/**
+ * Delete a management action
+ * DELETE /api/management-actions/:actionCode
+ */
+app.delete('/api/management-actions/:actionCode', (req, res) => {
+  const { actionCode } = req.params
+  const dbPath = req.query.dbPath
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // First delete all scenario_action assignments
+  db.run(
+    `DELETE FROM scenario_action WHERE action_code = ?`,
+    [actionCode],
+    (err) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to delete scenario assignments: ' + err.message })
+      }
+
+      // Then delete the management_action
+      db.run(
+        `DELETE FROM management_action WHERE action_code = ?`,
+        [actionCode],
+        function(err) {
+          db.close()
+          if (err) {
+            return res.status(500).json({ error: 'Failed to delete action: ' + err.message })
+          }
+          res.json({ success: true, changes: this.changes })
+        }
+      )
+    }
+  )
+})
+
+/**
+ * Save or update scenario action assignment
+ * POST /api/scenario-actions
+ */
+app.post('/api/scenario-actions', (req, res) => {
+  const {
+    dbPath,
+    scenario_id,
+    action_code,
+    start_period,
+    end_period,
+    capex,
+    opex_annual,
+    emission_reduction_annual,
+    financial_transformations,
+    carbon_transformations,
+    notes,
+    trigger_type,
+    trigger_condition,
+    trigger_period,
+    trigger_sticky
+  } = req.body
+
+  if (!dbPath || !scenario_id || !action_code) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Convert transformation arrays to JSON strings
+  const financialJson = financial_transformations ? JSON.stringify(financial_transformations) : null
+  const carbonJson = carbon_transformations ? JSON.stringify(carbon_transformations) : null
+
+  db.run(
+    `INSERT INTO scenario_action
+     (scenario_id, action_code, start_period, end_period, capex, opex_annual,
+      emission_reduction_annual, financial_transformations, carbon_transformations, notes,
+      trigger_type, trigger_condition, trigger_period, trigger_sticky)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      scenario_id, action_code, start_period, end_period, capex || 0, opex_annual || 0,
+      emission_reduction_annual || 0, financialJson, carbonJson, notes || '',
+      trigger_type || 'UNCONDITIONAL', trigger_condition, trigger_period, trigger_sticky ? 1 : 0
+    ],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to save scenario action: ' + err.message })
+      }
+      res.json({ success: true, scenario_action_id: this.lastID })
+    }
+  )
+})
+
+/**
+ * Export management action to JSON file
+ * GET /api/management-actions/:actionCode/export
+ */
+app.get('/api/management-actions/:actionCode/export', (req, res) => {
+  const { actionCode } = req.params
+  const dbPath = req.query.dbPath
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.get(
+    `SELECT * FROM management_action WHERE action_code = ?`,
+    [actionCode],
+    (err, action) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch action: ' + err.message })
+      }
+
+      if (!action) {
+        return res.status(404).json({ error: 'Action not found' })
+      }
+
+      // Set headers for file download
+      res.setHeader('Content-Type', 'application/json')
+      res.setHeader('Content-Disposition', `attachment; filename="${actionCode}.json"`)
+      res.json(action)
+    }
+  )
+})
+
+/**
+ * Import management action from JSON file
+ * POST /api/management-actions/import
+ */
+app.post('/api/management-actions/import', upload.single('file'), async (req, res) => {
+  try {
+    const { dbPath } = req.body
+    const file = req.file
+
+    if (!file || !dbPath) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    const fileContent = fs.readFileSync(file.path, 'utf-8')
+    const actionData = JSON.parse(fileContent)
+
+    // Clean up uploaded file
+    fs.unlinkSync(file.path)
+
+    if (!actionData.action_code || !actionData.action_name || !actionData.action_category) {
+      return res.status(400).json({ error: 'Invalid action JSON: missing required fields' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Use INSERT OR REPLACE to handle both new and existing actions
+    db.run(
+      `INSERT OR REPLACE INTO management_action
+       (action_code, action_name, action_category, description, is_active, is_mac_relevant)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        actionData.action_code,
+        actionData.action_name,
+        actionData.action_category,
+        actionData.description || '',
+        actionData.is_active !== undefined ? actionData.is_active : 1,
+        actionData.is_mac_relevant !== undefined ? actionData.is_mac_relevant : 0
+      ],
+      function(err) {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to import action: ' + err.message })
+        }
+        res.json({
+          success: true,
+          action_code: actionData.action_code,
+          message: 'Action imported successfully'
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Import error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get transformations for a management action
+ * GET /api/action-transformations?action_code=xxx&db_path=xxx
+ */
+app.get('/api/action-transformations', (req, res) => {
+  const { action_code, db_path } = req.query
+
+  if (!action_code || !db_path) {
+    return res.status(400).json({ error: 'action_code and db_path are required' })
+  }
+
+  const db = new sqlite3.Database(db_path, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, created_at
+     FROM action_transformation
+     WHERE action_code = ?
+     ORDER BY transformation_id`,
+    [action_code],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch transformations: ' + err.message })
+      }
+      res.json(rows)
+    }
+  )
+})
+
+/**
+ * Get triggers for a management action
+ * GET /api/action-triggers?action_code=xxx&db_path=xxx
+ */
+app.get('/api/action-triggers', (req, res) => {
+  const { action_code, db_path } = req.query
+
+  if (!action_code || !db_path) {
+    return res.status(400).json({ error: 'action_code and db_path are required' })
+  }
+
+  const db = new sqlite3.Database(db_path, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT trigger_id, action_code, trigger_type, condition_formula, start_period, end_period, created_at
+     FROM action_trigger
+     WHERE action_code = ?
+     ORDER BY trigger_id`,
+    [action_code],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch triggers: ' + err.message })
+      }
+      res.json(rows)
+    }
+  )
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {
