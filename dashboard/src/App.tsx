@@ -10,6 +10,7 @@ import MapLocations from './pages/MapLocations'
 import LoadDamageCurves from './pages/LoadDamageCurves'
 import MapDamageCurves from './pages/MapDamageCurves'
 import LoadHazardMaps from './pages/LoadHazardMaps'
+import MapHazardMaps from './pages/MapHazardMaps'
 import DefineStatements from './pages/DefineStatements'
 import DefineEntities from './pages/DefineEntities'
 import DefineFormulas from './pages/DefineFormulas'
@@ -51,6 +52,7 @@ function App() {
           <Route path="/inputs/damage-curves" element={<LoadDamageCurves />} />
           <Route path="/inputs/map-damage-curves" element={<MapDamageCurves />} />
           <Route path="/inputs/hazard-maps" element={<LoadHazardMaps />} />
+          <Route path="/inputs/map-hazard-maps" element={<MapHazardMaps />} />
           <Route path="/definitions/statements" element={<DefineStatements />} />
           <Route path="/definitions/formulas" element={<DefineFormulas />} />
           <Route path="/definitions/validation" element={<DefineValidation />} />
