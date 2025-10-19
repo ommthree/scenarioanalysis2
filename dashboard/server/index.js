@@ -1673,7 +1673,7 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
 
     // First, get the file info to determine which staging table to query
     db.get(
-      `SELECT file_name, file_type FROM staged_file WHERE file_id = ?`,
+      `SELECT file_name, file_type, csv_content FROM staged_file WHERE file_id = ?`,
       [fileId],
       (err, file) => {
         if (err) {
@@ -1684,6 +1684,19 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
         if (!file) {
           db.close()
           return res.status(404).json({ error: 'File not found' })
+        }
+
+        // For damage curves, return csv_content directly (no staging table)
+        if (file.file_type === 'damage_curve') {
+          db.close()
+          if (!file.csv_content) {
+            return res.json({ success: true, csvText: '' })
+          }
+          return res.json({
+            success: true,
+            csvText: file.csv_content,
+            fileName: file.file_name
+          })
         }
 
         // Determine staging table name based on file type
@@ -1699,8 +1712,6 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
           useFileIdFilter = false
         } else if (file.file_type === 'location') {
           stagingTableName = 'staging_location'
-        } else if (file.file_type === 'damage_curve') {
-          stagingTableName = 'staging_damage_curve'
         } else if (file.file_type === 'hazard_map') {
           stagingTableName = 'staging_hazard_map'
         } else {
@@ -2816,6 +2827,118 @@ app.get('/api/locations/get-location-mapping', (req, res) => {
     )
   } catch (error) {
     console.error('Get location mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Load multiple damage curve CSV files into staged_file table (batch mode)
+ * POST /api/damage-curves/load-batch
+ * Body: dbPath
+ * Files: Multiple CSV files
+ */
+app.post('/api/damage-curves/load-batch', upload.array('files'), async (req, res) => {
+  console.log('Received batch damage curve upload request:', {
+    dbPath: req.body.dbPath,
+    fileCount: req.files?.length || 0
+  })
+
+  try {
+    const { dbPath } = req.body
+    const files = req.files
+
+    if (!files || files.length === 0 || !dbPath) {
+      console.log('Missing fields - files:', files?.length || 0, 'dbPath:', dbPath)
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    // Check if database exists
+    if (!fs.existsSync(dbPath)) {
+      files.forEach(f => fs.unlinkSync(f.path))
+      return res.status(400).json({
+        error: `Database not found at ${dbPath}. Please select a valid database in the Database page.`
+      })
+    }
+
+    // Connect to existing database
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        console.error('Database connection error:', err)
+        files.forEach(f => fs.unlinkSync(f.path))
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Parse all files first and collect their metadata
+    const filesData = []
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const fileContent = fs.readFileSync(files[i].path, 'utf-8')
+        const records = parse(fileContent, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true
+        })
+
+        if (records.length === 0) {
+          files.forEach(f => fs.unlinkSync(f.path))
+          return res.status(400).json({ error: `File ${files[i].originalname} is empty` })
+        }
+
+        filesData.push({
+          fileName: files[i].originalname,
+          filePath: files[i].path,
+          csvContent: fileContent,
+          rowCount: records.length
+        })
+      } catch (error) {
+        files.forEach(f => fs.unlinkSync(f.path))
+        return res.status(400).json({ error: `Failed to parse ${files[i].originalname}: ${error.message}` })
+      }
+    }
+
+    db.serialize(() => {
+      let fileIdx = 0
+      const insertNextFile = () => {
+        if (fileIdx >= filesData.length) {
+          // All done
+          db.close()
+          files.forEach(f => fs.unlinkSync(f.path))
+          return res.json({
+            success: true,
+            message: `Successfully loaded ${files.length} damage curve file(s) into staging area.`,
+            fileCount: files.length
+          })
+        }
+
+        const fileData = filesData[fileIdx]
+
+        // Insert into staged_file with CSV content
+        db.run(
+          `INSERT INTO staged_file (file_name, file_type, row_count, csv_content) VALUES (?, 'damage_curve', ?, ?)`,
+          [fileData.fileName, fileData.rowCount, fileData.csvContent],
+          function(err) {
+            if (err) {
+              console.error('Failed to create staged_file entry:', err)
+              db.close()
+              files.forEach(f => fs.unlinkSync(f.path))
+              return res.status(500).json({ error: 'Failed to record staged file: ' + err.message })
+            }
+
+            fileIdx++
+            insertNextFile()
+          }
+        )
+      }
+
+      insertNextFile()
+    })
+
+  } catch (error) {
+    console.error('Import error:', error)
+    if (req.files) {
+      req.files.forEach(f => fs.unlinkSync(f.path))
+    }
     res.status(500).json({ error: error.message })
   }
 })
