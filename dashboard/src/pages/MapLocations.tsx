@@ -81,9 +81,12 @@ const MapLocations: React.FC = () => {
     fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
       .then(res => res.json())
       .then(data => {
-        setEntities(data || [])
+        setEntities(Array.isArray(data) ? data : [])
       })
-      .catch(err => console.error('Error fetching entities:', err))
+      .catch(err => {
+        console.error('Error fetching entities:', err)
+        setEntities([])
+      })
   }, [])
 
   // Auto-save mappings when they change
@@ -503,7 +506,7 @@ Rules:
   const entitiesByLevel = getEntitiesByLevel()
 
   return (
-    <div className="p-12 max-w-7xl mx-auto">
+    <div className="p-12 max-w-7xl mx-auto" style={{ minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         {/* Header */}
         <div style={{ marginBottom: '32px' }}>
