@@ -433,6 +433,123 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
 })
 
 /**
+ * Load correlation matrix CSV file
+ * POST /api/correlation/load
+ * Body: dbPath
+ * File: Single CSV file
+ */
+app.post('/api/correlation/load', upload.single('file'), async (req, res) => {
+  console.log('Received correlation matrix upload request:', {
+    dbPath: req.body.dbPath,
+    file: req.file?.originalname
+  })
+
+  try {
+    const { dbPath } = req.body
+    const file = req.file
+
+    if (!file || !dbPath) {
+      console.log('Missing fields - file:', file?.originalname, 'dbPath:', dbPath)
+      if (file) fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    // Check if database exists
+    if (!fs.existsSync(dbPath)) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({
+        error: `Database not found at ${dbPath}. Please select a valid database in the Database page.`
+      })
+    }
+
+    // Parse CSV file
+    const fileContent = fs.readFileSync(file.path, 'utf-8')
+    let records
+    try {
+      records = parse(fileContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true
+      })
+    } catch (parseError) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: `Failed to parse CSV: ${parseError.message}` })
+    }
+
+    if (records.length === 0) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'CSV file is empty' })
+    }
+
+    // Validate square matrix structure
+    const headers = Object.keys(records[0])
+    const expectedRowCount = headers.length
+    const actualRowCount = records.length
+
+    if (actualRowCount !== expectedRowCount) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({
+        error: `Correlation matrix must be square. Found ${actualRowCount} rows but ${expectedRowCount} columns.`
+      })
+    }
+
+    // Validate all rows have the same number of columns
+    for (let i = 0; i < records.length; i++) {
+      const rowKeys = Object.keys(records[i])
+      if (rowKeys.length !== headers.length) {
+        fs.unlinkSync(file.path)
+        return res.status(400).json({
+          error: `Row ${i + 1} has ${rowKeys.length} columns but expected ${headers.length}.`
+        })
+      }
+    }
+
+    // Connect to database
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        console.error('Database connection error:', err)
+        fs.unlinkSync(file.path)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Store file metadata in staged_file table
+    db.run(
+      `INSERT INTO staged_file (file_name, file_type, row_count, uploaded_at, is_valid)
+       VALUES (?, 'correlation', ?, datetime('now'), 1)`,
+      [file.originalname, records.length],
+      function(err) {
+        if (err) {
+          console.error('Failed to insert staged_file record:', err)
+          db.close()
+          fs.unlinkSync(file.path)
+          return res.status(500).json({ error: 'Failed to store file metadata: ' + err.message })
+        }
+
+        const fileId = this.lastID
+        console.log(`Stored correlation matrix file: ${file.originalname} (file_id=${fileId}, rows=${records.length})`)
+
+        db.close()
+        fs.unlinkSync(file.path)
+
+        res.json({
+          success: true,
+          message: `Successfully loaded correlation matrix with ${records.length} variables.`,
+          fileId,
+          rowCount: records.length,
+          columns: headers
+        })
+      }
+    )
+
+  } catch (error) {
+    console.error('Correlation load error:', error)
+    if (req.file) fs.unlinkSync(req.file.path)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * List database files in a directory
  */
 app.post('/api/database/browse', express.json(), (req, res) => {

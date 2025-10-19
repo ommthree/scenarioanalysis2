@@ -1,0 +1,6 @@
+Variable,GDP_Growth,Interest_Rate,Oil_Price,Inflation,FX_Rate
+GDP_Growth,4.50,1.35,-2.40,2.10,0.85
+Interest_Rate,1.35,2.25,-0.60,1.80,1.05
+Oil_Price,-2.40,-0.60,12.50,3.15,-1.95
+Inflation,2.10,1.80,3.15,3.75,1.20
+FX_Rate,0.85,1.05,-1.95,1.20,5.00

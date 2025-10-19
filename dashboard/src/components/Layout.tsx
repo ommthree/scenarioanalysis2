@@ -20,7 +20,8 @@ import {
   Play,
   PenTool,
   TrendingUp,
-  Save
+  Save,
+  Network
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -71,6 +72,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/inputs/map-statements', icon: ArrowRightLeft, label: 'Map Statements' },
         { path: '/inputs/scenarios', icon: Activity, label: 'Load Scenarios' },
         { path: '/inputs/map-scenarios', icon: ArrowRightLeft, label: 'Map Scenarios' },
+        { path: '/inputs/correlation', icon: Network, label: 'Correlation' },
         { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
         { path: '/definitions/validation', icon: CheckCircle2, label: 'Validation' },
       ]
