@@ -3129,6 +3129,266 @@ app.post('/api/damage-curves/save-mapping', async (req, res) => {
 })
 
 /**
+ * Get damage curve staging tables/files
+ * GET /api/damage-curves/staging-tables
+ * Query: { dbPath }
+ */
+app.get('/api/damage-curves/staging-tables', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get staged files of type 'damage_curve'
+    db.all(
+      `SELECT file_id, file_name, row_count, uploaded_at
+       FROM staged_file
+       WHERE file_type = 'damage_curve'
+       ORDER BY uploaded_at DESC`,
+      [],
+      (err, files) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to query staged files: ' + err.message })
+        }
+
+        // Transform into table info format
+        const tables = files.map(file => ({
+          tableName: `staged_damage_curve_${file.file_id}`,
+          fileName: file.file_name,
+          fileId: file.file_id
+        }))
+
+        res.json({ success: true, tables })
+      }
+    )
+  } catch (error) {
+    console.error('Get staging tables error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get available perils from database
+ * GET /api/perils
+ * Query: { dbPath }
+ */
+app.get('/api/perils', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get unique perils from physical_peril table
+    db.all(
+      `SELECT DISTINCT peril_type, peril_code, description
+       FROM physical_peril
+       ORDER BY peril_type`,
+      [],
+      (err, perils) => {
+        db.close()
+
+        if (err) {
+          // If table doesn't exist, return some default perils
+          return res.json([
+            { peril_id: 1, peril_type: 'FLOOD', peril_code: 'FLOOD', description: 'Flood events' },
+            { peril_id: 2, peril_type: 'HURRICANE', peril_code: 'HURRICANE', description: 'Hurricane/Cyclone events' },
+            { peril_id: 3, peril_type: 'WILDFIRE', peril_code: 'WILDFIRE', description: 'Wildfire events' },
+            { peril_id: 4, peril_type: 'EARTHQUAKE', peril_code: 'EARTHQUAKE', description: 'Earthquake events' },
+            { peril_id: 5, peril_type: 'HEATWAVE', peril_code: 'HEATWAVE', description: 'Extreme heat events' },
+            { peril_id: 6, peril_type: 'STORM', peril_code: 'STORM', description: 'Storm/Wind events' }
+          ])
+        }
+
+        // Add peril_id if not present
+        const perilsWithId = perils.map((p, idx) => ({
+          peril_id: idx + 1,
+          peril_type: p.peril_type,
+          peril_code: p.peril_code || p.peril_type,
+          description: p.description || `${p.peril_type} events`
+        }))
+
+        res.json(perilsWithId)
+      }
+    )
+  } catch (error) {
+    console.error('Get perils error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save damage curve mapping configuration
+ * POST /api/damage-curves/save-damage-curve-mapping
+ * Body: { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, perilMappings }
+ */
+app.post('/api/damage-curves/save-damage-curve-mapping', express.json(), (req, res) => {
+  try {
+    const { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, perilMappings } = req.body
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!fileId) {
+      return res.status(400).json({ error: 'Missing required fileId' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    const columnMapping = JSON.stringify({
+      inputColumn,
+      outputColumn,
+      archetypeColumn,
+      perilColumn,
+      unitColumn
+    })
+
+    const perilDriverMapping = JSON.stringify(perilMappings || [])
+
+    // First check if mapping exists for this file_id
+    db.get(
+      `SELECT mapping_id FROM damage_curve_mapping WHERE file_id = ?`,
+      [fileId],
+      (err, row) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to check existing mapping: ' + err.message })
+        }
+
+        if (row) {
+          // Update existing mapping
+          db.run(
+            `UPDATE damage_curve_mapping
+             SET column_mapping = ?, peril_driver_mapping = ?, created_at = datetime('now')
+             WHERE file_id = ?`,
+            [columnMapping, perilDriverMapping, fileId],
+            function(err) {
+              db.close()
+
+              if (err) {
+                return res.status(500).json({ error: 'Failed to update damage curve mapping: ' + err.message })
+              }
+
+              res.json({
+                success: true,
+                message: `Damage curve mapping updated for file ${fileId}`,
+                mappingId: row.mapping_id
+              })
+            }
+          )
+        } else {
+          // Insert new mapping
+          db.run(
+            `INSERT INTO damage_curve_mapping (file_id, column_mapping, peril_driver_mapping, created_at)
+             VALUES (?, ?, ?, datetime('now'))`,
+            [fileId, columnMapping, perilDriverMapping],
+            function(err) {
+              db.close()
+
+              if (err) {
+                return res.status(500).json({ error: 'Failed to insert damage curve mapping: ' + err.message })
+              }
+
+              res.json({
+                success: true,
+                message: `Damage curve mapping saved for file ${fileId}`,
+                mappingId: this.lastID
+              })
+            }
+          )
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Save damage curve mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get damage curve mapping configuration
+ * GET /api/damage-curves/get-damage-curve-mapping
+ * Query: { dbPath, fileId }
+ */
+app.get('/api/damage-curves/get-damage-curve-mapping', (req, res) => {
+  try {
+    const { dbPath, fileId } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!fileId) {
+      return res.status(400).json({ error: 'Missing required fileId' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.get(
+      `SELECT column_mapping, peril_driver_mapping
+       FROM damage_curve_mapping
+       WHERE file_id = ?`,
+      [fileId],
+      (err, row) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to query mapping: ' + err.message })
+        }
+
+        if (!row) {
+          return res.json({ success: true, mapping: null })
+        }
+
+        const columnMapping = JSON.parse(row.column_mapping)
+        const perilMappings = JSON.parse(row.peril_driver_mapping || '[]')
+
+        res.json({
+          success: true,
+          mapping: {
+            inputColumn: columnMapping.inputColumn,
+            outputColumn: columnMapping.outputColumn,
+            archetypeColumn: columnMapping.archetypeColumn,
+            perilColumn: columnMapping.perilColumn,
+            unitColumn: columnMapping.unitColumn,
+            perilMappings: perilMappings
+          }
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Get damage curve mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Save scenario mappings
  * POST /api/scenario-mappings/save
  * Body: { dbPath, fileId, driverColumn, valueColumns, variableMappings }
