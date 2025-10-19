@@ -119,7 +119,7 @@ export default function LoadDamageCurves() {
 
   return (
     <div className="p-12 max-w-7xl mx-auto">
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         {/* Back Button */}
         <button
           onClick={() => navigate('/dashboard')}

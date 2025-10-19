@@ -299,7 +299,7 @@ Use line item codes directly and [t-1] for prior period references.
 
   return (
     <div className="p-12 max-w-7xl mx-auto">
-      <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         {/* Header */}
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{

@@ -214,7 +214,7 @@ export default function MapLocations() {
   return (
     <div className="p-12 max-w-7xl mx-auto">
       {/* Header */}
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
         <button
           onClick={() => navigate('/load-locations')}
           style={{
