@@ -483,13 +483,13 @@ app.post('/api/correlation/load', upload.single('file'), async (req, res) => {
 
     // Validate square matrix structure
     const headers = Object.keys(records[0])
-    const expectedRowCount = headers.length
+    const dataColumnCount = headers.length - 1 // Exclude the first column (variable names)
     const actualRowCount = records.length
 
-    if (actualRowCount !== expectedRowCount) {
+    if (actualRowCount !== dataColumnCount) {
       fs.unlinkSync(file.path)
       return res.status(400).json({
-        error: `Correlation matrix must be square. Found ${actualRowCount} rows but ${expectedRowCount} columns.`
+        error: `Correlation matrix must be square. Found ${actualRowCount} rows but ${dataColumnCount} data columns (excluding label column).`
       })
     }
 
