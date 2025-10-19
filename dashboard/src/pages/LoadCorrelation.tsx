@@ -79,6 +79,7 @@ export default function LoadCorrelation() {
 
   const handleSelectStagedFile = async (fileId: number) => {
     setSelectedFileId(fileId)
+    setSelectedPendingFileIndex(null) // Clear pending file selection
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
       const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
