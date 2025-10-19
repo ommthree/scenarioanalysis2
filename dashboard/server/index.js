@@ -2541,9 +2541,10 @@ app.get('/api/entities', (req, res) => {
     })
 
     db.all(
-      `SELECT entity_id, entity_code, entity_name, parent_id, level
+      `SELECT entity_id, code as entity_code, name as entity_name, parent_entity_id as parent_id, granularity_level as level
        FROM entity
-       ORDER BY level, entity_code`,
+       WHERE is_active = 1
+       ORDER BY granularity_level, code`,
       [],
       (err, entities) => {
         db.close()
