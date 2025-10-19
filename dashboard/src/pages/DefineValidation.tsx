@@ -298,11 +298,7 @@ Use line item codes directly and [t-1] for prior period references.
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      padding: '40px'
-    }}>
+    <div className="p-12 max-w-7xl mx-auto">
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
         {/* Header */}
         <div style={{ marginBottom: '32px' }}>

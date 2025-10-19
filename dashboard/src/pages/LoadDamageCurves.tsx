@@ -118,7 +118,7 @@ export default function LoadDamageCurves() {
   const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#f8fafc', padding: '32px' }}>
+    <div className="p-12 max-w-7xl mx-auto">
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         {/* Back Button */}
         <button

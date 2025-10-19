@@ -212,7 +212,7 @@ export default function MapLocations() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#f8fafc', padding: '32px' }}>
+    <div className="p-12 max-w-7xl mx-auto">
       {/* Header */}
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
         <button
