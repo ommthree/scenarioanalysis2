@@ -3920,6 +3920,134 @@ app.get('/api/action-triggers', (req, res) => {
 })
 
 /**
+ * Get physical risk drivers for hazard map mapping
+ * GET /api/physical-perils?dbPath=...
+ */
+app.get('/api/physical-perils', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT
+      driver_id as peril_id,
+      code as peril_code,
+      name as peril_type,
+      description,
+      category
+     FROM driver
+     WHERE category = 'physical' AND is_active = 1
+     ORDER BY code`,
+    [],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch physical risk drivers: ' + err.message })
+      }
+      res.json(rows)
+    }
+  )
+})
+
+/**
+ * Save hazard map mapping configuration
+ * POST /api/hazard-maps/save-hazard-map-mapping
+ * Body: { dbPath, fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns }
+ */
+app.post('/api/hazard-maps/save-hazard-map-mapping', (req, res) => {
+  const { dbPath, fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns } = req.body
+
+  console.log('Saving hazard map mapping:', { fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns })
+
+  if (!dbPath || !fileId || !perilId || !latitudeColumn || !longitudeColumn) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  const mapping = {
+    fileId,
+    perilId,
+    latitudeColumn,
+    longitudeColumn,
+    unitsColumn: unitsColumn || null,
+    intensityColumns: intensityColumns || [],
+    varianceColumns: varianceColumns || []
+  }
+
+  db.run(
+    `INSERT OR REPLACE INTO hazard_map_mapping (file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    [fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn || null, JSON.stringify(intensityColumns || []), JSON.stringify(varianceColumns || [])],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+      }
+      res.json({ success: true, message: 'Hazard map mapping saved' })
+    }
+  )
+})
+
+/**
+ * Get hazard map mapping configuration
+ * GET /api/hazard-maps/get-hazard-map-mapping?dbPath=...&fileId=...
+ */
+app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
+  const { dbPath, fileId } = req.query
+
+  if (!dbPath || !fileId) {
+    return res.status(400).json({ error: 'dbPath and fileId are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.get(
+    `SELECT file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns
+     FROM hazard_map_mapping
+     WHERE file_id = ?`,
+    [fileId],
+    (err, row) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch mapping: ' + err.message })
+      }
+
+      if (!row) {
+        return res.json({ success: true, mapping: null })
+      }
+
+      const mapping = {
+        perilId: row.peril_id,
+        latitudeColumn: row.latitude_column,
+        longitudeColumn: row.longitude_column,
+        unitsColumn: row.units_column,
+        intensityColumns: JSON.parse(row.intensity_columns || '[]'),
+        varianceColumns: JSON.parse(row.variance_columns || '[]')
+      }
+
+      res.json({ success: true, mapping })
+    }
+  )
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {
