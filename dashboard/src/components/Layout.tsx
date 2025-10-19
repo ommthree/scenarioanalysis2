@@ -69,6 +69,11 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/inputs/map-scenarios', icon: ArrowRightLeft, label: 'Map Scenarios' },
         { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
         { path: '/definitions/validation', icon: CheckCircle2, label: 'Validation' },
+      ]
+    },
+    {
+      title: 'Physical Risk',
+      items: [
         { path: '/inputs/locations', icon: MapPin, label: 'Load Locations' },
         { path: '/inputs/map-locations', icon: ArrowRightLeft, label: 'Map Locations' },
         { path: '/inputs/hazard-maps', icon: Map, label: 'Load Hazard Maps' },
