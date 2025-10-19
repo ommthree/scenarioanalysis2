@@ -192,21 +192,41 @@ export default function LoadLocations() {
     }
   }
 
+  // Helper function to find the last two numerical columns
+  const findCoordinateColumns = (headers: string[], sampleRow: string[]): { latIdx: number, lngIdx: number } | null => {
+    // Find all columns where the sample row has a numeric value
+    const numericColumns: number[] = []
+    for (let i = 0; i < headers.length; i++) {
+      const value = parseFloat(sampleRow[i])
+      if (!isNaN(value)) {
+        numericColumns.push(i)
+      }
+    }
+
+    // Take the last two numeric columns
+    if (numericColumns.length >= 2) {
+      const latIdx = numericColumns[numericColumns.length - 2]
+      const lngIdx = numericColumns[numericColumns.length - 1]
+      return { latIdx, lngIdx }
+    }
+
+    return null
+  }
+
   // Extract location points from CSV data for map preview
   const getLocationPoints = (): LocationPoint[] => {
     const points: LocationPoint[] = []
 
     // Include staged file data if selected
-    if (stagedFileData) {
+    if (stagedFileData && stagedFileData.rows.length > 0) {
       const headers = stagedFileData.headers
-      const latIdx = headers.findIndex(h => /^lat/i.test(h))
-      const lngIdx = headers.findIndex(h => /^lon|^lng/i.test(h))
+      const coords = findCoordinateColumns(headers, stagedFileData.rows[0])
 
-      if (latIdx !== -1 && lngIdx !== -1) {
+      if (coords) {
         for (let i = 0; i < Math.min(stagedFileData.rows.length, 100); i++) {
           const row = stagedFileData.rows[i]
-          const lat = parseFloat(row[latIdx])
-          const lng = parseFloat(row[lngIdx])
+          const lat = parseFloat(row[coords.latIdx])
+          const lng = parseFloat(row[coords.lngIdx])
 
           if (!isNaN(lat) && !isNaN(lng)) {
             const label = row[0] || `Point ${i + 1}`
@@ -218,20 +238,18 @@ export default function LoadLocations() {
 
     // Include new files to be staged
     for (const file of locationFiles) {
-      if (!file.isValid || !file.csvData) continue
+      if (!file.isValid || !file.csvData || file.csvData.rows.length === 0) continue
 
-      // Try to find lat/lng columns (case insensitive)
       const headers = file.csvData.headers
-      const latIdx = headers.findIndex(h => /^lat/i.test(h))
-      const lngIdx = headers.findIndex(h => /^lon|^lng/i.test(h))
+      const coords = findCoordinateColumns(headers, file.csvData.rows[0])
 
-      if (latIdx === -1 || lngIdx === -1) continue
+      if (!coords) continue
 
       // Extract first few rows for preview
       for (let i = 0; i < Math.min(file.csvData.rows.length, 100); i++) {
         const row = file.csvData.rows[i]
-        const lat = parseFloat(row[latIdx])
-        const lng = parseFloat(row[lngIdx])
+        const lat = parseFloat(row[coords.latIdx])
+        const lng = parseFloat(row[coords.lngIdx])
 
         if (!isNaN(lat) && !isNaN(lng)) {
           // Use first column as label

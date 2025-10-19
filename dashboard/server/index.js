@@ -2473,6 +2473,236 @@ app.post('/api/locations/save-mapping', async (req, res) => {
 })
 
 /**
+ * Get list of available staging tables for locations
+ * GET /api/locations/staging-tables
+ * Query params: dbPath
+ */
+app.get('/api/locations/staging-tables', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get all staged location files
+    db.all(
+      `SELECT file_id, file_name, row_count, uploaded_at
+       FROM staged_file
+       WHERE file_type = 'location'
+       ORDER BY uploaded_at DESC`,
+      [],
+      (err, files) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to fetch staged files: ' + err.message })
+        }
+
+        // Return file info with table name
+        const tables = files.map(file => ({
+          fileId: file.file_id,
+          fileName: file.file_name,
+          tableName: 'staging_location'  // All location files use the same staging table
+        }))
+
+        db.close()
+        res.json({ success: true, tables })
+      }
+    )
+  } catch (error) {
+    console.error('Get staging tables error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get entities hierarchy
+ * GET /api/entities
+ * Query params: dbPath
+ */
+app.get('/api/entities', (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.all(
+      `SELECT entity_id, entity_code, entity_name, parent_id, level
+       FROM entity
+       ORDER BY level, entity_code`,
+      [],
+      (err, entities) => {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch entities: ' + err.message })
+        }
+        res.json(entities || [])
+      }
+    )
+  } catch (error) {
+    console.error('Get entities error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Save location mapping configuration
+ * POST /api/locations/save-location-mapping
+ * Body: { dbPath, fileId, identifierColumn, latitudeColumn, longitudeColumn, entityColumn, valueColumns, entityMappings }
+ */
+app.post('/api/locations/save-location-mapping', async (req, res) => {
+  try {
+    const {
+      dbPath,
+      fileId,
+      identifierColumn,
+      latitudeColumn,
+      longitudeColumn,
+      entityColumn,
+      valueColumns,
+      entityMappings
+    } = req.body
+
+    if (!dbPath || !fileId) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Create table if it doesn't exist
+    db.run(`CREATE TABLE IF NOT EXISTS location_mapping_config (
+      mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER UNIQUE,
+      identifier_column TEXT,
+      latitude_column TEXT,
+      longitude_column TEXT,
+      entity_column TEXT,
+      value_columns TEXT,
+      entity_mappings TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
+    )`, (err) => {
+      if (err) {
+        console.error('Create table error:', err)
+      }
+
+      // Save or update mapping configuration
+      db.run(
+        `INSERT INTO location_mapping_config (
+          file_id, identifier_column, latitude_column, longitude_column,
+          entity_column, value_columns, entity_mappings, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(file_id) DO UPDATE SET
+          identifier_column = excluded.identifier_column,
+          latitude_column = excluded.latitude_column,
+          longitude_column = excluded.longitude_column,
+          entity_column = excluded.entity_column,
+          value_columns = excluded.value_columns,
+          entity_mappings = excluded.entity_mappings,
+          updated_at = CURRENT_TIMESTAMP`,
+        [
+          fileId,
+          identifierColumn,
+          latitudeColumn,
+          longitudeColumn,
+          entityColumn,
+          JSON.stringify(valueColumns || []),
+          JSON.stringify(entityMappings || [])
+        ],
+        function(err) {
+          db.close()
+          if (err) {
+            return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+          }
+          res.json({ success: true, mappingId: this.lastID })
+        }
+      )
+    })
+  } catch (error) {
+    console.error('Save location mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get saved location mapping configuration
+ * GET /api/locations/get-location-mapping
+ * Query params: dbPath, fileId
+ */
+app.get('/api/locations/get-location-mapping', (req, res) => {
+  try {
+    const { dbPath, fileId } = req.query
+
+    if (!dbPath || !fileId) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    db.get(
+      `SELECT * FROM location_mapping_config WHERE file_id = ?`,
+      [fileId],
+      (err, row) => {
+        db.close()
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch mapping: ' + err.message })
+        }
+
+        if (!row) {
+          return res.json({ success: false, message: 'No mapping found' })
+        }
+
+        // Parse JSON fields
+        const mapping = {
+          identifierColumn: row.identifier_column,
+          latitudeColumn: row.latitude_column,
+          longitudeColumn: row.longitude_column,
+          entityColumn: row.entity_column,
+          valueColumns: row.value_columns ? JSON.parse(row.value_columns) : [],
+          entityMappings: row.entity_mappings ? JSON.parse(row.entity_mappings) : []
+        }
+
+        res.json({ success: true, mapping })
+      }
+    )
+  } catch (error) {
+    console.error('Get location mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Load damage curve CSV into staging_damage_curve table
  * POST /api/damage-curves/load
  * Body: dbPath
