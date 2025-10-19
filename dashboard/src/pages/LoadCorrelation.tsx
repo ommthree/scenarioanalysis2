@@ -3,6 +3,7 @@ import { Activity, FolderOpen, Check, X, FileText, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import JointDistributionPanel from '@/components/JointDistributionPanel'
 
 interface CsvData {
   headers: string[]
@@ -34,6 +35,7 @@ export default function LoadCorrelation() {
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null)
   const [previewData, setPreviewData] = useState<CsvData | null>(null)
   const [selectedPendingFileIndex, setSelectedPendingFileIndex] = useState<number | null>(null)
+  const [selectedCell, setSelectedCell] = useState<{ var1: string; var2: string; correlation: number } | null>(null)
 
   // Load staged files when component mounts
   useEffect(() => {
@@ -233,18 +235,121 @@ export default function LoadCorrelation() {
     }
   }
 
-  // Get cell color based on correlation value
+  // Convert covariance matrix to correlation matrix
+  const computeCorrelationMatrix = (covData: CsvData): CsvData => {
+    // Extract variances (diagonal elements)
+    const variances: number[] = []
+    for (let i = 0; i < covData.rows.length; i++) {
+      const diagValue = parseFloat(covData.rows[i][i + 1]) // +1 to skip label column
+      variances.push(diagValue)
+    }
+
+    // Compute correlations
+    const corrRows = covData.rows.map((row, i) => {
+      const newRow = [row[0]] // Keep variable name
+      for (let j = 1; j < row.length; j++) {
+        const cov = parseFloat(row[j])
+        if (isNaN(cov) || isNaN(variances[i]) || isNaN(variances[j - 1])) {
+          newRow.push('N/A')
+        } else {
+          const stdI = Math.sqrt(variances[i])
+          const stdJ = Math.sqrt(variances[j - 1])
+          const corr = cov / (stdI * stdJ)
+          newRow.push(corr.toFixed(4))
+        }
+      }
+      return newRow
+    })
+
+    return {
+      headers: covData.headers,
+      rows: corrRows
+    }
+  }
+
+  // Compute correlation matrix if we have covariance data
+  const correlationData = previewData ? computeCorrelationMatrix(previewData) : null
+
+  // Get cell color for covariance values (auto-scale based on min/max)
+  const getCovarianceCellColor = (value: string, allValues: string[][]): string => {
+    const num = parseFloat(value)
+    if (isNaN(num)) return 'rgba(100, 116, 139, 0.3)'
+
+    // Find min and max values (excluding non-numeric)
+    let min = Infinity
+    let max = -Infinity
+    allValues.forEach(row => {
+      row.slice(1).forEach(cell => {
+        const val = parseFloat(cell)
+        if (!isNaN(val)) {
+          min = Math.min(min, val)
+          max = Math.max(max, val)
+        }
+      })
+    })
+
+    // Normalize to [0, 1]
+    const normalized = max === min ? 0.5 : (num - min) / (max - min)
+
+    // Interpolate between red (low) and blue (high)
+    const red = Math.round(239 - normalized * (239 - 59))
+    const green = Math.round(68 + normalized * (130 - 68))
+    const blue = Math.round(68 + normalized * (246 - 68))
+
+    return `rgba(${red}, ${green}, ${blue}, 0.7)`
+  }
+
+  // Get cell color based on correlation value (-1 to 1)
   const getCellColor = (value: string): string => {
     const num = parseFloat(value)
     if (isNaN(num)) return 'rgba(100, 116, 139, 0.3)'
 
-    if (num >= 0) {
-      const intensity = Math.abs(num)
-      return `rgba(59, 130, 246, ${intensity * 0.7})`
-    } else {
-      const intensity = Math.abs(num)
-      return `rgba(239, 68, 68, ${intensity * 0.7})`
-    }
+    // Normalize from [-1, 1] to [0, 1]
+    const normalized = (num + 1) / 2
+
+    // Interpolate between red (negative) and blue (positive)
+    // Red: rgb(239, 68, 68), Blue: rgb(59, 130, 246)
+    const red = Math.round(239 - normalized * (239 - 59))
+    const green = Math.round(68 + normalized * (130 - 68))
+    const blue = Math.round(68 + normalized * (246 - 68))
+
+    return `rgba(${red}, ${green}, ${blue}, 0.7)`
+  }
+
+  // Calculate min/max for covariance matrix legend
+  const covarianceRange = previewData ? (() => {
+    let min = Infinity
+    let max = -Infinity
+    previewData.rows.forEach(row => {
+      row.slice(1).forEach(cell => {
+        const val = parseFloat(cell)
+        if (!isNaN(val)) {
+          min = Math.min(min, val)
+          max = Math.max(max, val)
+        }
+      })
+    })
+    return { min, max }
+  })() : { min: 0, max: 0 }
+
+  // Handle cell click to show joint distribution
+  const handleCellClick = (rowIdx: number, cellIdx: number, value: string) => {
+    // Skip if it's the first column (row labels) or if the value is not numeric
+    if (cellIdx === 0 || !previewData) return
+
+    // Skip diagonal cells (correlation = 1.0, same variable with itself)
+    if (rowIdx === cellIdx - 1) return
+
+    const correlation = parseFloat(value)
+    if (isNaN(correlation)) return
+
+    // Skip if correlation is too close to ±1 (causes numerical issues)
+    if (Math.abs(correlation) > 0.999) return
+
+    const var1 = previewData.headers[cellIdx]
+    const var2 = previewData.rows[rowIdx][0]
+
+    setSelectedCell({ var1, var2, correlation })
   }
 
   return (
@@ -512,51 +617,33 @@ export default function LoadCorrelation() {
                 </span>
               </div>
 
-              {/* Correlation Matrix Heatmap */}
+              {/* Covariance Matrix Heatmap */}
               <div style={{ marginBottom: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
-                {/* Color Legend */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '24px',
-                  marginBottom: '16px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(59, 130, 246, 0.2)'
-                }}>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#94a3b8' }}>Legend:</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <h4 className="font-semibold text-md" style={{ color: '#3b82f6' }}>Covariance Matrix</h4>
+
+                  {/* Continuous Color Legend */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '8px 16px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(59, 130, 246, 0.2)'
+                  }}>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>{covarianceRange.min.toFixed(2)}</span>
                     <div style={{
-                      width: '32px',
+                      width: '150px',
                       height: '20px',
-                      background: 'linear-gradient(to right, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.7))',
+                      background: 'linear-gradient(to right, rgba(239, 68, 68, 0.7), rgba(149, 99, 157, 0.7), rgba(59, 130, 246, 0.7))',
                       borderRadius: '4px',
-                      border: '1px solid rgba(239, 68, 68, 0.4)'
+                      border: '1px solid rgba(255, 255, 255, 0.2)'
                     }} />
-                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>Negative</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                      width: '32px',
-                      height: '20px',
-                      background: 'linear-gradient(to right, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.7))',
-                      borderRadius: '4px',
-                      border: '1px solid rgba(59, 130, 246, 0.4)'
-                    }} />
-                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>Positive</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{
-                      width: '20px',
-                      height: '20px',
-                      backgroundColor: 'rgba(100, 116, 139, 0.3)',
-                      borderRadius: '4px',
-                      border: '1px solid rgba(100, 116, 139, 0.5)'
-                    }} />
-                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>Non-numeric</span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>{covarianceRange.max.toFixed(2)}</span>
                   </div>
                 </div>
+
                 <ScrollArea className="w-full" style={{ height: '500px' }}>
                   <div style={{ minWidth: 'max-content' }}>
                     <table className="w-full" style={{ borderCollapse: 'collapse' }}>
@@ -566,12 +653,14 @@ export default function LoadCorrelation() {
                             <th
                               key={idx}
                               style={{
-                                padding: '12px 16px',
-                                textAlign: 'left',
-                                fontSize: '14px',
+                                padding: '12px 8px',
+                                textAlign: idx === 0 ? 'left' : 'center',
+                                fontSize: '13px',
                                 fontWeight: 600,
                                 color: '#3b82f6',
-                                whiteSpace: 'nowrap'
+                                whiteSpace: 'nowrap',
+                                width: idx === 0 ? '100px' : '60px',
+                                maxWidth: idx === 0 ? '100px' : '60px'
                               }}
                             >
                               {header}
@@ -591,16 +680,38 @@ export default function LoadCorrelation() {
                               <td
                                 key={cellIdx}
                                 style={{
-                                  padding: '10px 16px',
-                                  fontSize: '13px',
+                                  padding: '0',
+                                  fontSize: '11px',
                                   color: '#e2e8f0',
                                   whiteSpace: 'nowrap',
-                                  backgroundColor: cellIdx === 0 ? 'rgba(59, 130, 246, 0.1)' : getCellColor(cell),
+                                  backgroundColor: cellIdx === 0 ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
                                   fontWeight: cellIdx === 0 ? 600 : 400,
-                                  textAlign: cellIdx === 0 ? 'left' : 'center'
+                                  textAlign: 'center',
+                                  width: cellIdx === 0 ? '100px' : '60px',
+                                  height: cellIdx === 0 ? 'auto' : '60px',
+                                  maxWidth: cellIdx === 0 ? '100px' : '60px'
                                 }}
                               >
-                                {cell}
+                                <div style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: cellIdx === 0 ? 'flex-start' : 'center',
+                                  padding: cellIdx === 0 ? '10px 8px' : '0',
+                                  minHeight: cellIdx === 0 ? 'auto' : '60px',
+                                  backgroundColor: cellIdx > 0 ? getCovarianceCellColor(cell, previewData.rows) : 'transparent',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}>
+                                  {cellIdx === 0 ? (
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cell}>
+                                      {cell}
+                                    </span>
+                                  ) : (
+                                    cell
+                                  )}
+                                </div>
                               </td>
                             ))}
                           </tr>
@@ -610,8 +721,146 @@ export default function LoadCorrelation() {
                   </div>
                 </ScrollArea>
               </div>
+
+              {/* Correlation Matrix Heatmap */}
+              {correlationData && (
+                <div style={{ marginBottom: '32px', paddingLeft: '1.5rem', paddingRight: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <h4 className="font-semibold text-md" style={{ color: '#3b82f6' }}>Correlation Matrix</h4>
+
+                    {/* Continuous Color Legend */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '8px 16px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(59, 130, 246, 0.2)'
+                    }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>-1</span>
+                      <div style={{
+                        width: '200px',
+                        height: '20px',
+                        background: 'linear-gradient(to right, rgba(239, 68, 68, 0.7), rgba(149, 99, 157, 0.7), rgba(59, 130, 246, 0.7))',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(255, 255, 255, 0.2)'
+                      }} />
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>+1</span>
+                      <div style={{ marginLeft: '16px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '4px', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#22c55e' }}>💡 Click any cell to view joint distribution</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <ScrollArea className="w-full" style={{ height: '500px' }}>
+                    <div style={{ minWidth: 'max-content' }}>
+                      <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '2px solid rgba(59, 130, 246, 0.3)' }}>
+                            {correlationData.headers.map((header, idx) => (
+                              <th
+                                key={idx}
+                                style={{
+                                  padding: '12px 8px',
+                                  textAlign: idx === 0 ? 'left' : 'center',
+                                  fontSize: '13px',
+                                  fontWeight: 600,
+                                  color: '#3b82f6',
+                                  whiteSpace: 'nowrap',
+                                  width: idx === 0 ? '100px' : '60px',
+                                  maxWidth: idx === 0 ? '100px' : '60px'
+                                }}
+                              >
+                                {header}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {correlationData.rows.map((row, rowIdx) => (
+                            <tr
+                              key={rowIdx}
+                              style={{
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                              }}
+                            >
+                              {row.map((cell, cellIdx) => (
+                                <td
+                                  key={cellIdx}
+                                  onClick={() => handleCellClick(rowIdx, cellIdx, cell)}
+                                  style={{
+                                    padding: '0',
+                                    fontSize: '11px',
+                                    color: '#e2e8f0',
+                                    whiteSpace: 'nowrap',
+                                    backgroundColor: cellIdx === 0 ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                                    fontWeight: cellIdx === 0 ? 600 : 400,
+                                    textAlign: 'center',
+                                    width: cellIdx === 0 ? '100px' : '60px',
+                                    height: cellIdx === 0 ? 'auto' : '60px',
+                                    maxWidth: cellIdx === 0 ? '100px' : '60px',
+                                    cursor: cellIdx > 0 && !isNaN(parseFloat(cell)) && rowIdx !== cellIdx - 1 && Math.abs(parseFloat(cell)) <= 0.999 ? 'pointer' : 'default'
+                                  }}
+                                >
+                                  <div style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: cellIdx === 0 ? 'flex-start' : 'center',
+                                    padding: cellIdx === 0 ? '10px 8px' : '0',
+                                    minHeight: cellIdx === 0 ? 'auto' : '60px',
+                                    backgroundColor: cellIdx > 0 ? getCellColor(cell) : 'transparent',
+                                    transition: 'all 0.2s',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (cellIdx > 0 && !isNaN(parseFloat(cell))) {
+                                      e.currentTarget.style.transform = 'scale(1.05)'
+                                      e.currentTarget.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)'
+                                      e.currentTarget.style.zIndex = '10'
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (cellIdx > 0 && !isNaN(parseFloat(cell))) {
+                                      e.currentTarget.style.transform = 'scale(1)'
+                                      e.currentTarget.style.boxShadow = 'none'
+                                      e.currentTarget.style.zIndex = '0'
+                                    }
+                                  }}
+                                  >
+                                    {cellIdx === 0 ? (
+                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cell}>
+                                        {cell}
+                                      </span>
+                                    ) : (
+                                      cell
+                                    )}
+                                  </div>
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
             </CardContent>
           </Card>
+        )}
+
+        {/* Joint Distribution Panel */}
+        {selectedCell && (
+          <JointDistributionPanel
+            variable1={selectedCell.var1}
+            variable2={selectedCell.var2}
+            correlation={selectedCell.correlation}
+            onClose={() => setSelectedCell(null)}
+          />
         )}
       </div>
     </div>
