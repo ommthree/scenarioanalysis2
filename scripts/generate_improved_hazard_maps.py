@@ -183,10 +183,10 @@ def generate_hazard_map(output_file, hazard_type, unit, lat_min, lat_max, lon_mi
                 'latitude': round(lat, 2),
                 'longitude': round(lon, 2),
                 'period_1_intensity_m': round(period_1_intensity, 3),
-                'period_1_variance': round(period_1_variance, 3),
                 'period_2_intensity_m': round(period_2_intensity, 3),
-                'period_2_variance': round(period_2_variance, 3),
                 'period_3_intensity_m': round(period_3_intensity, 3),
+                'period_1_variance': round(period_1_variance, 3),
+                'period_2_variance': round(period_2_variance, 3),
                 'period_3_variance': round(period_3_variance, 3),
                 'hazard_type': hazard_type,
                 'unit': unit
@@ -202,9 +202,8 @@ def generate_hazard_map(output_file, hazard_type, unit, lat_min, lat_max, lon_mi
     print(f"  Writing to {output_file}...")
 
     fieldnames = ['location_id', 'latitude', 'longitude',
-                  'period_1_intensity_m', 'period_1_variance',
-                  'period_2_intensity_m', 'period_2_variance',
-                  'period_3_intensity_m', 'period_3_variance',
+                  'period_1_intensity_m', 'period_2_intensity_m', 'period_3_intensity_m',
+                  'period_1_variance', 'period_2_variance', 'period_3_variance',
                   'hazard_type', 'unit']
 
     with open(output_file, 'w', newline='') as f:
