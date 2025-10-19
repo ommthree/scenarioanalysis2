@@ -16,7 +16,11 @@ import {
   Calculator,
   MapPin,
   CheckCircle2,
-  Map
+  Map,
+  Play,
+  PenTool,
+  TrendingUp,
+  Save
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -78,7 +82,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/inputs/map-locations', icon: ArrowRightLeft, label: 'Map Locations' },
         { path: '/inputs/hazard-maps', icon: Map, label: 'Load Hazard Maps' },
         { path: '/inputs/map-hazard-maps', icon: ArrowRightLeft, label: 'Map Hazard Maps' },
-        { path: '/inputs/damage-curves', icon: Cloud, label: 'Load Damage Curves' },
+        { path: '/inputs/damage-curves', icon: TrendingUp, label: 'Load Damage Curves' },
         { path: '/inputs/map-damage-curves', icon: ArrowRightLeft, label: 'Map Damage Curves' },
       ]
     },
@@ -86,14 +90,14 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       title: 'Data',
       items: [
         { path: '/data/database', icon: Database, label: 'Database' },
-        { path: '/data/stored-calcs', icon: BarChart3, label: 'Stored Calcs' },
+        { path: '/data/stored-calcs', icon: Save, label: 'Stored Calcs' },
       ]
     },
     {
       title: 'Run',
       items: [
-        { path: '/run/definition', icon: Settings, label: 'Definition' },
-        { path: '/run/execute', icon: Home, label: 'Do Run' },
+        { path: '/run/definition', icon: PenTool, label: 'Definition' },
+        { path: '/run/execute', icon: Play, label: 'Do Run' },
         { path: '/run/open', icon: List, label: 'Open Prior Run' },
       ]
     },
