@@ -1113,7 +1113,7 @@ Rules:
                         }}>
                           Level {level}
                         </div>
-                        {entitiesByLevel[Number(level)].map((entity) => {
+                        {(entitiesByLevel[level] || []).map((entity) => {
                           const mappedRowIndex = getMappedRow(entity.entity_id)
                           const hasMapped = mappedRowIndex !== null
 
