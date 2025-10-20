@@ -32,6 +32,7 @@ set(TEST_SOURCES
     test_unit_converter.cpp
     test_level1.cpp
     test_level2.cpp
+    test_level2_period_runner.cpp
     test_level3.cpp
     test_level4_unified.cpp
     test_level5.cpp

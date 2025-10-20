@@ -134,8 +134,6 @@ const DefineScenarios: React.FC = () => {
         // Load drivers
         setPhysicalDrivers(json.physical_drivers || [])
         setTransitionDrivers(json.transition_drivers || [])
-
-        alert('Drivers loaded from JSON successfully!')
       } catch (err) {
         console.error('Error parsing JSON:', err)
         alert('Failed to parse JSON file')
@@ -166,7 +164,16 @@ const DefineScenarios: React.FC = () => {
                 backgroundColor: `rgba(${color}, 0.2)`,
                 color: `rgb(${color})`,
                 border: `1px solid rgba(${color}, 0.3)`,
-                padding: '8px 16px'
+                padding: '8px 16px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = `rgba(${color}, 0.3)`
+                e.currentTarget.style.borderColor = `rgba(${color}, 0.5)`
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = `rgba(${color}, 0.2)`
+                e.currentTarget.style.borderColor = `rgba(${color}, 0.3)`
               }}
             >
               <Plus className="w-4 h-4" style={{ marginRight: '8px' }} />
@@ -302,7 +309,7 @@ const DefineScenarios: React.FC = () => {
               Define physical and transition risk drivers for scenario analysis
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '12px', marginTop: '35px' }}>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '80px', position: 'relative', zIndex: 50 }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -332,13 +339,29 @@ const DefineScenarios: React.FC = () => {
               onClick={handleSave}
               size="sm"
               style={{
-                backgroundColor: '#22c55e',
+                backgroundColor: saveStatus === 'saving' ? '#64748b' : saveStatus === 'success' ? '#10b981' : saveStatus === 'error' ? '#ef4444' : '#22c55e',
                 border: 'none',
-                color: '#ffffff'
+                color: '#ffffff',
+                pointerEvents: 'auto',
+                cursor: 'pointer',
+                position: 'relative',
+                zIndex: 100,
+                transition: 'all 0.2s'
+              }}
+              disabled={saveStatus === 'saving'}
+              onMouseEnter={(e) => {
+                if (saveStatus === 'idle') {
+                  e.currentTarget.style.backgroundColor = '#16a34a'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (saveStatus === 'idle') {
+                  e.currentTarget.style.backgroundColor = '#22c55e'
+                }
               }}
             >
               <Save className="w-4 h-4 mr-2" />
-              Save to Database
+              {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'success' ? 'Saved!' : saveStatus === 'error' ? 'Error' : 'Save to Database'}
             </Button>
           </div>
         </div>

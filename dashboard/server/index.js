@@ -2131,72 +2131,74 @@ app.post('/api/drivers', express.json(), (req, res) => {
     db.serialize(() => {
       db.run('BEGIN TRANSACTION')
 
-      let processedCount = 0
-      let hasError = false
+      // First, delete all existing drivers
+      db.run('DELETE FROM driver', (err) => {
+        if (err) {
+          console.error('Delete drivers error:', err)
+          db.run('ROLLBACK')
+          db.close()
+          return res.status(500).json({ error: 'Failed to clear existing drivers: ' + err.message })
+        }
 
-      drivers.forEach((driver) => {
+        // Now insert new drivers
+        let processedCount = 0
+        let hasError = false
+
+        if (drivers.length === 0) {
+          // No drivers to insert, just commit
+          db.run('COMMIT', (err) => {
+            db.close()
+            if (err) {
+              return res.status(500).json({ error: 'Failed to commit: ' + err.message })
+            }
+            return res.json({ success: true, message: 'All drivers cleared' })
+          })
+          return
+        }
+
+        drivers.forEach((driver) => {
         if (!driver.code || !driver.name) {
           hasError = true
           processedCount++
           return
         }
 
-        if (driver.driver_id) {
-          // Update existing driver
-          db.run(
-            `UPDATE driver
-             SET code = ?, name = ?, description = ?, category = ?
-             WHERE driver_id = ?`,
-            [driver.code, driver.name, driver.description || '', driver.category, driver.driver_id],
-            (err) => {
-              if (err) {
-                console.error('Update driver error:', err)
+        // Insert new driver
+        db.run(
+          `INSERT INTO driver (code, name, description, category)
+           VALUES (?, ?, ?, ?)`,
+          [driver.code, driver.name, driver.description || '', driver.category],
+          (err) => {
+            if (err) {
+              console.error('Insert driver error:', err)
                 hasError = true
               }
               processedCount++
 
-              if (processedCount === drivers.length) {
-                finishTransaction()
-              }
+            if (processedCount === drivers.length) {
+              finishTransaction()
             }
-          )
-        } else {
-          // Insert new driver
-          db.run(
-            `INSERT INTO driver (code, name, description, category)
-             VALUES (?, ?, ?, ?)`,
-            [driver.code, driver.name, driver.description || '', driver.category],
-            (err) => {
-              if (err) {
-                console.error('Insert driver error:', err)
-                hasError = true
-              }
-              processedCount++
-
-              if (processedCount === drivers.length) {
-                finishTransaction()
-              }
-            }
-          )
-        }
+          }
+        )
       })
 
-      function finishTransaction() {
-        if (hasError) {
-          db.run('ROLLBACK', () => {
-            db.close()
-            res.status(500).json({ error: 'Failed to save drivers' })
-          })
-        } else {
-          db.run('COMMIT', () => {
-            db.close()
-            res.json({
-              success: true,
-              message: `Successfully saved ${drivers.length} driver(s)`
+        function finishTransaction() {
+          if (hasError) {
+            db.run('ROLLBACK', () => {
+              db.close()
+              res.status(500).json({ error: 'Failed to save drivers' })
             })
-          })
+          } else {
+            db.run('COMMIT', () => {
+              db.close()
+              res.json({
+                success: true,
+                message: `Successfully saved ${drivers.length} driver(s)`
+              })
+            })
+          }
         }
-      }
+      }) // Close DELETE callback
     })
   } catch (error) {
     console.error('Save drivers error:', error)
