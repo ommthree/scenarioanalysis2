@@ -1,11 +1,16 @@
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
 
 // Load environment variables from api-keys.env
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-dotenv.config({ path: '../../env/api-keys.env' })
+const envPath = join(__dirname, '../../env/api-keys.env')
+dotenv.config({ path: envPath })
+
+// Verify API key is loaded
+const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY
+console.log('API key loaded:', apiKey ? `Yes (${apiKey.substring(0, 10)}...)` : 'No')
 
 import express from 'express'
 import cors from 'cors'
@@ -1619,7 +1624,7 @@ app.delete('/api/statement-templates/:code', (req, res) => {
  */
 app.post('/api/staged-files', express.json(), (req, res) => {
   try {
-    const { dbPath, fileName, fileType, rowCount } = req.body
+    const { dbPath, fileName, fileType, rowCount, csvContent } = req.body
 
     if (!dbPath || !fileName || !fileType) {
       return res.status(400).json({ error: 'Missing required fields' })
@@ -1636,9 +1641,9 @@ app.post('/api/staged-files', express.json(), (req, res) => {
     })
 
     db.run(
-      `INSERT INTO staged_file (file_name, file_type, row_count, is_valid)
-       VALUES (?, ?, ?, 1)`,
-      [fileName, fileType, rowCount || 0],
+      `INSERT INTO staged_file (file_name, file_type, row_count, is_valid, csv_content)
+       VALUES (?, ?, ?, 1, ?)`,
+      [fileName, fileType, rowCount || 0, csvContent || null],
       function(err) {
         db.close()
 
@@ -1787,12 +1792,9 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
           return res.status(404).json({ error: 'File not found' })
         }
 
-        // For damage curves and conversions, return csv_content directly (no staging table)
-        if (file.file_type === 'damage_curve' || file.file_type === 'conversion' || file.file_type === 'correlation') {
+        // For files with csv_content, return it directly
+        if (file.csv_content) {
           db.close()
-          if (!file.csv_content) {
-            return res.json({ success: true, csvText: '' })
-          }
           return res.json({
             success: true,
             csvText: file.csv_content,
@@ -1807,6 +1809,7 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
         if (file.file_type === 'pnl' || file.file_type === 'balance_sheet' ||
             file.file_type === 'cashflow' || file.file_type === 'carbon') {
           stagingTableName = `staging_statement_${file.file_type}`
+          useFileIdFilter = false  // Statement staging tables don't have file_id
         } else if (file.file_type === 'scenario') {
           // Scenarios use numbered tables
           stagingTableName = `staging_scenario_${fileId}`

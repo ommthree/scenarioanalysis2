@@ -607,7 +607,14 @@ export default function MapStatements() {
       return
     }
 
-    const lineItems = filteredLineItems(template, statementType).filter(item => !item.is_computed)
+    // Helper to check if item is mappable: either not computed, or has [t-1] dependencies (needs opening balance)
+    const isMappable = (item: LineItem) => {
+      if (!item.is_computed) return true
+      if (item.formula && item.formula.includes('[t-1]')) return true
+      return false
+    }
+
+    const lineItems = filteredLineItems(template, statementType).filter(isMappable)
 
     if (lineItems.length === 0) {
       setAiMappingMessage(prev => ({ ...prev, [statementType]: 'No mappable line items in template' }))
@@ -1283,30 +1290,37 @@ Respond with ONLY the JSON object, no other text`
                 <h4 className="text-sm font-semibold text-muted-foreground">Template Line Items</h4>
               </div>
               <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                {lineItems.map(lineItem => (
-                  <div key={lineItem.code} style={{ marginBottom: '20px' }}>
-                    <div style={{
-                      padding: '12px 16px',
-                      backgroundColor: lineItem.is_computed ? 'rgba(100, 116, 139, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                      border: lineItem.is_computed ? '2px solid rgba(100, 116, 139, 0.3)' : '2px solid rgba(59, 130, 246, 0.4)',
-                      borderRadius: '8px',
-                      marginBottom: '12px',
-                      fontWeight: 600,
-                      fontSize: '14px',
-                      color: lineItem.is_computed ? '#94a3b8' : '#60a5fa',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                      opacity: lineItem.is_computed ? 0.6 : 1
-                    }}>
-                      <Layers className="w-4 h-4" />
-                      {lineItem.display_name}
-                      {lineItem.is_computed && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: 'auto' }}>(Calculated)</span>}
+                {lineItems.map(lineItem => {
+                  // Check if item needs opening balance (has [t-1])
+                  const needsOpeningBalance = lineItem.formula && lineItem.formula.includes('[t-1]')
+                  const isDerived = lineItem.is_computed && !needsOpeningBalance
+
+                  return (
+                    <div key={lineItem.code} style={{ marginBottom: '20px' }}>
+                      <div style={{
+                        padding: '12px 16px',
+                        backgroundColor: isDerived ? 'rgba(100, 116, 139, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                        border: isDerived ? '2px solid rgba(100, 116, 139, 0.3)' : '2px solid rgba(59, 130, 246, 0.4)',
+                        borderRadius: '8px',
+                        marginBottom: '12px',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        color: isDerived ? '#94a3b8' : '#60a5fa',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                        opacity: isDerived ? 0.6 : 1
+                      }}>
+                        <Layers className="w-4 h-4" />
+                        {lineItem.display_name}
+                        {isDerived && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: 'auto' }}>(Calculated)</span>}
+                        {needsOpeningBalance && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: 'auto', color: '#a78bfa' }}>(Needs Opening Balance)</span>}
+                      </div>
+                      {!isDerived && renderEntityLineItemTree(statementType, selectedCompany, [selectedCompany.entity_id], lineItem.code, 0)}
                     </div>
-                    {!lineItem.is_computed && renderEntityLineItemTree(statementType, selectedCompany, [selectedCompany.entity_id], lineItem.code, 0)}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>

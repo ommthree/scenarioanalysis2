@@ -151,6 +151,9 @@ export default function LoadStatements() {
         // Record the staged file
         try {
           const rowCount = csvData?.rows.length || 0
+          // Read CSV file content
+          const csvText = await csvFile.text()
+
           await fetch('http://localhost:3001/api/staged-files', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -158,7 +161,8 @@ export default function LoadStatements() {
               dbPath,
               fileName: fileName,
               fileType: statementType,
-              rowCount
+              rowCount,
+              csvContent: csvText
             })
           })
 
