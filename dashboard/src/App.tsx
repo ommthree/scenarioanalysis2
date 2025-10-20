@@ -12,6 +12,7 @@ import MapDamageCurves from './pages/MapDamageCurves'
 import LoadHazardMaps from './pages/LoadHazardMaps'
 import MapHazardMaps from './pages/MapHazardMaps'
 import LoadCorrelation from './pages/LoadCorrelation'
+import LoadConversions from './pages/LoadConversions'
 import DefineStatements from './pages/DefineStatements'
 import DefineEntities from './pages/DefineEntities'
 import DefineFormulas from './pages/DefineFormulas'
@@ -49,6 +50,7 @@ function App() {
           <Route path="/inputs/scenarios" element={<LoadScenarios />} />
           <Route path="/inputs/map-scenarios" element={<MapScenarios />} />
           <Route path="/inputs/correlation" element={<LoadCorrelation />} />
+          <Route path="/inputs/conversions" element={<LoadConversions />} />
           <Route path="/inputs/locations" element={<LoadLocations />} />
           <Route path="/inputs/map-locations" element={<MapLocations />} />
           <Route path="/inputs/damage-curves" element={<LoadDamageCurves />} />

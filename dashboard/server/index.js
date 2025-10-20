@@ -515,9 +515,9 @@ app.post('/api/correlation/load', upload.single('file'), async (req, res) => {
 
     // Store file metadata in staged_file table
     db.run(
-      `INSERT INTO staged_file (file_name, file_type, row_count, uploaded_at, is_valid)
-       VALUES (?, 'correlation', ?, datetime('now'), 1)`,
-      [file.originalname, records.length],
+      `INSERT INTO staged_file (file_name, file_type, row_count, csv_content, uploaded_at, is_valid)
+       VALUES (?, 'correlation', ?, ?, datetime('now'), 1)`,
+      [file.originalname, records.length, fileContent],
       function(err) {
         if (err) {
           console.error('Failed to insert staged_file record:', err)
@@ -544,6 +544,107 @@ app.post('/api/correlation/load', upload.single('file'), async (req, res) => {
 
   } catch (error) {
     console.error('Correlation load error:', error)
+    if (req.file) fs.unlinkSync(req.file.path)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * POST /api/conversion/load
+ * Upload and stage a unit conversion lookup table CSV file
+ */
+app.post('/api/conversion/load', upload.single('file'), async (req, res) => {
+  console.log('Received conversion table upload request:', {
+    dbPath: req.body.dbPath,
+    file: req.file?.originalname
+  })
+
+  try {
+    const { dbPath } = req.body
+    const file = req.file
+
+    if (!file || !dbPath) {
+      console.log('Missing fields - file:', file?.originalname, 'dbPath:', dbPath)
+      if (file) fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    // Check if database exists
+    if (!fs.existsSync(dbPath)) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({
+        error: `Database not found at ${dbPath}. Please select a valid database in the Database page.`
+      })
+    }
+
+    // Parse CSV file
+    const fileContent = fs.readFileSync(file.path, 'utf-8')
+    let records
+    try {
+      records = parse(fileContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true
+      })
+    } catch (parseError) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: `Failed to parse CSV: ${parseError.message}` })
+    }
+
+    if (records.length === 0) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'CSV file is empty' })
+    }
+
+    // Validate at least 2 columns (from/to units)
+    const headers = Object.keys(records[0])
+    if (headers.length < 2) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({
+        error: `Conversion table must have at least 2 columns. Found ${headers.length}.`
+      })
+    }
+
+    // Connect to database
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        console.error('Database connection error:', err)
+        fs.unlinkSync(file.path)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Store file metadata in staged_file table
+    db.run(
+      `INSERT INTO staged_file (file_name, file_type, row_count, csv_content, uploaded_at, is_valid)
+       VALUES (?, 'conversion', ?, ?, datetime('now'), 1)`,
+      [file.originalname, records.length, fileContent],
+      function(err) {
+        if (err) {
+          console.error('Failed to insert staged_file record:', err)
+          db.close()
+          fs.unlinkSync(file.path)
+          return res.status(500).json({ error: 'Failed to store file metadata: ' + err.message })
+        }
+
+        const fileId = this.lastID
+        console.log(`Stored conversion table file: ${file.originalname} (file_id=${fileId}, rows=${records.length})`)
+
+        db.close()
+        fs.unlinkSync(file.path)
+
+        res.json({
+          success: true,
+          message: `Successfully loaded conversion table with ${records.length} conversion(s).`,
+          fileId,
+          rowCount: records.length,
+          columns: headers
+        })
+      }
+    )
+
+  } catch (error) {
+    console.error('Conversion load error:', error)
     if (req.file) fs.unlinkSync(req.file.path)
     res.status(500).json({ error: error.message })
   }
@@ -1686,8 +1787,8 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
           return res.status(404).json({ error: 'File not found' })
         }
 
-        // For damage curves, return csv_content directly (no staging table)
-        if (file.file_type === 'damage_curve') {
+        // For damage curves and conversions, return csv_content directly (no staging table)
+        if (file.file_type === 'damage_curve' || file.file_type === 'conversion' || file.file_type === 'correlation') {
           db.close()
           if (!file.csv_content) {
             return res.json({ success: true, csvText: '' })
