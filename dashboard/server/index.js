@@ -4537,6 +4537,72 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
 })
 
 /**
+ * Ingest statements from staged files using mappings
+ * POST /api/ingest/statements
+ * Body: { dbPath }
+ */
+app.post('/api/ingest/statements', async (req, res) => {
+  const { dbPath } = req.body
+
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  try {
+    // TODO: Implement statement ingestion logic
+    // 1. Get all statement mappings
+    // 2. For each mapping, read staged CSV + mapping config
+    // 3. Insert into scenario_drivers table as period 0 initial values
+
+    res.json({ success: true, message: 'Statement ingestion not yet implemented' })
+  } catch (error) {
+    console.error('Statement ingestion error:', error)
+    res.status(500).json({ error: error.message })
+  } finally {
+    db.close()
+  }
+})
+
+/**
+ * Ingest scenarios from staged files using mappings
+ * POST /api/ingest/scenarios
+ * Body: { dbPath }
+ */
+app.post('/api/ingest/scenarios', async (req, res) => {
+  const { dbPath } = req.body
+
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  try {
+    // TODO: Implement scenario ingestion logic
+    // 1. Get all scenario mappings
+    // 2. For each mapping, read staged CSV + mapping config
+    // 3. Insert into scenario + scenario_drivers tables
+
+    res.json({ success: true, message: 'Scenario ingestion not yet implemented' })
+  } catch (error) {
+    console.error('Scenario ingestion error:', error)
+    res.status(500).json({ error: error.message })
+  } finally {
+    db.close()
+  }
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {
