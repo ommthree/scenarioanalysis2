@@ -11,7 +11,7 @@ export default function Home() {
     }}>
       {/* Large Daedalus Logo */}
       <img
-        src="/daedalus2.png"
+        src="/daedalus.png"
         alt="Daedalus Logo"
         style={{
           width: '400px',
@@ -26,16 +26,6 @@ export default function Home() {
         maxWidth: '900px',
         margin: '0 auto'
       }}>
-        <h1 style={{
-          fontSize: '48px',
-          fontWeight: 'bold',
-          color: '#ffffff',
-          marginBottom: '24px',
-          lineHeight: '1.2'
-        }}>
-          Transform Your Financial Planning with Intelligent Scenario Analysis
-        </h1>
-
         <p style={{
           fontSize: '20px',
           color: '#94a3b8',

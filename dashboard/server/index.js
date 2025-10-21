@@ -4716,25 +4716,51 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
   const ingestScenarios = () => {
     return new Promise((resolve, reject) => {
-      logVerbose('Querying database tables: scenario_mapping JOIN staged_file')
-      // Get all scenario mappings
-      db.all(
-        `SELECT scm.*, sf.file_name
-         FROM scenario_mapping scm
-         JOIN staged_file sf ON sf.file_id = scm.file_id`,
+      // First, get the entity_id from statement_mapping (use group/top level)
+      logVerbose('Querying statement_mapping table to determine entity_id')
+      db.get(
+        `SELECT column_mapping FROM statement_mapping LIMIT 1`,
         [],
-        async (err, mappings) => {
-          if (err) return reject(err)
-          logVerbose(`Found ${mappings.length} scenario mapping(s)`)
-          if (mappings.length === 0) {
-            return resolve({ scenarios: 0, drivers: 0, message: 'No scenario mappings found' })
+        (stmtErr, stmtMapping) => {
+          if (stmtErr) return reject(stmtErr)
+
+          let entityId = 'TEST_L1' // fallback default
+          if (stmtMapping && stmtMapping.column_mapping) {
+            try {
+              const columnMapping = JSON.parse(stmtMapping.column_mapping)
+              const hierarchicalMappings = columnMapping.hierarchical_mappings || []
+              if (hierarchicalMappings.length > 0 && hierarchicalMappings[0].entity_path) {
+                // Use the first (top/group level) entity from entity_path
+                entityId = hierarchicalMappings[0].entity_path[0]
+                logVerbose(`Using entity_id from statement mapping: ${entityId}`)
+                logDebug('Entity determined from statement_mapping.column_mapping.hierarchical_mappings[0].entity_path[0]')
+              }
+            } catch (parseErr) {
+              logDebug('Failed to parse statement mapping, using fallback entity_id: TEST_L1')
+            }
+          } else {
+            logDebug('No statement mapping found, using fallback entity_id: TEST_L1')
           }
 
-          let scenariosCreated = 0
-          let driversInserted = 0
-          const errors = []
+          logVerbose('Querying database tables: scenario_mapping JOIN staged_file')
+          // Get all scenario mappings
+          db.all(
+            `SELECT scm.*, sf.file_name
+             FROM scenario_mapping scm
+             JOIN staged_file sf ON sf.file_id = scm.file_id`,
+            [],
+            async (err, mappings) => {
+              if (err) return reject(err)
+              logVerbose(`Found ${mappings.length} scenario mapping(s)`)
+              if (mappings.length === 0) {
+                return resolve({ scenarios: 0, drivers: 0, message: 'No scenario mappings found' })
+              }
 
-          for (const mapping of mappings) {
+              let scenariosCreated = 0
+              let driversInserted = 0
+              const errors = []
+
+              for (const mapping of mappings) {
             try {
               logVerbose(`Processing CSV file: ${mapping.file_name}`)
               logDebug('Mapping record from scenario_mapping table:', {
@@ -4857,7 +4883,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                       source_csv_value: csvRow[periodCol],
                       parsed_value: value,
                       insert_to_table: 'scenario_drivers',
-                      entity_id: 'TEST_L1',
+                      entity_id: entityId,
                       scenario_id: scenarioId,
                       period_id: periodIndex + 1,
                       driver_code: varMapping.driver_code,
@@ -4869,8 +4895,8 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                       db.run(
                         `INSERT OR REPLACE INTO scenario_drivers
                          (entity_id, scenario_id, period_id, driver_code, value, unit_code)
-                         VALUES ('TEST_L1', ?, ?, ?, ?, ?)`,
-                        [scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
+                         VALUES (?, ?, ?, ?, ?, ?)`,
+                        [entityId, scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
                         (err) => (err ? rej(err) : (driversInserted++, res()))
                       )
                     })
@@ -4881,13 +4907,15 @@ app.post('/api/ingest/scenarios', async (req, res) => {
             } catch (err) {
               errors.push(`Error processing mapping: ${err.message}`)
             }
-          }
+              }
 
-          if (errors.length > 0) {
-            reject(new Error(errors.join('; ')))
-          } else {
-            resolve({ scenarios: scenariosCreated, drivers: driversInserted })
-          }
+              if (errors.length > 0) {
+                reject(new Error(errors.join('; ')))
+              } else {
+                resolve({ scenarios: scenariosCreated, drivers: driversInserted })
+              }
+            }
+          )
         }
       )
     })

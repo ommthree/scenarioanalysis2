@@ -208,18 +208,20 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
           backgroundColor: '#0f172a'
         }}
       >
-        {/* Logo - shown on all screens */}
-        <img
-          src="/daedalus2.png"
-          alt="Logo"
-          className="absolute z-50"
-          style={{
-            top: '1.5rem',
-            right: '2rem',
-            height: '105px',
-            width: 'auto'
-          }}
-        />
+        {/* Logo - shown on all screens except home */}
+        {location.pathname !== '/' && (
+          <img
+            src="/daedalus2.png"
+            alt="Logo"
+            className="absolute z-50"
+            style={{
+              top: '1.5rem',
+              right: '2rem',
+              height: '105px',
+              width: 'auto'
+            }}
+          />
+        )}
 
         {navMode === 'flowchart' ? (
           <div className="h-full">
