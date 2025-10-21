@@ -4646,12 +4646,11 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
   const ingestScenarios = () => {
     return new Promise((resolve, reject) => {
-      // Get all scenario mappings with their CSV content
+      // Get all scenario mappings
       db.all(
-        `SELECT scm.*, sf.csv_content
+        `SELECT scm.*, sf.file_name
          FROM scenario_mapping scm
-         JOIN staged_file sf ON sf.file_id = scm.file_id
-         WHERE sf.csv_content IS NOT NULL`,
+         JOIN staged_file sf ON sf.file_id = scm.file_id`,
         [],
         async (err, mappings) => {
           if (err) return reject(err)
@@ -4665,11 +4664,19 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
           for (const mapping of mappings) {
             try {
-              const csvData = parse(mapping.csv_content, {
-                columns: true,
-                skip_empty_lines: true,
-                trim: true
+              // Read from staging table instead of csv_content
+              const stagingTableName = `staging_scenario_${mapping.file_id}`
+              const csvData = await new Promise((res, rej) => {
+                db.all(`SELECT * FROM ${stagingTableName}`, [], (err, rows) => {
+                  if (err) rej(err)
+                  else res(rows)
+                })
               })
+
+              if (csvData.length === 0) {
+                errors.push(`No data in staging table ${stagingTableName}`)
+                continue
+              }
 
               const valueColumns = JSON.parse(mapping.value_columns)
               const variableMappings = JSON.parse(mapping.variable_mappings)

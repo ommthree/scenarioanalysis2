@@ -64,6 +64,12 @@ export default function PerformCalculation() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, verbosity })
       })
+
+      if (!stmtResponse.ok) {
+        const errorText = await stmtResponse.text()
+        throw new Error(`Statement ingestion failed: ${errorText}`)
+      }
+
       const stmtResult = await stmtResponse.json()
 
       if (stmtResult.success) {
@@ -86,9 +92,18 @@ export default function PerformCalculation() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, verbosity })
       })
+
+      if (!scenResponse.ok) {
+        const errorText = await scenResponse.text()
+        throw new Error(`Scenario ingestion failed: ${errorText}`)
+      }
+
       const scenResult = await scenResponse.json()
 
       if (scenResult.success) {
+        if (scenResult.scenarios === 0) {
+          throw new Error('No scenarios found. Please upload and map scenario files before running calculations.')
+        }
         if (verbosity === 'debug') {
           addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios, ${scenResult.drivers} driver values`)
         } else if (verbosity === 'verbose') {

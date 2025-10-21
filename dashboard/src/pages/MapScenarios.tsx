@@ -88,6 +88,7 @@ const MapScenarios: React.FC = () => {
   // Auto-save mappings when they change
   useEffect(() => {
     if (!selectedFileId || !variableColumn || isLoadingMapping) return
+    if (!valueStartColumn || !valueEndColumn) return // Don't save until value columns are set
 
     const timeoutId = setTimeout(async () => {
       try {
@@ -128,15 +129,10 @@ const MapScenarios: React.FC = () => {
     // Clear previous data
     setCsvData([])
     setCsvColumns([])
-    setScenarioColumn(null)
-    setVariableColumn(null)
-    setUnitsColumn(null)
-    setValueStartColumn(null)
-    setValueEndColumn(null)
-    setVariableMappings([])
 
     try {
       // Load saved mapping if it exists
+      let mappingLoaded = false
       try {
         const mappingResponse = await fetch(`http://localhost:3001/api/scenarios/get-scenario-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`)
         const mappingResult = await mappingResponse.json()
@@ -156,13 +152,23 @@ const MapScenarios: React.FC = () => {
             setValueEndColumn(mapping.valueColumns[mapping.valueColumns.length - 1])
           }
           setVariableMappings(mapping.variableMappings || [])
+          mappingLoaded = true
         }
       } catch (mappingError) {
         console.log('No saved mapping found or error loading mapping:', mappingError)
-        // Continue without loading mapping
-      } finally {
-        setIsLoadingMapping(false)
       }
+
+      // Only clear mapping state if no mapping was loaded
+      if (!mappingLoaded) {
+        setScenarioColumn(null)
+        setVariableColumn(null)
+        setUnitsColumn(null)
+        setValueStartColumn(null)
+        setValueEndColumn(null)
+        setVariableMappings([])
+      }
+
+      setIsLoadingMapping(false)
 
       // Find the table name for this file
       const tableInfo = availableTables.find(t => t.fileId === fileId)
