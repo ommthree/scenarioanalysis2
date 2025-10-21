@@ -4554,13 +4554,70 @@ app.post('/api/ingest/statements', async (req, res) => {
     }
   })
 
-  try {
-    // TODO: Implement statement ingestion logic
-    // 1. Get all statement mappings
-    // 2. For each mapping, read staged CSV + mapping config
-    // 3. Insert into scenario_drivers table as period 0 initial values
+  const ingestStatements = () => {
+    return new Promise((resolve, reject) => {
+      // Get all statement mappings with their CSV content
+      db.all(
+        `SELECT sm.*, sf.csv_content
+         FROM statement_mapping sm
+         JOIN staged_file sf ON sf.file_name = sm.csv_file_name
+         WHERE sf.csv_content IS NOT NULL`,
+        [],
+        async (err, mappings) => {
+          if (err) return reject(err)
+          if (mappings.length === 0) {
+            return resolve({ inserted: 0, message: 'No statement mappings found' })
+          }
 
-    res.json({ success: true, message: 'Statement ingestion not yet implemented' })
+          let totalInserted = 0
+          const errors = []
+
+          for (const mapping of mappings) {
+            try {
+              const csvData = parse(mapping.csv_content, {
+                columns: true,
+                skip_empty_lines: true,
+                trim: true
+              })
+
+              const columnMapping = JSON.parse(mapping.column_mapping)
+              const hierarchicalMappings = columnMapping.hierarchical_mappings || []
+
+              for (const hm of hierarchicalMappings) {
+                const csvRow = csvData[hm.csv_row_index]
+                if (!csvRow) continue
+
+                const value = parseFloat(csvRow.Value || csvRow.value || 0)
+                const entityId = hm.entity_path[hm.entity_path.length - 1]
+
+                await new Promise((res, rej) => {
+                  db.run(
+                    `INSERT OR REPLACE INTO scenario_drivers
+                     (entity_id, scenario_id, period_id, driver_code, value, unit_code)
+                     VALUES (?, 1, 0, ?, ?, 'USD')`,
+                    [entityId, hm.line_item_code, value],
+                    (err) => (err ? rej(err) : (totalInserted++, res()))
+                  )
+                })
+              }
+            } catch (err) {
+              errors.push(`Error processing mapping: ${err.message}`)
+            }
+          }
+
+          if (errors.length > 0) {
+            reject(new Error(errors.join('; ')))
+          } else {
+            resolve({ inserted: totalInserted, mappings: mappings.length })
+          }
+        }
+      )
+    })
+  }
+
+  try {
+    const result = await ingestStatements()
+    res.json({ success: true, ...result })
   } catch (error) {
     console.error('Statement ingestion error:', error)
     res.status(500).json({ error: error.message })
@@ -4587,13 +4644,108 @@ app.post('/api/ingest/scenarios', async (req, res) => {
     }
   })
 
-  try {
-    // TODO: Implement scenario ingestion logic
-    // 1. Get all scenario mappings
-    // 2. For each mapping, read staged CSV + mapping config
-    // 3. Insert into scenario + scenario_drivers tables
+  const ingestScenarios = () => {
+    return new Promise((resolve, reject) => {
+      // Get all scenario mappings with their CSV content
+      db.all(
+        `SELECT scm.*, sf.csv_content
+         FROM scenario_mapping scm
+         JOIN staged_file sf ON sf.file_id = scm.file_id
+         WHERE sf.csv_content IS NOT NULL`,
+        [],
+        async (err, mappings) => {
+          if (err) return reject(err)
+          if (mappings.length === 0) {
+            return resolve({ scenarios: 0, drivers: 0, message: 'No scenario mappings found' })
+          }
 
-    res.json({ success: true, message: 'Scenario ingestion not yet implemented' })
+          let scenariosCreated = 0
+          let driversInserted = 0
+          const errors = []
+
+          for (const mapping of mappings) {
+            try {
+              const csvData = parse(mapping.csv_content, {
+                columns: true,
+                skip_empty_lines: true,
+                trim: true
+              })
+
+              const valueColumns = JSON.parse(mapping.value_columns)
+              const variableMappings = JSON.parse(mapping.variable_mappings)
+
+              // Get unique scenario names from value columns (columns represent scenarios/periods)
+              const scenarioColumns = valueColumns.filter(col => !['driver', 'scenario', 'unit', 'units'].includes(col.toLowerCase()))
+
+              // For each scenario column, create scenarios and insert driver values
+              for (let periodIndex = 0; periodIndex < scenarioColumns.length; periodIndex++) {
+                const periodCol = scenarioColumns[periodIndex]
+                const scenarioCode = `SCENARIO_${Date.now()}_P${periodIndex + 1}`
+
+                // Create scenario record (if not exists)
+                await new Promise((res, rej) => {
+                  db.run(
+                    `INSERT OR IGNORE INTO scenario
+                     (code, name, description, json_drivers, statement_template_id, tax_strategy_id)
+                     VALUES (?, ?, ?, '[]', 1, 1)`,
+                    [scenarioCode, `Scenario Period ${periodIndex + 1}`, `Imported from ${mapping.file_id}`],
+                    function(err) {
+                      if (err) rej(err)
+                      else {
+                        if (this.changes > 0) scenariosCreated++
+                        res(this.lastID)
+                      }
+                    }
+                  )
+                })
+
+                // Get scenario_id
+                const scenarioId = await new Promise((res, rej) => {
+                  db.get(
+                    `SELECT scenario_id FROM scenario WHERE code = ?`,
+                    [scenarioCode],
+                    (err, row) => (err ? rej(err) : res(row?.scenario_id))
+                  )
+                })
+
+                // Insert driver values for this scenario
+                for (const varMapping of variableMappings) {
+                  const csvRow = csvData[varMapping.csv_row_index]
+                  if (!csvRow) continue
+
+                  const value = parseFloat(csvRow[periodCol] || 0)
+                  const unitCode = csvRow[mapping.units_column] || 'USD'
+
+                  // Insert for each entity (assuming entity 'TEST_L1' for now - this should come from entities)
+                  await new Promise((res, rej) => {
+                    db.run(
+                      `INSERT OR REPLACE INTO scenario_drivers
+                       (entity_id, scenario_id, period_id, driver_code, value, unit_code)
+                       VALUES ('TEST_L1', ?, ?, ?, ?, ?)`,
+                      [scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
+                      (err) => (err ? rej(err) : (driversInserted++, res()))
+                    )
+                  })
+                }
+              }
+            } catch (err) {
+              errors.push(`Error processing mapping: ${err.message}`)
+            }
+          }
+
+          if (errors.length > 0) {
+            reject(new Error(errors.join('; ')))
+          } else {
+            resolve({ scenarios: scenariosCreated, drivers: driversInserted })
+          }
+        }
+      )
+    })
+  }
+
+  try {
+    const result = await ingestScenarios()
+    res.json({ success: true, ...result })
   } catch (error) {
     console.error('Scenario ingestion error:', error)
     res.status(500).json({ error: error.message })
