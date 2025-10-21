@@ -19,6 +19,7 @@ import sqlite3 from 'sqlite3'
 import { parse } from 'csv-parse/sync'
 import fs from 'fs'
 import path from 'path'
+import { exec } from 'child_process'
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
@@ -1734,21 +1735,94 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
       }
     })
 
-    db.run(
-      `DELETE FROM staged_file WHERE file_id = ?`,
+    // First, get all scenario_ids associated with this file via scenario_mapping
+    db.all(
+      `SELECT DISTINCT sm.scenario_id
+       FROM scenario_mapping sm
+       WHERE sm.file_id = ?`,
       [fileId],
-      function(err) {
-        db.close()
-
+      (err, scenarios) => {
         if (err) {
-          return res.status(500).json({ error: 'Failed to delete staged file: ' + err.message })
+          db.close()
+          return res.status(500).json({ error: 'Failed to query scenarios: ' + err.message })
         }
 
-        res.json({
-          success: true,
-          deleted: this.changes,
-          message: 'Staged file deleted'
+        const scenarioIds = scenarios.map(s => s.scenario_id)
+
+        // Start cascading deletes
+        // 1. Delete from scenario_drivers for all associated scenarios
+        const deleteScenariosPromise = new Promise((resolve, reject) => {
+          if (scenarioIds.length === 0) {
+            return resolve()
+          }
+
+          const placeholders = scenarioIds.map(() => '?').join(',')
+          db.run(
+            `DELETE FROM scenario_drivers WHERE scenario_id IN (${placeholders})`,
+            scenarioIds,
+            (err) => {
+              if (err) reject(err)
+              else resolve()
+            }
+          )
         })
+
+        deleteScenariosPromise
+          .then(() => {
+            // 2. Delete from scenario table
+            if (scenarioIds.length === 0) return Promise.resolve()
+
+            const placeholders = scenarioIds.map(() => '?').join(',')
+            return new Promise((resolve, reject) => {
+              db.run(
+                `DELETE FROM scenario WHERE scenario_id IN (${placeholders})`,
+                scenarioIds,
+                (err) => {
+                  if (err) reject(err)
+                  else resolve()
+                }
+              )
+            })
+          })
+          .then(() => {
+            // 3. Delete from scenario_mapping
+            return new Promise((resolve, reject) => {
+              db.run(
+                `DELETE FROM scenario_mapping WHERE file_id = ?`,
+                [fileId],
+                (err) => {
+                  if (err) reject(err)
+                  else resolve()
+                }
+              )
+            })
+          })
+          .then(() => {
+            // 4. Finally delete from staged_file
+            return new Promise((resolve, reject) => {
+              db.run(
+                `DELETE FROM staged_file WHERE file_id = ?`,
+                [fileId],
+                function(err) {
+                  if (err) reject(err)
+                  else resolve(this.changes)
+                }
+              )
+            })
+          })
+          .then((changes) => {
+            db.close()
+            res.json({
+              success: true,
+              deleted: changes,
+              deletedScenarios: scenarioIds.length,
+              message: `Staged file and ${scenarioIds.length} associated scenario(s) deleted`
+            })
+          })
+          .catch((err) => {
+            db.close()
+            res.status(500).json({ error: 'Failed to delete: ' + err.message })
+          })
       }
     )
   } catch (error) {
@@ -2379,6 +2453,18 @@ app.post('/api/scenarios/save-file-config', express.json(), (req, res) => {
 app.post('/api/scenarios/save-scenario-mapping', express.json(), (req, res) => {
   try {
     const { dbPath, fileId, scenarioColumn, unitsColumn, driverColumn, valueColumns, variableMappings } = req.body
+
+    console.log('=== SAVE SCENARIO MAPPING RECEIVED ===')
+    console.log('fileId:', fileId)
+    console.log('scenarioColumn:', scenarioColumn)
+    console.log('unitsColumn:', unitsColumn)
+    console.log('driverColumn:', driverColumn)
+    console.log('valueColumns:', valueColumns)
+    console.log('valueColumns type:', typeof valueColumns)
+    console.log('valueColumns isArray:', Array.isArray(valueColumns))
+    console.log('valueColumns length:', valueColumns?.length)
+    console.log('variableMappings count:', variableMappings?.length)
+    console.log('=====================================')
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -4605,6 +4691,12 @@ app.post('/api/ingest/statements', async (req, res) => {
                 skip_empty_lines: true,
                 trim: true
               })
+
+              // Get all column names
+              const allColumns = csvData.length > 0 ? Object.keys(csvData[0]) : []
+
+              logVerbose(`File dimensions: ${csvData.length} rows × ${allColumns.length} columns`)
+              logDebug('All available columns:', allColumns)
               logDebug('Parsed CSV rows from csv_content field:', csvData.length)
               if (csvData.length > 0) {
                 logDebug('Sample CSV row (first row):', csvData[0])
@@ -4614,6 +4706,7 @@ app.post('/api/ingest/statements', async (req, res) => {
               logDebug('Column mapping structure from statement_mapping:', columnMapping)
               const hierarchicalMappings = columnMapping.hierarchical_mappings || []
               logVerbose(`Processing ${hierarchicalMappings.length} hierarchical mapping(s)`)
+              logVerbose(`These will be inserted as opening balance (period_id = 0) in scenario_drivers table`)
 
               for (const hm of hierarchicalMappings) {
                 const csvRow = csvData[hm.csv_row_index]
@@ -4716,10 +4809,15 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
   const ingestScenarios = () => {
     return new Promise((resolve, reject) => {
-      // First, get the entity_id from statement_mapping (use group/top level)
+      // First, get the entity_id from statement_mapping (use the most recent one with csv_content)
       logVerbose('Querying statement_mapping table to determine entity_id')
       db.get(
-        `SELECT column_mapping FROM statement_mapping LIMIT 1`,
+        `SELECT sm.column_mapping
+         FROM statement_mapping sm
+         JOIN staged_file sf ON sf.file_name = sm.csv_file_name
+         WHERE sf.csv_content IS NOT NULL
+         ORDER BY sm.mapping_id DESC
+         LIMIT 1`,
         [],
         (stmtErr, stmtMapping) => {
           if (stmtErr) return reject(stmtErr)
@@ -4732,7 +4830,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               if (hierarchicalMappings.length > 0 && hierarchicalMappings[0].entity_path) {
                 // Use the first (top/group level) entity from entity_path
                 entityId = hierarchicalMappings[0].entity_path[0]
-                logVerbose(`Using entity_id from statement mapping: ${entityId}`)
+                logVerbose(`Using entity_id from most recent statement mapping: ${entityId}`)
                 logDebug('Entity determined from statement_mapping.column_mapping.hierarchical_mappings[0].entity_path[0]')
               }
             } catch (parseErr) {
@@ -4787,12 +4885,33 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                 errors.push(`No data in staging table ${stagingTableName}`)
                 continue
               }
-              logDebug('Rows read from staging table:', csvData.length)
+
+              // Get all column names from the first row
+              const allColumns = csvData.length > 0 ? Object.keys(csvData[0]).filter(col =>
+                !['_rowid', 'imported_at', 'is_mapped'].includes(col)
+              ) : []
+
+              logVerbose(`File dimensions: ${csvData.length} rows × ${allColumns.length} columns`)
+              logDebug('All available columns:', allColumns)
               logDebug('Sample CSV row (first row):', csvData[0])
 
               const valueColumns = JSON.parse(mapping.value_columns)
-              logDebug('Value columns from mapping:', valueColumns)
               const variableMappings = JSON.parse(mapping.variable_mappings)
+
+              logVerbose(`Column mapping configuration:`)
+              logVerbose(`  - Scenario column: ${mapping.scenario_column || 'Not set'}`)
+              logVerbose(`  - Variable/Driver column: ${mapping.driver_column || 'Not set'}`)
+              logVerbose(`  - Units column: ${mapping.units_column || 'Not set'}`)
+              logVerbose(`  - Value columns count: ${valueColumns.length}`)
+              if (valueColumns.length > 0) {
+                logVerbose(`  - Value columns: ${valueColumns.join(', ')}`)
+              } else {
+                logVerbose(`  ⚠️  WARNING: No value columns configured! Period data will not be ingested.`)
+                logVerbose(`  ⚠️  Please set Value Start and Value End columns in the Map Scenarios page.`)
+              }
+              logVerbose(`  - Variable mappings: ${variableMappings.length} driver(s) mapped`)
+
+              logDebug('Value columns from mapping:', valueColumns)
               logDebug('Variable mappings from mapping:', variableMappings)
 
               // Get value columns (periods)
@@ -4903,6 +5022,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                   }
                 }
                 logVerbose(`Completed scenario: ${scenarioName}`)
+                logVerbose(`  → Inserted ${variableMappings.length} drivers × ${periodColumns.length} periods = ${variableMappings.length * periodColumns.length} values`)
               }
             } catch (err) {
               errors.push(`Error processing mapping: ${err.message}`)
@@ -5017,9 +5137,9 @@ app.get('/api/results/statement', (req, res) => {
         })
       })
 
-      // Now query scenario_drivers for values
+      // Now query pl_result for calculated values
       db.all(
-        `SELECT driver_code, value FROM scenario_drivers WHERE period_id = ?`,
+        `SELECT line_item_code, value FROM pl_result WHERE period_id = ? LIMIT 1`,
         [period],
         (err, rows) => {
           if (err) {
@@ -5027,16 +5147,22 @@ app.get('/api/results/statement', (req, res) => {
             return res.status(500).json({ error: err.message })
           }
 
-          // Combine scenario_drivers data with metadata
+          // If no pl_result data, return empty array
+          if (!rows || rows.length === 0) {
+            db.close()
+            return res.json({ success: true, lineItems: [] })
+          }
+
+          // Combine pl_result data with metadata
           const lineItems = rows.map(row => {
-            const metadata = metadataMap.get(row.driver_code) || {
-              display_name: row.driver_code,
+            const metadata = metadataMap.get(row.line_item_code) || {
+              display_name: row.line_item_code,
               section: 'Other',
               is_computed: false,
               display_order: 999
             }
             return {
-              code: row.driver_code,
+              code: row.line_item_code,
               display_name: metadata.display_name,
               section: metadata.section,
               is_computed: metadata.is_computed,
@@ -5060,6 +5186,37 @@ app.get('/api/results/statement', (req, res) => {
       )
     }
   )
+})
+
+/**
+ * Run calculation engine
+ */
+app.post('/api/calculate', (req, res) => {
+  const { dbPath } = req.body
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
+
+  exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    if (error) {
+      console.error('Calculation error:', error)
+      return res.json({
+        success: false,
+        error: error.message,
+        stdout: stdout,
+        stderr: stderr
+      })
+    }
+
+    res.json({
+      success: true,
+      output: stdout,
+      errors: stderr
+    })
+  })
 })
 
 /**

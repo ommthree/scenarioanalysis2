@@ -10,16 +10,55 @@ export default function Home() {
       textAlign: 'center'
     }}>
       {/* Large Daedalus Logo */}
-      <img
-        src="/daedalus.png"
-        alt="Daedalus Logo"
-        style={{
-          width: '400px',
-          height: 'auto',
-          marginBottom: '48px',
-          filter: 'drop-shadow(0 10px 30px rgba(59, 130, 246, 0.3))'
-        }}
-      />
+      <div style={{ position: 'relative', marginBottom: '48px' }}>
+        <img
+          src="/daedalus.png"
+          alt="Daedalus Logo"
+          style={{
+            width: '400px',
+            height: 'auto',
+            filter: 'drop-shadow(0 10px 30px rgba(59, 130, 246, 0.3))'
+          }}
+        />
+
+        {/* Documentation Link */}
+        <a
+          href="/TECH_DOC.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            position: 'absolute',
+            top: '-20px',
+            right: '-80px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 20px',
+            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+            border: '2px solid rgba(59, 130, 246, 0.5)',
+            borderRadius: '12px',
+            color: '#3b82f6',
+            textDecoration: 'none',
+            fontSize: '16px',
+            fontWeight: '600',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
+            e.currentTarget.style.borderColor = '#3b82f6'
+            e.currentTarget.style.transform = 'translateY(-2px)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+            e.currentTarget.style.transform = 'translateY(0)'
+          }}
+        >
+          <span style={{ fontSize: '24px' }}>📖</span>
+          <span>Documentation</span>
+        </a>
+      </div>
 
       {/* Marketing Content */}
       <div style={{

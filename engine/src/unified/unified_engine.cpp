@@ -11,6 +11,7 @@
 #include <sstream>
 #include <cmath>
 #include <iostream>
+#include <set>
 
 namespace finmodel {
 namespace unified {
@@ -102,6 +103,8 @@ UnifiedResult UnifiedEngine::calculate(
     // Calculate line items in dependency order
     const auto& calc_order = tmpl->get_calculation_order();
 
+    // Track which items we skip in period 0 for cascading
+    std::set<std::string> skipped_items;
 
     for (const auto& code : calc_order) {
         auto line_item = tmpl->get_line_item(code);
@@ -109,6 +112,56 @@ UnifiedResult UnifiedEngine::calculate(
             result.success = false;
             result.errors.push_back("Line item '" + code + "' not found in template");
             return result;
+        }
+
+        // In period 0 (opening balance), only calculate is_computed=true items
+        // is_computed=true means: computed from current period statement values only
+        // is_computed=false means: requires external data (drivers, prior periods, etc.)
+        bool should_skip = false;
+        if (period_id == 0) {
+            if (!line_item->is_computed) {
+                should_skip = true;
+            }
+            // Also skip computed items that depend on any skipped items (cascading)
+            else if (!line_item->dependencies.empty()) {
+                for (const auto& dep : line_item->dependencies) {
+                    // Extract base name from dependency (remove [t-1] suffix if present)
+                    std::string base_dep = dep;
+                    size_t bracket_pos = base_dep.find('[');
+                    if (bracket_pos != std::string::npos) {
+                        base_dep = base_dep.substr(0, bracket_pos);
+                    }
+                    if (skipped_items.find(base_dep) != skipped_items.end()) {
+                        should_skip = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (should_skip) {
+            skipped_items.insert(code);
+
+            // Even though we skip calculation, we need to load opening balance values
+            // from drivers so they're available for [t-1] references in period 1+
+            try {
+                // Try to get value from provider (driver or opening balance)
+                for (auto* provider : providers_) {
+                    if (provider->has_value(code)) {
+                        double value = provider->get_value(code, ctx);
+                        // Store in result and current values
+                        result.line_items[code] = value;
+                        current_values_[code] = value;
+                        statement_provider_->set_current_values(current_values_);
+                        break;
+                    }
+                }
+            } catch (const std::exception& e) {
+                // If we can't load the value, that's OK - just skip silently
+                // This handles cases where there's truly no opening balance
+            }
+
+            continue;
         }
 
         try {

@@ -55,7 +55,7 @@ else()
     )
 endif()
 
-# Main executable
+# Main executables
 add_executable(scenario_engine src/main.cpp)
 
 target_link_libraries(scenario_engine
@@ -63,8 +63,16 @@ target_link_libraries(scenario_engine
         engine_lib
 )
 
+# Calculation runner executable
+add_executable(run_calculation src/run_calculation.cpp)
+
+target_link_libraries(run_calculation
+    PRIVATE
+        engine_lib
+)
+
 # Install
-install(TARGETS scenario_engine engine_lib
+install(TARGETS scenario_engine run_calculation engine_lib
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

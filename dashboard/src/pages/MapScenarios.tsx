@@ -87,8 +87,15 @@ const MapScenarios: React.FC = () => {
 
   // Auto-save mappings when they change
   useEffect(() => {
-    if (!selectedFileId || !variableColumn || isLoadingMapping) return
-    if (!valueStartColumn || !valueEndColumn) return // Don't save until value columns are set
+    if (isLoadingMapping) {
+      console.log('Auto-save skipped: still loading mapping')
+      return // Don't save while loading
+    }
+    if (!selectedFileId || !variableColumn) return
+    if (!valueStartColumn || !valueEndColumn) {
+      console.log('Auto-save skipped: value columns not set', { valueStartColumn, valueEndColumn })
+      return // Don't save until value columns are set
+    }
 
     const timeoutId = setTimeout(async () => {
       try {
@@ -147,9 +154,13 @@ const MapScenarios: React.FC = () => {
           }
           if (mapping.unitsColumn) setUnitsColumn(mapping.unitsColumn)
           setVariableColumn(mapping.driverColumn)
+          console.log('valueColumns from DB:', mapping.valueColumns, 'type:', typeof mapping.valueColumns, 'length:', mapping.valueColumns?.length)
           if (mapping.valueColumns && mapping.valueColumns.length > 0) {
+            console.log('Setting valueStart to:', mapping.valueColumns[0], 'valueEnd to:', mapping.valueColumns[mapping.valueColumns.length - 1])
             setValueStartColumn(mapping.valueColumns[0])
             setValueEndColumn(mapping.valueColumns[mapping.valueColumns.length - 1])
+          } else {
+            console.log('NOT setting value columns - failed condition check')
           }
           setVariableMappings(mapping.variableMappings || [])
           mappingLoaded = true
@@ -167,8 +178,6 @@ const MapScenarios: React.FC = () => {
         setValueEndColumn(null)
         setVariableMappings([])
       }
-
-      setIsLoadingMapping(false)
 
       // Find the table name for this file
       const tableInfo = availableTables.find(t => t.fileId === fileId)
@@ -200,6 +209,9 @@ const MapScenarios: React.FC = () => {
       }
     } catch (error) {
       console.error('Error loading CSV preview:', error)
+    } finally {
+      // Only set loading to false at the very end, after all state updates
+      setIsLoadingMapping(false)
     }
   }
 

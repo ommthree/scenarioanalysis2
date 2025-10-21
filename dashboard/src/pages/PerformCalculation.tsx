@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock } from 'lucide-react'
+import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2 } from 'lucide-react'
 
 interface LogEntry {
   timestamp: string
@@ -17,7 +17,7 @@ export default function PerformCalculation() {
   const [verbosity, setVerbosity] = useState<'quiet' | 'verbose' | 'debug'>('verbose')
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // Load run definition on mount
+  // Load run definition and previous logs on mount
   useEffect(() => {
     const saved = localStorage.getItem('runDefinition')
     if (saved) {
@@ -28,12 +28,34 @@ export default function PerformCalculation() {
         setRunName('Unnamed Run')
       }
     }
+
+    // Load previous calculation logs
+    const savedLogs = localStorage.getItem('calculationLogs')
+    if (savedLogs) {
+      try {
+        const parsedLogs = JSON.parse(savedLogs)
+        setLogs(parsedLogs.logs || [])
+        setRunStatus(parsedLogs.status || 'idle')
+      } catch (err) {
+        console.error('Failed to load saved logs:', err)
+      }
+    }
   }, [])
 
   // Auto-scroll to bottom when new logs are added
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
+
+  // Save logs to localStorage whenever they change
+  useEffect(() => {
+    if (logs.length > 0) {
+      localStorage.setItem('calculationLogs', JSON.stringify({
+        logs,
+        status: runStatus
+      }))
+    }
+  }, [logs, runStatus])
 
   const addLog = (level: LogEntry['level'], message: string) => {
     const entry: LogEntry = {
@@ -138,9 +160,42 @@ export default function PerformCalculation() {
         addLog('info', 'Executing management actions...')
       }
 
-      // TODO: Call actual C++ calculation engine here with verbosity parameter
-      // For now, simulate success
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Call actual C++ calculation engine
+      const calcResponse = await fetch('http://localhost:3001/api/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath })
+      })
+
+      if (!calcResponse.ok) {
+        const errorText = await calcResponse.text()
+        if (verbosity !== 'quiet') {
+          addLog('error', `API request failed: ${calcResponse.status} ${calcResponse.statusText}`)
+          addLog('error', errorText)
+        }
+        throw new Error(`API request failed: ${calcResponse.status}`)
+      }
+
+      const calcResult = await calcResponse.json()
+
+      if (!calcResult.success) {
+        if (verbosity !== 'quiet') {
+          addLog('error', 'Calculation engine failed')
+          if (calcResult.stderr) {
+            const errorLines = calcResult.stderr.split('\n').filter((line: string) => line.trim())
+            errorLines.forEach((line: string) => addLog('error', line))
+          }
+          if (calcResult.error) {
+            addLog('error', calcResult.error)
+          }
+        }
+        throw new Error(calcResult.error || 'Calculation failed')
+      }
+
+      if (verbosity === 'debug' && calcResult.output) {
+        const outputLines = calcResult.output.split('\n').filter((line: string) => line.trim())
+        outputLines.forEach((line: string) => addLog('info', line))
+      }
 
       if (verbosity === 'debug') {
         addLog('success', '✓ Calculation engine completed successfully')
@@ -214,6 +269,22 @@ export default function PerformCalculation() {
       default:
         return '#94a3b8'
     }
+  }
+
+  const handleCopyLog = async () => {
+    const logText = logs.map(log => `${log.timestamp} [${log.level.toUpperCase()}] ${log.message}`).join('\n')
+    try {
+      await navigator.clipboard.writeText(logText)
+      addLog('success', 'Log copied to clipboard')
+    } catch (err) {
+      addLog('error', 'Failed to copy log to clipboard')
+    }
+  }
+
+  const handleClearLog = () => {
+    setLogs([])
+    setRunStatus('idle')
+    localStorage.removeItem('calculationLogs')
   }
 
   return (
@@ -327,9 +398,47 @@ export default function PerformCalculation() {
         minHeight: '400px'
       }}>
         <CardContent style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
-            Calculation Log
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>
+              Calculation Log
+            </h3>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <Button
+                onClick={handleCopyLog}
+                disabled={logs.length === 0}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  backgroundColor: logs.length === 0 ? 'rgba(71, 85, 105, 0.3)' : 'rgba(59, 130, 246, 0.2)',
+                  border: logs.length === 0 ? '1px solid rgba(71, 85, 105, 0.3)' : '1px solid rgba(59, 130, 246, 0.5)',
+                  color: logs.length === 0 ? '#64748b' : '#3b82f6',
+                  cursor: logs.length === 0 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <Copy style={{ width: '16px', height: '16px' }} />
+                <span>Copy Log</span>
+              </Button>
+              <Button
+                onClick={handleClearLog}
+                disabled={logs.length === 0}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  backgroundColor: logs.length === 0 ? 'rgba(71, 85, 105, 0.3)' : 'rgba(239, 68, 68, 0.2)',
+                  border: logs.length === 0 ? '1px solid rgba(71, 85, 105, 0.3)' : '1px solid rgba(239, 68, 68, 0.5)',
+                  color: logs.length === 0 ? '#64748b' : '#ef4444',
+                  cursor: logs.length === 0 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <Trash2 style={{ width: '16px', height: '16px' }} />
+                <span>Clear Log</span>
+              </Button>
+            </div>
+          </div>
           <div style={{
             flex: 1,
             backgroundColor: 'rgba(0, 0, 0, 0.3)',

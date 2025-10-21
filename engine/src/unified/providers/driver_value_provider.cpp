@@ -173,10 +173,11 @@ void DriverValueProvider::load_drivers() const {
 
     // Query drivers for both the specified entity AND global physical risk drivers
     // Physical risk drivers use entity_id = 'PHYSICAL_RISK' and apply to all entities
+    // For period_id = 0 (opening balance), use scenario_id = 1 (scenario-independent)
     std::ostringstream query;
     query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
           << "WHERE (entity_id = :entity_id OR entity_id = 'PHYSICAL_RISK') "
-          << "AND scenario_id = :scenario_id "
+          << "AND scenario_id = CASE WHEN :period_id = 0 THEN 1 ELSE :scenario_id END "
           << "AND period_id = :period_id";
 
     ParamMap params;
