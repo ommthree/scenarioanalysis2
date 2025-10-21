@@ -139,9 +139,6 @@ export default function PerformCalculation() {
       }
 
       if (scenResult.success) {
-        if (scenResult.scenarios === 0) {
-          throw new Error('No scenarios found. Please upload and map scenario files before running calculations.')
-        }
         if (verbosity === 'quiet') {
           addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios`)
         }

@@ -275,19 +275,6 @@ export default function ViewResults() {
                           }}>
                             {item.display_name}
                           </span>
-                          {item.is_computed && (
-                            <span style={{
-                              fontSize: '10px',
-                              color: '#22c55e',
-                              backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              textTransform: 'uppercase',
-                              fontWeight: '600'
-                            }}>
-                              Computed
-                            </span>
-                          )}
                         </div>
                         <span style={{
                           fontSize: '16px',

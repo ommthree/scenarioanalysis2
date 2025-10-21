@@ -132,13 +132,15 @@ bool DriverValueProvider::has_value(const std::string& key) const {
     // This is used when line item has base_value_source but no formula
     // Check if we have a mapping for this line item
     auto it = line_item_to_driver_map_.find(key);
-    if (it == line_item_to_driver_map_.end()) {
-        return false;  // No mapping, this provider doesn't handle this key
+    if (it != line_item_to_driver_map_.end()) {
+        // We have a mapping, check if the mapped driver exists
+        std::string driver_code = it->second;
+        return driver_cache_.find(driver_code) != driver_cache_.end();
     }
 
-    // Check if the mapped driver exists in cache
-    std::string driver_code = it->second;
-    return driver_cache_.find(driver_code) != driver_cache_.end();
+    // No explicit mapping, try direct driver code match (driver_code == line_item_code)
+    // This handles cases where the line item code is the same as the driver code
+    return driver_cache_.find(key) != driver_cache_.end();
 }
 
 double DriverValueProvider::get_value(const std::string& key, const core::Context& ctx) const {
@@ -173,11 +175,10 @@ void DriverValueProvider::load_drivers() const {
 
     // Query drivers for both the specified entity AND global physical risk drivers
     // Physical risk drivers use entity_id = 'PHYSICAL_RISK' and apply to all entities
-    // For period_id = 0 (opening balance), use scenario_id = 1 (scenario-independent)
     std::ostringstream query;
     query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
           << "WHERE (entity_id = :entity_id OR entity_id = 'PHYSICAL_RISK') "
-          << "AND scenario_id = CASE WHEN :period_id = 0 THEN 1 ELSE :scenario_id END "
+          << "AND scenario_id = :scenario_id "
           << "AND period_id = :period_id";
 
     ParamMap params;

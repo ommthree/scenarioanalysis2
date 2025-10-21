@@ -66,19 +66,6 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Get periods for first scenario (assuming all scenarios have same periods)
-        auto period_query = db->execute_query(
-            "SELECT DISTINCT period_id FROM scenario_drivers WHERE scenario_id = :sid ORDER BY period_id",
-            {{"sid", scenarios[0].first}}
-        );
-
-        std::vector<int> periods;
-        while (period_query->next()) {
-            periods.push_back(period_query->get_int("period_id"));
-        }
-
-        std::cout << "Calculating for " << periods.size() << " period(s)" << std::endl;
-
         // Initialize period runner
         PeriodRunner runner(db);
 
@@ -92,6 +79,19 @@ int main(int argc, char* argv[]) {
         for (const auto& [scenario_id, entity_id] : scenarios) {
             std::cout << "\n--- Running Scenario " << scenario_id << " for Entity " << entity_id << " ---" << std::endl;
 
+            // Get periods for THIS scenario (each scenario may have different periods)
+            auto period_query = db->execute_query(
+                "SELECT DISTINCT period_id FROM scenario_drivers WHERE scenario_id = :sid ORDER BY period_id",
+                {{"sid", scenario_id}}
+            );
+
+            std::vector<int> periods;
+            while (period_query->next()) {
+                periods.push_back(period_query->get_int("period_id"));
+            }
+
+            std::cout << "Calculating for " << periods.size() << " period(s)" << std::endl;
+
             auto result = runner.run_periods(
                 entity_id,
                 scenario_id,
@@ -103,6 +103,33 @@ int main(int argc, char* argv[]) {
             if (result.success) {
                 std::cout << "✓ Scenario " << scenario_id << " completed successfully" << std::endl;
                 std::cout << "  Calculated " << result.results.size() << " period(s)" << std::endl;
+
+                // Save results to database
+                for (size_t i = 0; i < result.results.size() && i < periods.size(); ++i) {
+                    const auto& unified_result = result.results[i];
+                    int period_id = periods[i];
+
+                    for (const auto& [line_item_code, value] : unified_result.line_items) {
+                        ParamMap insert_params;
+                        insert_params["entity_id"] = entity_id;
+                        insert_params["scenario_id"] = scenario_id;
+                        insert_params["period_id"] = period_id;
+                        insert_params["line_item_code"] = line_item_code;
+                        insert_params["value"] = value;
+
+                        try {
+                            db->execute_update(
+                                "INSERT OR REPLACE INTO statement_result (entity_id, scenario_id, period_id, line_item_code, value) "
+                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :value)",
+                                insert_params
+                            );
+                        } catch (const std::exception& e) {
+                            std::cerr << "Warning: Failed to save result for " << line_item_code
+                                     << " period " << period_id << ": " << e.what() << std::endl;
+                        }
+                    }
+                }
+
                 success_count++;
             } else {
                 std::cerr << "✗ Scenario " << scenario_id << " failed:" << std::endl;
