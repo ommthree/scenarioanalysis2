@@ -101,7 +101,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       title: 'Run',
       items: [
         { path: '/run/definition', icon: PenTool, label: 'Definition' },
-        { path: '/run/execute', icon: Play, label: 'Do Run' },
+        { path: '/run/execute', icon: Play, label: 'Perform Calculation' },
         { path: '/run/open', icon: List, label: 'Open Prior Run' },
       ]
     },

@@ -21,6 +21,8 @@ import DefineScenarios from './pages/DefineScenarios'
 import DefineActions from './pages/DefineActions'
 import MapStatements from './pages/MapStatements'
 import MapScenarios from './pages/MapScenarios'
+import RunDefinition from './pages/RunDefinition'
+import PerformCalculation from './pages/PerformCalculation'
 
 function App() {
   const [dbPath, setDbPath] = useState<string | null>(() => {
@@ -63,8 +65,8 @@ function App() {
           <Route path="/definitions/entities" element={<DefineEntities />} />
           <Route path="/definitions/scenarios" element={<DefineScenarios />} />
           <Route path="/definitions/actions" element={<DefineActions dbPath={dbPath} />} />
-          <Route path="/run/definition" element={<Dashboard />} />
-          <Route path="/run/execute" element={<Dashboard />} />
+          <Route path="/run/definition" element={<RunDefinition />} />
+          <Route path="/run/execute" element={<PerformCalculation />} />
           <Route path="/run/open" element={<Dashboard />} />
           <Route path="/visualize" element={<Dashboard />} />
         </Routes>
