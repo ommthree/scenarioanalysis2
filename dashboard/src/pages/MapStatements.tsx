@@ -1543,7 +1543,7 @@ Respond with ONLY the JSON object, no other text`
       </div>
 
       {/* Mapping Panels - only show when both company and template are selected */}
-      {selectedCompany && selectedTemplate && (
+      {selectedCompany && selectedUnifiedTemplate && (
         <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
           {renderMappingPanel('pnl')}
           {renderMappingPanel('bs')}
