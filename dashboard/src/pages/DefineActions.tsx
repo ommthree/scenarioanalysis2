@@ -66,7 +66,10 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   const [selectedAction, setSelectedAction] = useState<ManagementAction | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
+  const [filterTemplate, setFilterTemplate] = useState<Template | null>(null)
   const [drivers, setDrivers] = useState<Driver[]>([])
+  const [actionTransformations, setActionTransformations] = useState<Map<string, Transformation[]>>(new Map())
+  const [actionTriggers, setActionTriggers] = useState<Map<string, string>>(new Map())
 
   const [isEditing, setIsEditing] = useState(false)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
@@ -110,6 +113,35 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       const response = await fetch(`http://localhost:3001/api/management-actions?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       setActions(data)
+
+      // Load transformations and triggers for all actions
+      const transformationsMap = new Map<string, Transformation[]>()
+      const triggersMap = new Map<string, string>()
+
+      for (const action of data) {
+        try {
+          // Fetch transformations
+          const transResponse = await fetch(`http://localhost:3001/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath)}`)
+          if (transResponse.ok) {
+            const trans = await transResponse.json()
+            transformationsMap.set(action.action_code, trans)
+          }
+
+          // Fetch triggers
+          const triggerResponse = await fetch(`http://localhost:3001/api/action-triggers?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath)}`)
+          if (triggerResponse.ok) {
+            const triggers = await triggerResponse.json()
+            if (triggers.length > 0 && triggers[0].condition_formula) {
+              triggersMap.set(action.action_code, triggers[0].condition_formula)
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching data for ${action.action_code}:`, err)
+        }
+      }
+
+      setActionTransformations(transformationsMap)
+      setActionTriggers(triggersMap)
     } catch (err) {
       console.error('Error fetching actions:', err)
     }
@@ -160,6 +192,152 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     } catch (err) {
       console.error('Error loading template:', err)
     }
+  }
+
+  const handleFilterTemplateSelect = async (templateCode: string) => {
+    if (!templateCode) {
+      setFilterTemplate(null)
+      return
+    }
+
+    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    try {
+      const response = await fetch(`http://localhost:3001/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+      const template = {
+        template_code: data.code,
+        template_name: data.code,
+        line_items: data.lineItems || []
+      }
+      setFilterTemplate(template)
+
+      // Auto-deactivate actions that are not relevant to this template
+      await updateActionRelevance(template, dbPath)
+    } catch (err) {
+      console.error('Error loading filter template:', err)
+    }
+  }
+
+  const updateActionRelevance = async (template: Template, dbPath: string) => {
+    const templateLineItemCodes = new Set(template.line_items.map(li => li.code))
+
+    for (const action of actions) {
+      const transformations = actionTransformations.get(action.action_code) || []
+      const triggerCondition = actionTriggers.get(action.action_code)
+
+      // Collect all line items referenced in transformations and triggers
+      const referencedLineItems = new Set<string>()
+
+      transformations.forEach(t => {
+        referencedLineItems.add(t.line_item)
+        const formulaItems = extractLineItemsFromFormula(t.new_formula)
+        formulaItems.forEach(item => referencedLineItems.add(item))
+      })
+
+      if (triggerCondition) {
+        const conditionItems = extractLineItemsFromFormula(triggerCondition)
+        conditionItems.forEach(item => referencedLineItems.add(item))
+      }
+
+      // Action is NOT relevant if:
+      // 1. It has no transformations (incomplete/empty)
+      // 2. Any referenced line item is missing from the template
+      let isRelevant = true
+
+      if (referencedLineItems.size === 0) {
+        isRelevant = false
+      } else {
+        for (const lineItem of referencedLineItems) {
+          if (!templateLineItemCodes.has(lineItem)) {
+            isRelevant = false
+            break
+          }
+        }
+      }
+
+      // If action is currently active but not relevant, deactivate it
+      if (action.is_active && !isRelevant) {
+        try {
+          await fetch(`http://localhost:3001/api/management-actions/${action.action_code}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dbPath,
+              action_code: action.action_code,
+              action_name: action.action_name,
+              action_category: action.action_category,
+              description: action.description,
+              is_active: false,
+              is_mac_relevant: action.is_mac_relevant
+            })
+          })
+          action.is_active = false
+        } catch (err) {
+          console.error(`Error deactivating action ${action.action_code}:`, err)
+        }
+      }
+    }
+
+    // Refresh actions list
+    await fetchActions()
+  }
+
+  const extractLineItemsFromFormula = (formula: string): string[] => {
+    if (!formula) return []
+
+    // Match line item codes (uppercase words, excluding operators and keywords)
+    const matches = formula.match(/\b[A-Z_][A-Z0-9_]*\b/g) || []
+
+    // Filter out common operators and keywords
+    const keywords = new Set(['AND', 'OR', 'NOT', 'IF', 'THEN', 'ELSE', 'TRUE', 'FALSE'])
+
+    return matches
+      .filter(m => !keywords.has(m))
+      .map(m => m.replace(/\[t-1\]/, '')) // Remove [t-1] suffix
+  }
+
+  const getRelevantActions = () => {
+    if (!filterTemplate) {
+      return actions
+    }
+
+    const templateLineItemCodes = new Set(filterTemplate.line_items.map(li => li.code))
+
+    // Filter actions where ALL referenced line items are available in the template
+    return actions.filter(action => {
+      const transformations = actionTransformations.get(action.action_code) || []
+      const triggerCondition = actionTriggers.get(action.action_code)
+
+      // Collect all line items referenced in transformations
+      const referencedLineItems = new Set<string>()
+
+      transformations.forEach(t => {
+        // Add the line item being transformed
+        referencedLineItems.add(t.line_item)
+
+        // Extract line items from the formula
+        const formulaItems = extractLineItemsFromFormula(t.new_formula)
+        formulaItems.forEach(item => referencedLineItems.add(item))
+      })
+
+      // Also check trigger conditions
+      if (triggerCondition) {
+        const conditionItems = extractLineItemsFromFormula(triggerCondition)
+        conditionItems.forEach(item => referencedLineItems.add(item))
+      }
+
+      // If no line items referenced, HIDE the action (it's incomplete or irrelevant)
+      if (referencedLineItems.size === 0) return false
+
+      // Check if ALL referenced line items are in the template
+      for (const lineItem of referencedLineItems) {
+        if (!templateLineItemCodes.has(lineItem)) {
+          return false // Missing a required line item
+        }
+      }
+
+      return true // All line items are available
+    })
   }
 
   const handleActionSelect = (action: ManagementAction) => {
@@ -655,7 +833,49 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 320px', gap: '24px', height: 'calc(100vh - 200px)' }}>
+        {/* Template Selector - Top Bar */}
+        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginBottom: '24px' }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff', minWidth: '120px' }}>
+                Select Template:
+              </label>
+              <select
+                value={filterTemplate?.template_code || ''}
+                onChange={(e) => handleFilterTemplateSelect(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  fontSize: '14px'
+                }}
+              >
+                <option value="">No template selected - showing all actions</option>
+                {templates.map(t => (
+                  <option key={t.template_code} value={t.template_code}>{t.template_name}</option>
+                ))}
+              </select>
+              {filterTemplate && (
+                <div style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  color: '#fff',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {getRelevantActions().length} implementable action{getRelevantActions().length !== 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 320px', gap: '24px', height: 'calc(100vh - 280px)' }}>
           {/* Left Panel - Actions List */}
           <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <CardContent style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -671,7 +891,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
               </div>
 
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {actions.map(action => (
+                {getRelevantActions().map(action => (
                   <div
                     key={action.action_code}
                     onClick={() => handleActionSelect(action)}

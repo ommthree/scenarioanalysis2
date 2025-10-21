@@ -62,6 +62,8 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/definitions/entities', icon: Building2, label: 'Entities' },
         { path: '/definitions/statements', icon: FileJson, label: 'Statements' },
+        { path: '/definitions/formulas', icon: Calculator, label: 'Formulae' },
+        { path: '/definitions/validation', icon: CheckCircle2, label: 'Validation' },
         { path: '/definitions/scenarios', icon: Activity, label: 'Scenarios' },
         { path: '/definitions/actions', icon: Settings, label: 'Actions' },
       ]
@@ -75,8 +77,6 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         { path: '/inputs/map-scenarios', icon: ArrowRightLeft, label: 'Map Scenarios' },
         { path: '/inputs/correlation', icon: Network, label: 'Correlation' },
         { path: '/inputs/conversions', icon: Shuffle, label: 'Conversions' },
-        { path: '/definitions/formulas', icon: Calculator, label: 'Formulas' },
-        { path: '/definitions/validation', icon: CheckCircle2, label: 'Validation' },
       ]
     },
     {

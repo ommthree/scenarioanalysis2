@@ -95,9 +95,82 @@ const DefineValidation: React.FC = () => {
       }
 
       setSelectedTemplate(mappedTemplate)
+
+      // Auto-deactivate rules that are not relevant to this template
+      await updateRuleRelevance(mappedTemplate, dbPath)
     } catch (err) {
       console.error('Error loading template:', err)
     }
+  }
+
+  const updateRuleRelevance = async (template: Template, dbPath: string) => {
+    const templateLineItemCodes = new Set(template.line_items.map(li => li.code))
+
+    for (const rule of rules) {
+      const requiredItems = rule.required_line_items || []
+
+      // Skip rules without required_line_items (need manual configuration)
+      if (requiredItems.length === 0) continue
+
+      // Check if template has all required line items
+      const isRelevant = requiredItems.every(item => templateLineItemCodes.has(item))
+
+      // If rule is currently active but not relevant, deactivate it
+      // If rule is currently inactive but is relevant, keep it inactive (user choice)
+      if (rule.is_active && !isRelevant) {
+        try {
+          await fetch(`http://localhost:3001/api/validation-rules/${rule.rule_id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...rule,
+              is_active: false,
+              dbPath
+            })
+          })
+
+          // Update local state
+          rule.is_active = false
+        } catch (err) {
+          console.error(`Failed to deactivate rule ${rule.rule_code}:`, err)
+        }
+      }
+    }
+
+    // Refresh rules list
+    const rulesResponse = await fetch(`http://localhost:3001/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`)
+    const updatedRules = await rulesResponse.json()
+    setRules(updatedRules)
+  }
+
+  // Filter rules to only show those relevant to selected template
+  const getRelevantRules = () => {
+    // If no template selected, show all rules
+    if (!selectedTemplate) {
+      return rules
+    }
+
+    const templateLineItemCodes = new Set(selectedTemplate.line_items.map(li => li.code))
+
+    return rules.filter(rule => {
+      const requiredItems = rule.required_line_items || []
+
+      // If no required items specified, hide the rule (needs to be properly configured)
+      if (requiredItems.length === 0) return false
+
+      // Show rule if template has ALL required line items (regardless of active status)
+      return requiredItems.every(item => templateLineItemCodes.has(item))
+    })
+  }
+
+  const relevantRules = getRelevantRules()
+
+  // Debug logging
+  console.log('Selected template:', selectedTemplate?.template_code)
+  console.log('Total rules:', rules.length)
+  console.log('Relevant rules:', relevantRules.length)
+  if (selectedTemplate) {
+    console.log('Template line items:', selectedTemplate.line_items.map(li => li.code))
   }
 
   const handleRuleSelect = (rule: ValidationRule) => {
@@ -396,7 +469,7 @@ Use line item codes directly and [t-1] for prior period references.
                   </Button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {rules.map((rule) => (
+                  {relevantRules.map((rule) => (
                     <button
                       key={rule.rule_id}
                       onClick={() => handleRuleSelect(rule)}
