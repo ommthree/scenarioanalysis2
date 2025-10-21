@@ -6,6 +6,7 @@ import { Save, FileText } from 'lucide-react'
 export default function RunDefinition() {
   const [runName, setRunName] = useState('')
   const [description, setDescription] = useState('')
+  const [stochasticMode, setStochasticMode] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   // Load saved run definition on mount
@@ -16,6 +17,7 @@ export default function RunDefinition() {
         const data = JSON.parse(saved)
         setRunName(data.runName || '')
         setDescription(data.description || '')
+        setStochasticMode(data.stochasticMode || false)
       } catch (err) {
         console.error('Error loading run definition:', err)
       }
@@ -28,6 +30,7 @@ export default function RunDefinition() {
     const runDefinition = {
       runName,
       description,
+      stochasticMode,
       savedAt: new Date().toISOString()
     }
 
@@ -125,7 +128,7 @@ export default function RunDefinition() {
             />
           </div>
 
-          {/* Future Switches Section - Placeholder */}
+          {/* Calculation Options */}
           <div style={{
             marginBottom: '32px',
             padding: '20px',
@@ -133,12 +136,62 @@ export default function RunDefinition() {
             border: '1px solid rgba(71, 85, 105, 0.3)',
             borderRadius: '8px'
           }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#94a3b8', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
               Calculation Options
             </h3>
-            <p style={{ color: '#64748b', fontSize: '14px' }}>
-              Additional calculation switches and options will be added here in the future
-            </p>
+
+            {/* Stochastic Mode Switch */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <label style={{
+                position: 'relative',
+                display: 'inline-block',
+                width: '48px',
+                height: '24px',
+                cursor: 'pointer'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={stochasticMode}
+                  onChange={(e) => setStochasticMode(e.target.checked)}
+                  style={{
+                    opacity: 0,
+                    width: 0,
+                    height: 0
+                  }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: stochasticMode ? '#3b82f6' : 'rgba(71, 85, 105, 0.5)',
+                  borderRadius: '24px',
+                  transition: 'background-color 0.2s',
+                  border: '1px solid rgba(71, 85, 105, 0.4)'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    content: '""',
+                    height: '18px',
+                    width: '18px',
+                    left: stochasticMode ? '26px' : '3px',
+                    bottom: '2px',
+                    backgroundColor: '#fff',
+                    borderRadius: '50%',
+                    transition: 'left 0.2s'
+                  }} />
+                </span>
+              </label>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                  Stochastic Mode
+                </div>
+                <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  Run multiple Monte Carlo simulations with scenario distributions
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Save Button */}
