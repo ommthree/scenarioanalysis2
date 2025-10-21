@@ -14,6 +14,7 @@ export default function PerformCalculation() {
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle')
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [runName, setRunName] = useState('')
+  const [verbosity, setVerbosity] = useState<'quiet' | 'verbose' | 'debug'>('verbose')
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Load run definition on mount
@@ -50,51 +51,72 @@ export default function PerformCalculation() {
 
     const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
-    addLog('info', `Starting calculation run: ${runName}`)
-    addLog('info', 'Step 1: Ingesting statement data from staged files...')
+    addLog('info', `Starting calculation run: ${runName} (${verbosity} mode)`)
+
+    if (verbosity !== 'quiet') {
+      addLog('info', 'Step 1: Ingesting statement data from staged files...')
+    }
 
     try {
       // Step 1: Ingest statements
       const stmtResponse = await fetch('http://localhost:3001/api/ingest/statements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath })
+        body: JSON.stringify({ dbPath, verbosity })
       })
       const stmtResult = await stmtResponse.json()
 
       if (stmtResult.success) {
-        addLog('success', `Statements ingested: ${stmtResult.inserted} values from ${stmtResult.mappings || 0} mappings`)
+        if (verbosity === 'debug') {
+          addLog('success', `Statements ingested: ${stmtResult.inserted} values from ${stmtResult.mappings || 0} mappings`)
+        } else if (verbosity === 'verbose') {
+          addLog('success', `Statements ingested: ${stmtResult.inserted} values`)
+        }
       } else {
         throw new Error(stmtResult.error || 'Statement ingestion failed')
       }
 
       // Step 2: Ingest scenarios
-      addLog('info', 'Step 2: Ingesting scenario data from staged files...')
+      if (verbosity !== 'quiet') {
+        addLog('info', 'Step 2: Ingesting scenario data from staged files...')
+      }
+
       const scenResponse = await fetch('http://localhost:3001/api/ingest/scenarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath })
+        body: JSON.stringify({ dbPath, verbosity })
       })
       const scenResult = await scenResponse.json()
 
       if (scenResult.success) {
-        addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios, ${scenResult.drivers} driver values`)
+        if (verbosity === 'debug') {
+          addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios, ${scenResult.drivers} driver values`)
+        } else if (verbosity === 'verbose') {
+          addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios`)
+        }
       } else {
         throw new Error(scenResult.error || 'Scenario ingestion failed')
       }
 
       // Step 3: Run calculation engine
-      addLog('info', 'Step 3: Running multi-period scenario calculations...')
-      addLog('info', 'Processing line item formulas and dependencies...')
-      addLog('info', 'Applying validation rules...')
-      addLog('info', 'Executing management actions...')
+      if (verbosity !== 'quiet') {
+        addLog('info', 'Step 3: Running multi-period scenario calculations...')
+      }
 
-      // TODO: Call actual C++ calculation engine here
+      if (verbosity === 'debug') {
+        addLog('info', 'Processing line item formulas and dependencies...')
+        addLog('info', 'Applying validation rules...')
+        addLog('info', 'Executing management actions...')
+      }
+
+      // TODO: Call actual C++ calculation engine here with verbosity parameter
       // For now, simulate success
       await new Promise(resolve => setTimeout(resolve, 2000))
 
-      addLog('success', '✓ Calculation engine completed successfully')
-      addLog('info', 'Results stored in database')
+      if (verbosity === 'debug') {
+        addLog('success', '✓ Calculation engine completed successfully')
+        addLog('info', 'Results stored in database')
+      }
 
       addLog('success', '✓ All steps completed successfully!')
       setRunStatus('success')
@@ -202,7 +224,33 @@ export default function PerformCalculation() {
                 </span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* Verbosity Dropdown */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '600' }}>
+                  Verbosity
+                </label>
+                <select
+                  value={verbosity}
+                  onChange={(e) => setVerbosity(e.target.value as 'quiet' | 'verbose' | 'debug')}
+                  disabled={isRunning}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(71, 85, 105, 0.4)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px',
+                    cursor: isRunning ? 'not-allowed' : 'pointer',
+                    opacity: isRunning ? 0.5 : 1
+                  }}
+                >
+                  <option value="quiet">Quiet</option>
+                  <option value="verbose">Verbose</option>
+                  <option value="debug">Debug</option>
+                </select>
+              </div>
+
               {!isRunning ? (
                 <Button
                   onClick={handleStartCalculation}
@@ -213,7 +261,8 @@ export default function PerformCalculation() {
                     padding: '12px 24px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px'
+                    gap: '8px',
+                    marginTop: '20px'
                   }}
                 >
                   <Play style={{ width: '16px', height: '16px' }} />
@@ -226,6 +275,7 @@ export default function PerformCalculation() {
                     backgroundColor: '#ef4444',
                     color: '#fff',
                     padding: '12px 24px',
+                    marginTop: '20px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px'
