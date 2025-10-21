@@ -2147,6 +2147,23 @@ app.post('/api/drivers', express.json(), (req, res) => {
         let processedCount = 0
         let hasError = false
 
+        function finishTransaction() {
+          if (hasError) {
+            db.run('ROLLBACK', () => {
+              db.close()
+              res.status(500).json({ error: 'Failed to save drivers' })
+            })
+          } else {
+            db.run('COMMIT', () => {
+              db.close()
+              res.json({
+                success: true,
+                message: `Successfully saved ${drivers.length} driver(s)`
+              })
+            })
+          }
+        }
+
         if (drivers.length === 0) {
           // No drivers to insert, just commit
           db.run('COMMIT', (err) => {
@@ -2184,23 +2201,6 @@ app.post('/api/drivers', express.json(), (req, res) => {
           }
         )
       })
-
-        function finishTransaction() {
-          if (hasError) {
-            db.run('ROLLBACK', () => {
-              db.close()
-              res.status(500).json({ error: 'Failed to save drivers' })
-            })
-          } else {
-            db.run('COMMIT', () => {
-              db.close()
-              res.json({
-                success: true,
-                message: `Successfully saved ${drivers.length} driver(s)`
-              })
-            })
-          }
-        }
       }) // Close DELETE callback
     })
   } catch (error) {
