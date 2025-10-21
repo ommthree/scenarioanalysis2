@@ -4982,28 +4982,82 @@ app.get('/api/results/statement', (req, res) => {
     }
   })
 
-  // Query to get line items with values from scenario_drivers
-  // Join with line_item to get display_name, section, is_computed
-  db.all(
-    `SELECT
-      li.code,
-      li.display_name,
-      li.section,
-      li.is_computed,
-      sd.value
-     FROM scenario_drivers sd
-     JOIN line_item li ON sd.driver_code = li.code
-     WHERE sd.period_id = ?
-     ORDER BY li.section, li.display_order`,
-    [period],
-    (err, rows) => {
+  // First, get the statement template to extract line item metadata
+  db.get(
+    `SELECT json_structure FROM statement_template WHERE is_active = 1 LIMIT 1`,
+    [],
+    (err, template) => {
       if (err) {
         db.close()
-        return res.status(500).json({ error: err.message })
+        return res.status(500).json({ error: 'Failed to load statement template: ' + err.message })
       }
 
-      db.close()
-      res.json({ success: true, lineItems: rows })
+      if (!template) {
+        db.close()
+        return res.status(404).json({ error: 'No active statement template found' })
+      }
+
+      let lineItemsMetadata
+      try {
+        const jsonStructure = JSON.parse(template.json_structure)
+        lineItemsMetadata = jsonStructure.line_items || []
+      } catch (parseErr) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to parse statement template' })
+      }
+
+      // Create a map of code -> metadata for quick lookup
+      const metadataMap = new Map()
+      lineItemsMetadata.forEach(item => {
+        metadataMap.set(item.code, {
+          display_name: item.display_name,
+          section: item.section || 'Other',
+          is_computed: item.formula ? true : false,
+          display_order: item.display_order || 999
+        })
+      })
+
+      // Now query scenario_drivers for values
+      db.all(
+        `SELECT driver_code, value FROM scenario_drivers WHERE period_id = ?`,
+        [period],
+        (err, rows) => {
+          if (err) {
+            db.close()
+            return res.status(500).json({ error: err.message })
+          }
+
+          // Combine scenario_drivers data with metadata
+          const lineItems = rows.map(row => {
+            const metadata = metadataMap.get(row.driver_code) || {
+              display_name: row.driver_code,
+              section: 'Other',
+              is_computed: false,
+              display_order: 999
+            }
+            return {
+              code: row.driver_code,
+              display_name: metadata.display_name,
+              section: metadata.section,
+              is_computed: metadata.is_computed,
+              value: row.value
+            }
+          })
+
+          // Sort by section and display_order
+          lineItems.sort((a, b) => {
+            if (a.section !== b.section) {
+              return a.section.localeCompare(b.section)
+            }
+            const orderA = metadataMap.get(a.code)?.display_order || 999
+            const orderB = metadataMap.get(b.code)?.display_order || 999
+            return orderA - orderB
+          })
+
+          db.close()
+          res.json({ success: true, lineItems })
+        }
+      )
     }
   )
 })
