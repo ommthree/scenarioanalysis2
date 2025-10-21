@@ -128,7 +128,11 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
         {/* Header */}
         <div className="px-6 py-5 border-b border-border">
           <div style={{ paddingLeft: '0.5rem', paddingRight: '0.5rem' }}>
-            <h1 className="text-2xl font-bold text-foreground mb-2 whitespace-nowrap">Financial Statement Model</h1>
+            <Link to="/" style={{ textDecoration: 'none' }}>
+              <h1 className="text-2xl font-bold text-foreground mb-2 whitespace-nowrap" style={{ cursor: 'pointer' }}>
+                Financial Statement Model
+              </h1>
+            </Link>
             <div className="flex items-center whitespace-nowrap" style={{ gap: '1rem' }}>
               <p className="text-xs text-muted-foreground" style={{ marginLeft: '0.5rem' }}>Scenario Analysis Dashboard</p>
               <Button

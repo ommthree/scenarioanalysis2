@@ -413,6 +413,13 @@ Rules:
     try {
       const valueColumns = getValueColumns()
 
+      console.log('=== SAVE MAPPING DEBUG ===')
+      console.log('valueStartColumn:', valueStartColumn)
+      console.log('valueEndColumn:', valueEndColumn)
+      console.log('valueColumns:', valueColumns)
+      console.log('variableMappings:', variableMappings)
+      console.log('========================')
+
       const response = await fetch('http://localhost:3001/api/scenarios/save-scenario-mapping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

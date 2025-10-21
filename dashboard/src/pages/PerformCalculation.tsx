@@ -72,10 +72,17 @@ export default function PerformCalculation() {
 
       const stmtResult = await stmtResponse.json()
 
+      // Display logs from backend if verbosity is not quiet
+      if (stmtResult.logs && verbosity !== 'quiet') {
+        stmtResult.logs.forEach((log: { level: string, message: string }) => {
+          if (verbosity === 'debug' || (verbosity === 'verbose' && log.level === 'verbose')) {
+            addLog('info', log.message)
+          }
+        })
+      }
+
       if (stmtResult.success) {
-        if (verbosity === 'debug') {
-          addLog('success', `Statements ingested: ${stmtResult.inserted} values from ${stmtResult.mappings || 0} mappings`)
-        } else if (verbosity === 'verbose') {
+        if (verbosity === 'quiet') {
           addLog('success', `Statements ingested: ${stmtResult.inserted} values`)
         }
       } else {
@@ -100,13 +107,20 @@ export default function PerformCalculation() {
 
       const scenResult = await scenResponse.json()
 
+      // Display logs from backend if verbosity is not quiet
+      if (scenResult.logs && verbosity !== 'quiet') {
+        scenResult.logs.forEach((log: { level: string, message: string }) => {
+          if (verbosity === 'debug' || (verbosity === 'verbose' && log.level === 'verbose')) {
+            addLog('info', log.message)
+          }
+        })
+      }
+
       if (scenResult.success) {
         if (scenResult.scenarios === 0) {
           throw new Error('No scenarios found. Please upload and map scenario files before running calculations.')
         }
-        if (verbosity === 'debug') {
-          addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios, ${scenResult.drivers} driver values`)
-        } else if (verbosity === 'verbose') {
+        if (verbosity === 'quiet') {
           addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios`)
         }
       } else {

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState } from 'react'
 import Layout from './components/Layout'
+import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 import Database from './pages/Database'
 import LoadStatements from './pages/LoadStatements'
@@ -44,7 +45,7 @@ function App() {
     <BrowserRouter>
       <Layout dbPath={dbPath} onChangeDb={() => setShowDbSelector(true)}>
         <Routes>
-          <Route path="/" element={<Navigate to="/data/database" replace />} />
+          <Route path="/" element={<Home />} />
           <Route path="/data/database" element={<Database />} />
           <Route path="/data/stored-calcs" element={<Dashboard />} />
           <Route path="/inputs/statements" element={<LoadStatements />} />

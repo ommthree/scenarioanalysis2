@@ -4542,7 +4542,7 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
  * Body: { dbPath }
  */
 app.post('/api/ingest/statements', async (req, res) => {
-  const { dbPath } = req.body
+  const { dbPath, verbosity = 'verbose' } = req.body
 
   if (!dbPath || !fs.existsSync(dbPath)) {
     return res.status(400).json({ error: 'Invalid database path' })
@@ -4554,8 +4554,26 @@ app.post('/api/ingest/statements', async (req, res) => {
     }
   })
 
+  const logs = []
+
+  const logDebug = (msg, data) => {
+    if (verbosity === 'debug') {
+      const logMsg = data ? `${msg}: ${JSON.stringify(data, null, 2)}` : msg
+      console.log(`[Statement Ingestion DEBUG] ${logMsg}`)
+      logs.push({ level: 'debug', message: logMsg })
+    }
+  }
+
+  const logVerbose = (msg) => {
+    if (verbosity === 'verbose' || verbosity === 'debug') {
+      console.log(`[Statement Ingestion] ${msg}`)
+      logs.push({ level: 'verbose', message: msg })
+    }
+  }
+
   const ingestStatements = () => {
     return new Promise((resolve, reject) => {
+      logVerbose('Querying database tables: statement_mapping JOIN staged_file')
       // Get all statement mappings with their CSV content
       db.all(
         `SELECT sm.*, sf.csv_content
@@ -4565,6 +4583,7 @@ app.post('/api/ingest/statements', async (req, res) => {
         [],
         async (err, mappings) => {
           if (err) return reject(err)
+          logVerbose(`Found ${mappings.length} statement mapping(s) with CSV content`)
           if (mappings.length === 0) {
             return resolve({ inserted: 0, message: 'No statement mappings found' })
           }
@@ -4574,21 +4593,52 @@ app.post('/api/ingest/statements', async (req, res) => {
 
           for (const mapping of mappings) {
             try {
+              logVerbose(`Processing statement mapping for file: ${mapping.csv_file_name}`)
+              logDebug('Mapping record from statement_mapping table:', {
+                mapping_id: mapping.mapping_id,
+                csv_file_name: mapping.csv_file_name,
+                column_mapping_keys: Object.keys(JSON.parse(mapping.column_mapping))
+              })
+
               const csvData = parse(mapping.csv_content, {
                 columns: true,
                 skip_empty_lines: true,
                 trim: true
               })
+              logDebug('Parsed CSV rows from csv_content field:', csvData.length)
+              if (csvData.length > 0) {
+                logDebug('Sample CSV row (first row):', csvData[0])
+              }
 
               const columnMapping = JSON.parse(mapping.column_mapping)
+              logDebug('Column mapping structure from statement_mapping:', columnMapping)
               const hierarchicalMappings = columnMapping.hierarchical_mappings || []
+              logVerbose(`Processing ${hierarchicalMappings.length} hierarchical mapping(s)`)
 
               for (const hm of hierarchicalMappings) {
                 const csvRow = csvData[hm.csv_row_index]
-                if (!csvRow) continue
+                if (!csvRow) {
+                  logDebug(`Skipping missing CSV row at index ${hm.csv_row_index}`)
+                  continue
+                }
 
                 const value = parseFloat(csvRow.Value || csvRow.value || 0)
                 const entityId = hm.entity_path[hm.entity_path.length - 1]
+
+                logDebug(`Inserting into scenario_drivers table:`, {
+                  source_csv_row: hm.csv_row_index,
+                  source_csv_value: csvRow.Value || csvRow.value,
+                  parsed_value: value,
+                  entity_path_from_mapping: hm.entity_path,
+                  line_item_from_mapping: hm.line_item_code,
+                  insert_to_table: 'scenario_drivers',
+                  entity_id: entityId,
+                  scenario_id: 1,
+                  period_id: 0,
+                  driver_code: hm.line_item_code,
+                  value: value,
+                  unit_code: 'USD'
+                })
 
                 await new Promise((res, rej) => {
                   db.run(
@@ -4600,14 +4650,17 @@ app.post('/api/ingest/statements', async (req, res) => {
                   )
                 })
               }
+              logVerbose(`Completed processing file: ${mapping.csv_file_name}`)
             } catch (err) {
               errors.push(`Error processing mapping: ${err.message}`)
+              logDebug('Error details:', err)
             }
           }
 
           if (errors.length > 0) {
             reject(new Error(errors.join('; ')))
           } else {
+            logVerbose(`Statement ingestion complete. Inserted ${totalInserted} driver values into scenario_drivers table`)
             resolve({ inserted: totalInserted, mappings: mappings.length })
           }
         }
@@ -4617,7 +4670,7 @@ app.post('/api/ingest/statements', async (req, res) => {
 
   try {
     const result = await ingestStatements()
-    res.json({ success: true, ...result })
+    res.json({ success: true, ...result, logs })
   } catch (error) {
     console.error('Statement ingestion error:', error)
     res.status(500).json({ error: error.message })
@@ -4632,7 +4685,7 @@ app.post('/api/ingest/statements', async (req, res) => {
  * Body: { dbPath }
  */
 app.post('/api/ingest/scenarios', async (req, res) => {
-  const { dbPath } = req.body
+  const { dbPath, verbosity = 'verbose' } = req.body
 
   if (!dbPath || !fs.existsSync(dbPath)) {
     return res.status(400).json({ error: 'Invalid database path' })
@@ -4644,8 +4697,26 @@ app.post('/api/ingest/scenarios', async (req, res) => {
     }
   })
 
+  const logs = []
+
+  const logDebug = (msg, data) => {
+    if (verbosity === 'debug') {
+      const logMsg = data ? `${msg}: ${JSON.stringify(data, null, 2)}` : msg
+      console.log(`[Scenario Ingestion DEBUG] ${logMsg}`)
+      logs.push({ level: 'debug', message: logMsg })
+    }
+  }
+
+  const logVerbose = (msg) => {
+    if (verbosity === 'verbose' || verbosity === 'debug') {
+      console.log(`[Scenario Ingestion] ${msg}`)
+      logs.push({ level: 'verbose', message: msg })
+    }
+  }
+
   const ingestScenarios = () => {
     return new Promise((resolve, reject) => {
+      logVerbose('Querying database tables: scenario_mapping JOIN staged_file')
       // Get all scenario mappings
       db.all(
         `SELECT scm.*, sf.file_name
@@ -4654,6 +4725,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
         [],
         async (err, mappings) => {
           if (err) return reject(err)
+          logVerbose(`Found ${mappings.length} scenario mapping(s)`)
           if (mappings.length === 0) {
             return resolve({ scenarios: 0, drivers: 0, message: 'No scenario mappings found' })
           }
@@ -4664,8 +4736,20 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
           for (const mapping of mappings) {
             try {
+              logVerbose(`Processing CSV file: ${mapping.file_name}`)
+              logDebug('Mapping record from scenario_mapping table:', {
+                mapping_id: mapping.mapping_id,
+                file_id: mapping.file_id,
+                scenario_column: mapping.scenario_column,
+                driver_column: mapping.driver_column,
+                units_column: mapping.units_column,
+                value_columns: mapping.value_columns,
+                variable_mappings_count: JSON.parse(mapping.variable_mappings).length
+              })
+
               // Read from staging table instead of csv_content
               const stagingTableName = `staging_scenario_${mapping.file_id}`
+              logVerbose(`Reading data from staging table: ${stagingTableName}`)
               const csvData = await new Promise((res, rej) => {
                 db.all(`SELECT * FROM ${stagingTableName}`, [], (err, rows) => {
                   if (err) rej(err)
@@ -4677,17 +4761,38 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                 errors.push(`No data in staging table ${stagingTableName}`)
                 continue
               }
+              logDebug('Rows read from staging table:', csvData.length)
+              logDebug('Sample CSV row (first row):', csvData[0])
 
               const valueColumns = JSON.parse(mapping.value_columns)
+              logDebug('Value columns from mapping:', valueColumns)
               const variableMappings = JSON.parse(mapping.variable_mappings)
+              logDebug('Variable mappings from mapping:', variableMappings)
 
-              // Get unique scenario names from value columns (columns represent scenarios/periods)
-              const scenarioColumns = valueColumns.filter(col => !['driver', 'scenario', 'unit', 'units'].includes(col.toLowerCase()))
+              // Get value columns (periods)
+              const periodColumns = valueColumns.filter(col => !['driver', 'scenario', 'unit', 'units'].includes(col.toLowerCase()))
+              logVerbose(`Identified ${periodColumns.length} period column(s): ${periodColumns.join(', ')}`)
 
-              // For each scenario column, create scenarios and insert driver values
-              for (let periodIndex = 0; periodIndex < scenarioColumns.length; periodIndex++) {
-                const periodCol = scenarioColumns[periodIndex]
-                const scenarioCode = `SCENARIO_${Date.now()}_P${periodIndex + 1}`
+              // Get unique scenarios from the scenario column
+              const uniqueScenarios = new Set()
+              if (mapping.scenario_column) {
+                logVerbose(`Using scenario column: ${mapping.scenario_column}`)
+                csvData.forEach(row => {
+                  const scenarioName = row[mapping.scenario_column]
+                  if (scenarioName) uniqueScenarios.add(scenarioName)
+                })
+              }
+
+              // If no scenario column, treat all data as one scenario
+              if (uniqueScenarios.size === 0) {
+                uniqueScenarios.add('Default')
+              }
+              logVerbose(`Found ${uniqueScenarios.size} unique scenario(s): ${Array.from(uniqueScenarios).join(', ')}`)
+
+              // For each unique scenario, create scenario record and insert driver values
+              for (const scenarioName of uniqueScenarios) {
+                const scenarioCode = `SCENARIO_${scenarioName}_${Date.now()}`
+                logVerbose(`Creating scenario: ${scenarioName} (code: ${scenarioCode})`)
 
                 // Create scenario record (if not exists)
                 await new Promise((res, rej) => {
@@ -4695,11 +4800,14 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                     `INSERT OR IGNORE INTO scenario
                      (code, name, description, json_drivers, statement_template_id, tax_strategy_id)
                      VALUES (?, ?, ?, '[]', 1, 1)`,
-                    [scenarioCode, `Scenario Period ${periodIndex + 1}`, `Imported from ${mapping.file_id}`],
+                    [scenarioCode, scenarioName, `Imported from ${mapping.file_id}`],
                     function(err) {
                       if (err) rej(err)
                       else {
-                        if (this.changes > 0) scenariosCreated++
+                        if (this.changes > 0) {
+                          scenariosCreated++
+                          logDebug(`Inserted new scenario into scenario table`)
+                        }
                         res(this.lastID)
                       }
                     }
@@ -4714,26 +4822,61 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                     (err, row) => (err ? rej(err) : res(row?.scenario_id))
                   )
                 })
+                logDebug(`Scenario ID: ${scenarioId}`)
 
-                // Insert driver values for this scenario
+                // Insert driver values for each period
+                logVerbose(`Processing ${variableMappings.length} variable mapping(s) for ${periodColumns.length} period(s)`)
                 for (const varMapping of variableMappings) {
                   const csvRow = csvData[varMapping.csv_row_index]
-                  if (!csvRow) continue
+                  if (!csvRow) {
+                    logDebug(`Skipping missing CSV row at index ${varMapping.csv_row_index}`)
+                    continue
+                  }
 
-                  const value = parseFloat(csvRow[periodCol] || 0)
+                  // Skip if this row doesn't match the current scenario
+                  if (mapping.scenario_column && csvRow[mapping.scenario_column] !== scenarioName) {
+                    continue
+                  }
+
                   const unitCode = csvRow[mapping.units_column] || 'USD'
-
-                  // Insert for each entity (assuming entity 'TEST_L1' for now - this should come from entities)
-                  await new Promise((res, rej) => {
-                    db.run(
-                      `INSERT OR REPLACE INTO scenario_drivers
-                       (entity_id, scenario_id, period_id, driver_code, value, unit_code)
-                       VALUES ('TEST_L1', ?, ?, ?, ?, ?)`,
-                      [scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
-                      (err) => (err ? rej(err) : (driversInserted++, res()))
-                    )
+                  logDebug(`Processing driver: ${varMapping.driver_code}`, {
+                    csv_row_index: varMapping.csv_row_index,
+                    driver_name_in_csv: csvRow[mapping.driver_column],
+                    unit_from_csv: unitCode,
+                    scenario_from_csv: csvRow[mapping.scenario_column],
+                    mapped_to_driver_code: varMapping.driver_code
                   })
+
+                  // Insert value for each period
+                  for (let periodIndex = 0; periodIndex < periodColumns.length; periodIndex++) {
+                    const periodCol = periodColumns[periodIndex]
+                    const value = parseFloat(csvRow[periodCol] || 0)
+
+                    logDebug(`Inserting into scenario_drivers table:`, {
+                      source_csv_column: periodCol,
+                      source_csv_value: csvRow[periodCol],
+                      parsed_value: value,
+                      insert_to_table: 'scenario_drivers',
+                      entity_id: 'TEST_L1',
+                      scenario_id: scenarioId,
+                      period_id: periodIndex + 1,
+                      driver_code: varMapping.driver_code,
+                      value: value,
+                      unit_code: unitCode
+                    })
+
+                    await new Promise((res, rej) => {
+                      db.run(
+                        `INSERT OR REPLACE INTO scenario_drivers
+                         (entity_id, scenario_id, period_id, driver_code, value, unit_code)
+                         VALUES ('TEST_L1', ?, ?, ?, ?, ?)`,
+                        [scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
+                        (err) => (err ? rej(err) : (driversInserted++, res()))
+                      )
+                    })
+                  }
                 }
+                logVerbose(`Completed scenario: ${scenarioName}`)
               }
             } catch (err) {
               errors.push(`Error processing mapping: ${err.message}`)
@@ -4752,10 +4895,10 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
   try {
     const result = await ingestScenarios()
-    res.json({ success: true, ...result })
+    res.json({ success: true, ...result, logs })
   } catch (error) {
     console.error('Scenario ingestion error:', error)
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: error.message, logs })
   } finally {
     db.close()
   }
