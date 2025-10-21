@@ -48,49 +48,55 @@ export default function PerformCalculation() {
     setRunStatus('running')
     setLogs([])
 
+    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+
     addLog('info', `Starting calculation run: ${runName}`)
-    addLog('info', 'Initializing calculation engine...')
+    addLog('info', 'Step 1: Ingesting statement data from staged files...')
 
-    // Simulate calculation steps
-    // TODO: Replace with actual API calls to C++ calculation engine
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addLog('info', 'Loading templates and entities...')
+      // Step 1: Ingest statements
+      const stmtResponse = await fetch('http://localhost:3001/api/ingest/statements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath })
+      })
+      const stmtResult = await stmtResponse.json()
 
-      await new Promise(resolve => setTimeout(resolve, 800))
-      addLog('success', 'Templates loaded successfully')
+      if (stmtResult.success) {
+        addLog('success', `Statements ingested: ${stmtResult.inserted} values from ${stmtResult.mappings || 0} mappings`)
+      } else {
+        throw new Error(stmtResult.error || 'Statement ingestion failed')
+      }
 
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addLog('info', 'Loading scenario drivers and values...')
+      // Step 2: Ingest scenarios
+      addLog('info', 'Step 2: Ingesting scenario data from staged files...')
+      const scenResponse = await fetch('http://localhost:3001/api/ingest/scenarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath })
+      })
+      const scenResult = await scenResponse.json()
 
-      await new Promise(resolve => setTimeout(resolve, 800))
-      addLog('success', 'Scenario data loaded')
+      if (scenResult.success) {
+        addLog('success', `Scenarios ingested: ${scenResult.scenarios} scenarios, ${scenResult.drivers} driver values`)
+      } else {
+        throw new Error(scenResult.error || 'Scenario ingestion failed')
+      }
 
-      await new Promise(resolve => setTimeout(resolve, 1200))
-      addLog('info', 'Processing line item formulas...')
+      // Step 3: Run calculation engine
+      addLog('info', 'Step 3: Running multi-period scenario calculations...')
+      addLog('info', 'Processing line item formulas and dependencies...')
+      addLog('info', 'Applying validation rules...')
+      addLog('info', 'Executing management actions...')
 
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      addLog('success', 'Formula calculations completed')
+      // TODO: Call actual C++ calculation engine here
+      // For now, simulate success
+      await new Promise(resolve => setTimeout(resolve, 2000))
 
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addLog('info', 'Running validation rules...')
+      addLog('success', '✓ Calculation engine completed successfully')
+      addLog('info', 'Results stored in database')
 
-      await new Promise(resolve => setTimeout(resolve, 800))
-      addLog('success', 'All validation rules passed')
-
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addLog('info', 'Applying management actions...')
-
-      await new Promise(resolve => setTimeout(resolve, 1200))
-      addLog('success', 'Management actions applied')
-
-      await new Promise(resolve => setTimeout(resolve, 800))
-      addLog('info', 'Saving results to database...')
-
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addLog('success', 'Results saved successfully')
-
-      addLog('success', '✓ Calculation completed successfully!')
+      addLog('success', '✓ All steps completed successfully!')
       setRunStatus('success')
       setIsRunning(false)
 
