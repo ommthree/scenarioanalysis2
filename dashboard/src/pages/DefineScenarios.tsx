@@ -13,7 +13,7 @@ interface Driver {
 
 const DefineScenarios: React.FC = () => {
   const [financialDrivers, setFinancialDrivers] = useState<Driver[]>([])
-  const [carbonDrivers, setCarbonDrivers] = useState<Driver[]>([])
+  const [physicalDrivers, setPhysicalDrivers] = useState<Driver[]>([])
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -24,14 +24,14 @@ const DefineScenarios: React.FC = () => {
       .then(res => res.json())
       .then(data => {
         const financial = data.filter((d: Driver) => d.category === 'financial')
-        const carbon = data.filter((d: Driver) => d.category === 'carbon')
+        const physical = data.filter((d: Driver) => d.category === 'physical')
         setFinancialDrivers(financial)
-        setCarbonDrivers(carbon)
+        setPhysicalDrivers(physical)
       })
       .catch(err => console.error('Error fetching drivers:', err))
   }, [])
 
-  const addDriver = (category: 'financial' | 'carbon') => {
+  const addDriver = (category: 'financial' | 'physical') => {
     const newDriver: Driver = {
       code: '',
       name: '',
@@ -42,27 +42,27 @@ const DefineScenarios: React.FC = () => {
     if (category === 'financial') {
       setFinancialDrivers([...financialDrivers, newDriver])
     } else {
-      setCarbonDrivers([...carbonDrivers, newDriver])
+      setPhysicalDrivers([...physicalDrivers, newDriver])
     }
   }
 
-  const updateDriver = (category: 'financial' | 'carbon', index: number, field: keyof Driver, value: string) => {
+  const updateDriver = (category: 'financial' | 'physical', index: number, field: keyof Driver, value: string) => {
     if (category === 'financial') {
       const updated = [...financialDrivers]
       updated[index] = { ...updated[index], [field]: value }
       setFinancialDrivers(updated)
     } else {
-      const updated = [...carbonDrivers]
+      const updated = [...physicalDrivers]
       updated[index] = { ...updated[index], [field]: value }
-      setCarbonDrivers(updated)
+      setPhysicalDrivers(updated)
     }
   }
 
-  const removeDriver = (category: 'financial' | 'carbon', index: number) => {
+  const removeDriver = (category: 'financial' | 'physical', index: number) => {
     if (category === 'financial') {
       setFinancialDrivers(financialDrivers.filter((_, i) => i !== index))
     } else {
-      setCarbonDrivers(carbonDrivers.filter((_, i) => i !== index))
+      setPhysicalDrivers(physicalDrivers.filter((_, i) => i !== index))
     }
   }
 
@@ -72,7 +72,7 @@ const DefineScenarios: React.FC = () => {
 
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const allDrivers = [...financialDrivers, ...carbonDrivers]
+      const allDrivers = [...financialDrivers, ...physicalDrivers]
 
       console.log('Saving drivers:', allDrivers.length, 'drivers to', dbPath)
 
@@ -102,7 +102,7 @@ const DefineScenarios: React.FC = () => {
   const handleDownloadJSON = () => {
     const data = {
       financial_drivers: financialDrivers,
-      carbon_drivers: carbonDrivers
+      physical_drivers: physicalDrivers
     }
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -126,14 +126,14 @@ const DefineScenarios: React.FC = () => {
         const json = JSON.parse(e.target?.result as string)
 
         // Validate JSON structure
-        if (!json.financial_drivers || !json.carbon_drivers) {
-          alert('Invalid JSON format. Expected fields: financial_drivers, carbon_drivers')
+        if (!json.financial_drivers || !json.physical_drivers) {
+          alert('Invalid JSON format. Expected fields: financial_drivers, physical_drivers')
           return
         }
 
         // Load drivers
         setFinancialDrivers(json.financial_drivers || [])
-        setCarbonDrivers(json.carbon_drivers || [])
+        setPhysicalDrivers(json.physical_drivers || [])
       } catch (err) {
         console.error('Error parsing JSON:', err)
         alert('Failed to parse JSON file')
@@ -147,7 +147,7 @@ const DefineScenarios: React.FC = () => {
     }
   }
 
-  const renderDriverSection = (title: string, drivers: Driver[], category: 'financial' | 'carbon', color: string) => {
+  const renderDriverSection = (title: string, drivers: Driver[], category: 'financial' | 'physical', color: string) => {
     return (
       <Card className="border-2" style={{
         backgroundColor: 'rgba(30, 41, 59, 0.6)',
@@ -306,10 +306,10 @@ const DefineScenarios: React.FC = () => {
               Define Scenario Drivers
             </h1>
             <p style={{ color: '#94a3b8', fontSize: '16px' }}>
-              Define financial and carbon drivers for scenario analysis
+              Define financial and physical risk drivers for scenario analysis
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '12px', marginTop: '80px', position: 'relative', zIndex: 50 }}>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '100px', position: 'relative', zIndex: 50 }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -369,8 +369,8 @@ const DefineScenarios: React.FC = () => {
         {/* Financial Drivers Section */}
         {renderDriverSection('Financial Drivers', financialDrivers, 'financial', '59, 130, 246')}
 
-        {/* Carbon Drivers Section */}
-        {renderDriverSection('Carbon Drivers', carbonDrivers, 'carbon', '168, 85, 247')}
+        {/* Physical Risk Drivers Section */}
+        {renderDriverSection('Physical Risk Drivers', physicalDrivers, 'physical', '239, 68, 68')}
       </div>
     </div>
   )
