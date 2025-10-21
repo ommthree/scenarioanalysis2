@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, AlertCircle, Plus, Sparkles } from 'lucide-react'
+import { Save, AlertCircle, Plus, Sparkles, FileSpreadsheet } from 'lucide-react'
 
 interface LineItem {
   code: string
@@ -306,43 +306,60 @@ ${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so yo
 
         {/* Template Selection */}
         <Card className="border-2" style={{
-          marginBottom: '24px',
           backgroundColor: 'rgba(30, 41, 59, 0.6)',
           backdropFilter: 'blur(10px)',
-          borderColor: 'rgba(16, 185, 129, 0.3)'
+          borderColor: 'rgba(100, 116, 139, 0.3)',
+          marginBottom: '24px'
         }}>
-          <CardContent style={{ padding: '24px' }}>
-            <label style={{
-              display: 'block',
-              fontSize: '14px',
-              fontWeight: '600',
-              color: '#10b981',
-              marginBottom: '12px'
-            }}>
+          <div style={{ paddingTop: '6px', paddingBottom: '12px', paddingLeft: '24px', paddingRight: '24px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '12px' }}>
               Select Template
-            </label>
-            <select
-              value={selectedTemplate?.template_code || ''}
-              onChange={(e) => handleTemplateSelect(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                fontSize: '14px',
-                backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                color: '#ffffff',
-                border: '1px solid rgba(16, 185, 129, 0.2)',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="">Select a unified template...</option>
-              {templates.map(t => (
-                <option key={t.template_code} value={t.template_code}>
-                  {t.template_name}
-                </option>
-              ))}
-            </select>
-          </CardContent>
+            </h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              {templates.map(template => {
+                const isSelected = selectedTemplate?.template_code === template.template_code
+                return (
+                  <button
+                    key={template.template_code}
+                    onClick={() => handleTemplateSelect(template.template_code)}
+                    style={{
+                      padding: '12px 20px',
+                      backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                      border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      minWidth: '200px'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                        e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                        e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                      }
+                    }}
+                  >
+                    <FileSpreadsheet className="w-5 h-5" style={{ color: isSelected ? '#10b981' : '#94a3b8' }} />
+                    <span style={{
+                      color: isSelected ? '#10b981' : '#e2e8f0',
+                      fontSize: '14px',
+                      fontWeight: isSelected ? 600 : 500
+                    }}>
+                      {template.template_name}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </Card>
 
         {selectedTemplate && (

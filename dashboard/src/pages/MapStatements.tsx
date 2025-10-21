@@ -1470,25 +1470,50 @@ Respond with ONLY the JSON object, no other text`
                   <FileText className="w-5 h-5 text-green-500" />
                   <h3 className="font-semibold">Unified Statement Template</h3>
                 </div>
-                <select
-                  value={selectedUnifiedTemplate?.template_code || ''}
-                  onChange={(e) => handleTemplateSelect(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    borderRadius: '6px'
-                  }}
-                >
-                  <option value="">Select unified template...</option>
-                  {templates.map(t => (
-                    <option key={t.template_code} value={t.template_code}>
-                      {t.template_name}
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                  {templates.map(template => {
+                    const isSelected = selectedUnifiedTemplate?.template_code === template.template_code
+                    return (
+                      <button
+                        key={template.template_code}
+                        onClick={() => handleTemplateSelect(template.template_code)}
+                        style={{
+                          padding: '12px 20px',
+                          backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                          border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          minWidth: '200px'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                          }
+                        }}
+                      >
+                        <FileSpreadsheet className="w-5 h-5" style={{ color: isSelected ? '#10b981' : '#94a3b8' }} />
+                        <span style={{
+                          color: isSelected ? '#10b981' : '#e2e8f0',
+                          fontSize: '14px',
+                          fontWeight: isSelected ? 600 : 500
+                        }}>
+                          {template.template_name}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </CardContent>

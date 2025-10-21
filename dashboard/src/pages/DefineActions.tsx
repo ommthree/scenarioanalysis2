@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Save, AlertCircle, Plus, Sparkles, Download, Upload, Trash2, X, Edit2 } from 'lucide-react'
+import { Save, AlertCircle, Plus, Sparkles, Download, Upload, Trash2, X, Edit2, FileSpreadsheet } from 'lucide-react'
 
 interface ManagementAction {
   action_id?: number
@@ -1137,28 +1137,54 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                       />
                     </div>
 
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
                         Select Template for Line Items
                       </label>
-                      <select
-                        value={selectedTemplate?.template_code || ''}
-                        onChange={(e) => handleTemplateSelect(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                          border: '1px solid rgba(59, 130, 246, 0.3)',
-                          borderRadius: '6px',
-                          color: '#fff',
-                          fontSize: '14px'
-                        }}
-                      >
-                        <option value="">Select template...</option>
-                        {templates.map(t => (
-                          <option key={t.template_code} value={t.template_code}>{t.template_name}</option>
-                        ))}
-                      </select>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        {templates.map(template => {
+                          const isSelected = selectedTemplate?.template_code === template.template_code
+                          return (
+                            <button
+                              key={template.template_code}
+                              onClick={() => handleTemplateSelect(template.template_code)}
+                              style={{
+                                padding: '12px 20px',
+                                backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                                border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                minWidth: '200px'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) {
+                                  e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                                  e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) {
+                                  e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                                  e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                                }
+                              }}
+                            >
+                              <FileSpreadsheet className="w-5 h-5" style={{ color: isSelected ? '#10b981' : '#94a3b8' }} />
+                              <span style={{
+                                color: isSelected ? '#10b981' : '#e2e8f0',
+                                fontSize: '14px',
+                                fontWeight: isSelected ? 600 : 500
+                              }}>
+                                {template.template_name}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
