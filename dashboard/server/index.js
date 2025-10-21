@@ -4933,6 +4933,82 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 })
 
 /**
+ * Get available periods from scenario_drivers
+ * GET /api/results/periods?dbPath=...
+ */
+app.get('/api/results/periods', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Database path is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  db.all(
+    `SELECT DISTINCT period_id FROM scenario_drivers ORDER BY period_id`,
+    [],
+    (err, rows) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: err.message })
+      }
+
+      const periods = rows.map(row => row.period_id)
+      db.close()
+      res.json({ success: true, periods })
+    }
+  )
+})
+
+/**
+ * Get financial statement results for a specific period
+ * GET /api/results/statement?dbPath=...&period=1
+ */
+app.get('/api/results/statement', (req, res) => {
+  const { dbPath, period } = req.query
+
+  if (!dbPath || !period) {
+    return res.status(400).json({ error: 'Database path and period are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  // Query to get line items with values from scenario_drivers
+  // Join with line_item to get display_name, section, is_computed
+  db.all(
+    `SELECT
+      li.code,
+      li.display_name,
+      li.section,
+      li.is_computed,
+      sd.value
+     FROM scenario_drivers sd
+     JOIN line_item li ON sd.driver_code = li.code
+     WHERE sd.period_id = ?
+     ORDER BY li.section, li.display_order`,
+    [period],
+    (err, rows) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: err.message })
+      }
+
+      db.close()
+      res.json({ success: true, lineItems: rows })
+    }
+  )
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {

@@ -24,6 +24,7 @@ import MapStatements from './pages/MapStatements'
 import MapScenarios from './pages/MapScenarios'
 import RunDefinition from './pages/RunDefinition'
 import PerformCalculation from './pages/PerformCalculation'
+import ViewResults from './pages/ViewResults'
 
 function App() {
   const [dbPath, setDbPath] = useState<string | null>(() => {
@@ -69,7 +70,7 @@ function App() {
           <Route path="/run/definition" element={<RunDefinition />} />
           <Route path="/run/execute" element={<PerformCalculation />} />
           <Route path="/run/open" element={<Dashboard />} />
-          <Route path="/visualize" element={<Dashboard />} />
+          <Route path="/visualize" element={<ViewResults />} />
         </Routes>
       </Layout>
     </BrowserRouter>
