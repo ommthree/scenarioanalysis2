@@ -171,20 +171,6 @@ export default function RunDefinition() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Info Box */}
-      <div style={{
-        marginTop: '24px',
-        padding: '16px',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        border: '1px solid rgba(59, 130, 246, 0.3)',
-        borderRadius: '8px',
-        maxWidth: '1200px'
-      }}>
-        <p style={{ color: '#93c5fd', fontSize: '14px', margin: 0 }}>
-          <strong>Note:</strong> This run definition will be saved locally and used when you perform the calculation. Make sure to provide a clear description to help identify this run later.
-        </p>
-      </div>
     </div>
   )
 }
