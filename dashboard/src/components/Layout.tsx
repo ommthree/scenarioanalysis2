@@ -206,13 +206,13 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       >
         {/* Logo - shown on all screens */}
         <img
-          src="/logo3.png"
+          src="/daedalus2.png"
           alt="Logo"
           className="absolute z-50"
           style={{
             top: '1.5rem',
             right: '2rem',
-            height: '70px',
+            height: '105px',
             width: 'auto'
           }}
         />
