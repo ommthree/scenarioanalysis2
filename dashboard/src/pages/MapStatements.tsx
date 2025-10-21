@@ -1440,28 +1440,50 @@ Respond with ONLY the JSON object, no other text`
                   <Building2 className="w-5 h-5 text-blue-500" />
                   <h3 className="font-semibold">Select Company</h3>
                 </div>
-                <select
-                  value={selectedCompany?.entity_id || ''}
-                  onChange={(e) => {
-                    const company = getRootCompanies().find(c => c.entity_id === parseInt(e.target.value))
-                    setSelectedCompany(company || null)
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px'
-                  }}
-                >
-                  <option value="">Select company...</option>
-                  {getRootCompanies().map(company => (
-                    <option key={company.entity_id} value={company.entity_id}>
-                      {company.name}
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                  {getRootCompanies().map(company => {
+                    const isSelected = selectedCompany?.entity_id === company.entity_id
+                    return (
+                      <button
+                        key={company.entity_id}
+                        onClick={() => setSelectedCompany(company)}
+                        style={{
+                          padding: '12px 20px',
+                          backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                          border: isSelected ? '2px solid rgba(59, 130, 246, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          minWidth: '200px'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                          }
+                        }}
+                      >
+                        <Building2 className="w-5 h-5" style={{ color: isSelected ? '#3b82f6' : '#94a3b8' }} />
+                        <span style={{
+                          color: isSelected ? '#3b82f6' : '#e2e8f0',
+                          fontSize: '14px',
+                          fontWeight: isSelected ? 600 : 500
+                        }}>
+                          {company.name}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
 
               {/* Template Selection */}
@@ -1520,13 +1542,15 @@ Respond with ONLY the JSON object, no other text`
         </Card>
       </div>
 
-      {/* Mapping Panels */}
-      <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
-        {renderMappingPanel('pnl')}
-        {renderMappingPanel('bs')}
-        {renderMappingPanel('cf')}
-        {renderMappingPanel('carbon')}
-      </div>
+      {/* Mapping Panels - only show when both company and template are selected */}
+      {selectedCompany && selectedTemplate && (
+        <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
+          {renderMappingPanel('pnl')}
+          {renderMappingPanel('bs')}
+          {renderMappingPanel('cf')}
+          {renderMappingPanel('carbon')}
+        </div>
+      )}
 
       {/* Save Button */}
       {hasAnyMappings && (
