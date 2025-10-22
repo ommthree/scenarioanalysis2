@@ -359,5 +359,11 @@ std::string PeriodRunner::create_or_get_action_template(
     return template_code;
 }
 
+void PeriodRunner::set_entity_hierarchy(const core::EntityHierarchyManager* hierarchy) {
+    if (engine_) {
+        engine_->set_entity_hierarchy(hierarchy);
+    }
+}
+
 } // namespace orchestration
 } // namespace finmodel

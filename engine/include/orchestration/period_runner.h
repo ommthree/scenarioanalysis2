@@ -13,6 +13,7 @@
 #include "types/common_types.h"
 #include "database/idatabase.h"
 #include "unified/unified_engine.h"
+#include "core/entity_hierarchy_manager.h"
 #include <memory>
 #include <vector>
 #include <map>
@@ -133,6 +134,15 @@ public:
         const BalanceSheet& initial_bs,
         const std::string& template_code
     );
+
+    /**
+     * @brief Set entity hierarchy for automatic rollup aggregation
+     * @param hierarchy EntityHierarchyManager instance (owned by caller)
+     *
+     * When set, the engine will automatically aggregate child entity values
+     * when parent-level calculation cannot proceed due to missing data.
+     */
+    void set_entity_hierarchy(const core::EntityHierarchyManager* hierarchy);
 
 private:
     std::shared_ptr<database::IDatabase> db_;

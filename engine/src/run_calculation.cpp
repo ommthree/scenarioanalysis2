@@ -83,6 +83,11 @@ int main(int argc, char* argv[]) {
         // Initialize period runner
         PeriodRunner runner(db);
 
+        // Set entity hierarchy for rollup aggregation
+        if (hierarchy) {
+            runner.set_entity_hierarchy(hierarchy.get());
+        }
+
         // Initial balance sheet - empty, will be populated from period 0 drivers
         BalanceSheet initial_bs;
 

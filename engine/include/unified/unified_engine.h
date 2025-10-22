@@ -39,6 +39,7 @@
 #include "core/formula_evaluator.h"
 #include "core/statement_template.h"
 #include "core/ivalue_provider.h"
+#include "core/entity_hierarchy_manager.h"
 #include "types/common_types.h"
 #include "pl/providers/pl_value_provider.h"
 #include "bs/providers/statement_value_provider.h"
@@ -172,6 +173,15 @@ public:
      */
     void set_prior_period_values(const std::map<std::string, double>& prior_values);
 
+    /**
+     * @brief Set entity hierarchy for rollup aggregation
+     * @param hierarchy EntityHierarchyManager instance
+     *
+     * When set, the engine can automatically aggregate child entity values
+     * when calculation cannot proceed due to missing data at parent level.
+     */
+    void set_entity_hierarchy(const core::EntityHierarchyManager* hierarchy);
+
 private:
     std::shared_ptr<database::IDatabase> db_;
     core::FormulaEvaluator evaluator_;
@@ -196,19 +206,41 @@ private:
     // Current calculation state
     std::map<std::string, double> current_values_;
 
+    // Entity hierarchy (optional, for rollup aggregation)
+    const core::EntityHierarchyManager* hierarchy_ = nullptr;
+
     /**
      * @brief Calculate a single line item
      * @param code Line item code
      * @param formula Formula to evaluate (or empty if base value)
      * @param sign Sign convention to apply
      * @param ctx Calculation context
+     * @param line_item LineItem definition (for aggregation_method)
      * @return Calculated value
      */
     double calculate_line_item(
         const std::string& code,
         const std::optional<std::string>& formula,
         SignConvention sign,
-        const core::Context& ctx
+        const core::Context& ctx,
+        const core::LineItem* line_item
+    );
+
+    /**
+     * @brief Try to aggregate child entity values when parent calculation fails
+     * @param entity_id Parent entity ID
+     * @param line_item_code Line item code
+     * @param scenario_id Scenario ID
+     * @param period_id Period ID
+     * @param aggregation_method "sum" or "none"
+     * @return Aggregated value, or std::nullopt if rollup not possible
+     */
+    std::optional<double> try_rollup_from_children(
+        const EntityID& entity_id,
+        const std::string& line_item_code,
+        ScenarioID scenario_id,
+        PeriodID period_id,
+        const std::string& aggregation_method
     );
 
     /**

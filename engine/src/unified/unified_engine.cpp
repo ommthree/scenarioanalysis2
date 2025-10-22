@@ -171,7 +171,7 @@ UnifiedResult UnifiedEngine::calculate(
 
         try {
             // Calculate value using formula or provider lookup
-            double value = calculate_line_item(code, line_item->formula, line_item->sign_convention, ctx);
+            double value = calculate_line_item(code, line_item->formula, line_item->sign_convention, ctx, line_item);
 
             // Store in result
             result.line_items[code] = value;
@@ -181,6 +181,23 @@ UnifiedResult UnifiedEngine::calculate(
             statement_provider_->set_current_values(current_values_);
 
         } catch (const std::exception& e) {
+            // If calculation failed and we have hierarchy, try rollup from children
+            if (hierarchy_ && line_item->aggregation_method == "sum") {
+                auto rollup_value = try_rollup_from_children(
+                    entity_id, code, scenario_id, period_id, line_item->aggregation_method
+                );
+
+                if (rollup_value.has_value()) {
+                    // Rollup succeeded
+                    result.line_items[code] = *rollup_value;
+                    current_values_[code] = *rollup_value;
+                    statement_provider_->set_current_values(current_values_);
+                    std::cout << "  ↑ Rolled up " << code << " from children: " << *rollup_value << std::endl;
+                    continue;  // Success via rollup
+                }
+            }
+
+            // Rollup not available or failed - propagate error
             result.success = false;
             result.errors.push_back("Failed to calculate '" + code + "': " + e.what());
             return result;
@@ -202,7 +219,8 @@ double UnifiedEngine::calculate_line_item(
     const std::string& code,
     const std::optional<std::string>& formula,
     SignConvention sign [[maybe_unused]],
-    const core::Context& ctx
+    const core::Context& ctx,
+    const core::LineItem* line_item [[maybe_unused]]
 ) {
     if (!formula.has_value() || formula->empty()) {
         // No formula: try to get from providers
@@ -352,6 +370,74 @@ std::map<std::string, double> UnifiedResult::extract_carbon_result() const {
 
 void UnifiedEngine::set_prior_period_values(const std::map<std::string, double>& prior_values) {
     statement_provider_->set_prior_period_values(prior_values);
+}
+
+void UnifiedEngine::set_entity_hierarchy(const core::EntityHierarchyManager* hierarchy) {
+    hierarchy_ = hierarchy;
+}
+
+std::optional<double> UnifiedEngine::try_rollup_from_children(
+    const EntityID& entity_id,
+    const std::string& line_item_code,
+    ScenarioID scenario_id,
+    PeriodID period_id,
+    const std::string& aggregation_method
+) {
+    // Check if rollup is even applicable
+    if (!hierarchy_) {
+        return std::nullopt;  // No hierarchy available
+    }
+
+    if (aggregation_method != "sum") {
+        return std::nullopt;  // Only sum aggregation supported for rollup
+    }
+
+    // Get children for this entity
+    auto children = hierarchy_->get_children(entity_id);
+    if (children.empty()) {
+        return std::nullopt;  // Leaf node - cannot roll up
+    }
+
+    // Query child values from statement_result table
+    double total = 0.0;
+    int child_count = 0;
+
+    for (const auto& child_id : children) {
+        ParamMap params;
+        params["entity_id"] = child_id;
+        params["scenario_id"] = scenario_id;
+        params["period_id"] = period_id;
+        params["line_item_code"] = line_item_code;
+
+        try {
+            auto result = db_->execute_query(
+                "SELECT value FROM statement_result "
+                "WHERE entity_id = :entity_id "
+                "AND scenario_id = :scenario_id "
+                "AND period_id = :period_id "
+                "AND line_item_code = :line_item_code",
+                params
+            );
+
+            if (result->next()) {
+                double child_value = result->get_double("value");
+                total += child_value;
+                child_count++;
+            }
+        } catch (const std::exception& e) {
+            // If we can't query a child, rollup fails
+            std::cerr << "  Warning: Failed to query child " << child_id << ": " << e.what() << std::endl;
+            return std::nullopt;
+        }
+    }
+
+    // If we didn't find any child values, rollup fails
+    if (child_count == 0) {
+        return std::nullopt;
+    }
+
+    // Return aggregated value
+    return total;
 }
 
 } // namespace unified
