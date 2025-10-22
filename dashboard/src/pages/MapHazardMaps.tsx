@@ -11,6 +11,12 @@ interface PhysicalPeril {
   category: string
 }
 
+interface Scenario {
+  scenario_id: number
+  code: string
+  name: string
+}
+
 interface StagedFile {
   file_id: number
   file_name: string

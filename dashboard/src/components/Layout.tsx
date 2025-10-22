@@ -23,7 +23,8 @@ import {
   Save,
   Network,
   Shuffle,
-  LineChart
+  LineChart,
+  Link
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -85,6 +86,7 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/inputs/hazard-maps', icon: Map, label: 'Load Hazard Maps' },
         { path: '/inputs/map-hazard-maps', icon: ArrowRightLeft, label: 'Map Hazard Maps' },
+        { path: '/inputs/map-hazard-maps-scenarios', icon: Link, label: 'Link Maps→Scenarios' },
         { path: '/inputs/locations', icon: MapPin, label: 'Load Locations' },
         { path: '/inputs/map-locations', icon: ArrowRightLeft, label: 'Map Locations' },
         { path: '/inputs/damage-curves', icon: TrendingUp, label: 'Load Damage Curves' },

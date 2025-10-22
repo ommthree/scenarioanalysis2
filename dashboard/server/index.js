@@ -4736,6 +4736,133 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
 })
 
 /**
+ * List all hazard map mappings with metadata
+ * GET /api/hazard-maps/list-mappings?dbPath=...
+ */
+app.get('/api/hazard-maps/list-mappings', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT hm.mapping_id, sf.file_name, pp.peril_type, pp.peril_code
+     FROM hazard_map_mapping hm
+     JOIN staged_file sf ON sf.file_id = hm.file_id
+     JOIN physical_peril pp ON pp.peril_id = hm.peril_id
+     ORDER BY sf.file_name`,
+    [],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch mappings: ' + err.message })
+      }
+      res.json({ success: true, mappings: rows || [] })
+    }
+  )
+})
+
+/**
+ * Get scenarios linked to a hazard map
+ * GET /api/hazard-maps/get-scenarios?dbPath=...&mappingId=...
+ */
+app.get('/api/hazard-maps/get-scenarios', (req, res) => {
+  const { dbPath, mappingId } = req.query
+
+  if (!dbPath || !mappingId) {
+    return res.status(400).json({ error: 'dbPath and mappingId are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT s.scenario_id, s.code, s.name
+     FROM hazard_map_scenario hms
+     JOIN scenario s ON s.scenario_id = hms.scenario_id
+     WHERE hms.mapping_id = ?
+     ORDER BY s.code`,
+    [mappingId],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch scenarios: ' + err.message })
+      }
+      res.json({ success: true, scenarios: rows || [] })
+    }
+  )
+})
+
+/**
+ * Save hazard map to scenario mappings
+ * POST /api/hazard-maps/save-scenario-mappings
+ * Body: { dbPath, mappingId, scenarioIds: [] }
+ */
+app.post('/api/hazard-maps/save-scenario-mappings', (req, res) => {
+  const { dbPath, mappingId, scenarioIds } = req.body
+
+  if (!dbPath || !mappingId || !Array.isArray(scenarioIds)) {
+    return res.status(400).json({ error: 'dbPath, mappingId, and scenarioIds array are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.serialize(() => {
+    // Delete existing mappings for this hazard map
+    db.run(
+      'DELETE FROM hazard_map_scenario WHERE mapping_id = ?',
+      [mappingId],
+      (err) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to delete old mappings: ' + err.message })
+        }
+
+        // Insert new mappings
+        if (scenarioIds.length === 0) {
+          db.close()
+          return res.json({ success: true, message: 'Mappings cleared' })
+        }
+
+        const stmt = db.prepare('INSERT INTO hazard_map_scenario (mapping_id, scenario_id) VALUES (?, ?)')
+        let errors = []
+
+        scenarioIds.forEach((scenarioId) => {
+          stmt.run([mappingId, scenarioId], (err) => {
+            if (err) errors.push(err.message)
+          })
+        })
+
+        stmt.finalize((err) => {
+          db.close()
+          if (err || errors.length > 0) {
+            return res.status(500).json({
+              error: 'Failed to save some mappings',
+              details: errors
+            })
+          }
+          res.json({ success: true, message: `Saved ${scenarioIds.length} mapping(s)` })
+        })
+      }
+    )
+  })
+})
+
+/**
  * Ingest statements from staged files using mappings
  * POST /api/ingest/statements
  * Body: { dbPath }
