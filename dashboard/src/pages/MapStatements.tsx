@@ -148,12 +148,8 @@ export default function MapStatements() {
     loadAllStagedFiles()
   }, [])
 
-  // Restore saved mappings when selectedCompany and templates are loaded
-  useEffect(() => {
-    if (selectedCompany && templates.length > 0) {
-      restoreSavedMappings()
-    }
-  }, [selectedCompany?.entity_id, templates.length])
+  // NOTE: Automatic restoration removed - mappings now restore when user clicks CSV file button
+  // This ensures the page loads with no files selected, requiring user to click a file to see mappings
 
   const loadTemplates = async () => {
     try {
@@ -236,6 +232,7 @@ export default function MapStatements() {
 
         const columns = records.length > 0 ? Object.keys(records[0]) : []
 
+        console.log(`✅ Loaded CSV for ${statementType}:`, records.length, 'rows')
         setStatementMappings(prev => ({
           ...prev,
           [statementType]: {
@@ -308,16 +305,22 @@ export default function MapStatements() {
 
             if (template) {
               // First, update state with everything including columnConfig
-              setStatementMappings(prev => {
-                // Find the staged file ID if there's a saved file name
-                let fileId: number | null = null
-                if (companyMapping.csvFileName) {
-                  const stagedFile = prev[type].stagedFiles.find(f => f.file_name === companyMapping.csvFileName)
-                  if (stagedFile) {
-                    fileId = stagedFile.file_id
-                  }
-                }
+              console.log(`📝 ${type} - Restoring mappings:`, {
+                template: template.template_code,
+                csvFileName: companyMapping.csvFileName,
+                hierarchicalMappingsCount: companyMapping.hierarchicalMappings?.length || 0
+              })
 
+              // Find the staged file ID BEFORE updating state
+              let fileId: number | null = null
+              if (companyMapping.csvFileName) {
+                const stagedFile = statementMappings[type].stagedFiles.find(f => f.file_name === companyMapping.csvFileName)
+                if (stagedFile) {
+                  fileId = stagedFile.file_id
+                }
+              }
+
+              setStatementMappings(prev => {
                 return {
                   ...prev,
                   [type]: {
@@ -335,12 +338,10 @@ export default function MapStatements() {
                 }
               })
 
-              // Then, load the CSV data (which will preserve columnConfig via spread operator)
-              if (companyMapping.csvFileName) {
-                const fileId = statementMappings[type].stagedFiles.find(f => f.file_name === companyMapping.csvFileName)?.file_id
-                if (fileId) {
-                  loadStagingData(type, fileId)
-                }
+              // Then, load the CSV data using the fileId we found earlier
+              // This ensures we don't read stale state
+              if (fileId) {
+                loadStagingData(type, fileId)
               }
             }
           }
@@ -547,8 +548,14 @@ export default function MapStatements() {
       }
     }))
 
-    // Load the file data
+    // Load the file data and wait for it to complete
     await loadStagingData(statementType, fileIdNum)
+
+    // Add a small delay to ensure state has updated
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    // Restore saved mappings after CSV loads
+    await restoreSavedMappings()
   }
 
   const [draggedRole, setDraggedRole] = useState<'lineItem' | 'value' | 'currency' | null>(null)
