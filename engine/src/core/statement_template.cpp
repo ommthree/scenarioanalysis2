@@ -208,6 +208,13 @@ void StatementTemplate::parse_json(const std::string& json_content) {
                     item.sign_convention = SignConvention::NEUTRAL;
                 }
 
+                // Aggregation method (defaults to "sum" if not specified)
+                if (item_json.contains("aggregation_method") && !item_json["aggregation_method"].is_null()) {
+                    item.aggregation_method = item_json["aggregation_method"].get<std::string>();
+                } else {
+                    item.aggregation_method = "sum";
+                }
+
                 // Add to vectors
                 line_items_.push_back(item);
                 line_item_index_[item.code] = index++;
@@ -300,6 +307,9 @@ std::string StatementTemplate::to_json() const {
 
         // Sign convention
         item_json["sign_convention"] = sign_convention_to_string(item.sign_convention);
+
+        // Aggregation method
+        item_json["aggregation_method"] = item.aggregation_method;
 
         line_items_array.push_back(item_json);
     }

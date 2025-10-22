@@ -40,6 +40,7 @@ struct LineItem {
     bool is_computed;                           ///< True if calculated from formula
     std::vector<std::string> dependencies;      ///< List of line item codes this depends on
     SignConvention sign_convention;             ///< Sign convention (positive/negative/neutral)
+    std::string aggregation_method = "sum";     ///< How to aggregate across entities ("sum" or "none")
 };
 
 /**
