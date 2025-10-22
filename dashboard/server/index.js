@@ -1212,17 +1212,20 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
         console.log('Found statement_id:', statementId)
 
         // Determine staging table and result table based on statement type
+        // Frontend sends: 'pnl', 'bs', 'cf', 'carbon'
         const tableMap = {
           'pnl': { staging: 'staging_statement_pnl', result: 'pl_results' },
-          'balance_sheet': { staging: 'staging_statement_bs', result: 'bs_result' },
+          'bs': { staging: 'staging_statement_balance_sheet', result: 'bs_result' },
+          'balance_sheet': { staging: 'staging_statement_balance_sheet', result: 'bs_result' },
           'carbon': { staging: 'staging_statement_carbon', result: 'carbon_result' },
-          'cashflow': { staging: 'staging_statement_cf', result: 'cf_result' }
+          'cf': { staging: 'staging_statement_cashflow', result: 'cf_result' },
+          'cashflow': { staging: 'staging_statement_cashflow', result: 'cf_result' }
         }
 
         const tables = tableMap[statementType]
         if (!tables) {
           db.close()
-          return res.status(400).json({ error: 'Invalid statement type' })
+          return res.status(400).json({ error: 'Invalid statement type: ' + statementType })
         }
 
         // Now get all staging data
@@ -1258,15 +1261,26 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           continue
         }
 
-        // Extract value from the "Initial Value" column
-        // The staging tables have columns: _rowid, "Line Item", "Initial Value", imported_at, is_mapped
+        // Extract value from staging table
+        // Balance sheet table: _rowid, line_item, units, value, imported_at, is_mapped
+        // PNL table: _rowid, "Line Item", "Initial Value", imported_at, is_mapped
         let value = null
-        if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
-          value = parseFloat(csvRow['Initial Value'])
+
+        // Try different column names depending on statement type
+        if (statementType === 'balance_sheet' || statementType === 'bs') {
+          // Balance sheet uses lowercase 'value' column
+          if (csvRow['value'] !== undefined && csvRow['value'] !== null) {
+            value = parseFloat(csvRow['value'])
+          }
+        } else {
+          // PNL and others use 'Initial Value' column
+          if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
+            value = parseFloat(csvRow['Initial Value'])
+          }
         }
 
         if (value === null || isNaN(value)) {
-          console.log('WARNING: Could not extract value from row', csv_row_index, 'Initial Value:', csvRow['Initial Value'])
+          console.log('WARNING: Could not extract value from row', csv_row_index, 'value:', csvRow['value'], 'Initial Value:', csvRow['Initial Value'])
           continue
         }
 
@@ -1291,9 +1305,19 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
           `
           insertParams = [targetEntityId, scenarioId, periodId, templateCode, line_item_code, value]
+        } else if (statementType === 'balance_sheet' || statementType === 'bs') {
+          // For balance sheet, store as drivers in scenario_drivers with period_id=0 (opening balance)
+          // This allows formulas to reference them using [t-1] syntax in period 1+
+          // Force period_id to 0 for balance sheet items since they represent opening balances
+          insertSql = `
+            INSERT OR REPLACE INTO scenario_drivers
+            (entity_id, scenario_id, period_id, driver_code, value, unit_code, is_populated)
+            VALUES (?, ?, 0, ?, ?, 'CHF', 1)
+          `
+          insertParams = [targetEntityId, scenarioId, line_item_code, value]
         } else {
-          // For BS, CF - they use JSON structure, skip for now
-          // TODO: Implement JSON-based storage for BS and CF
+          // For CF - skip for now
+          // TODO: Implement CF storage
           continue
         }
 
@@ -1456,9 +1480,9 @@ app.post('/api/entities/delete', express.json(), (req, res) => {
       }
     })
 
-    // Soft delete by setting is_active = 0
+    // Hard delete - actually remove the row
     db.run(
-      'UPDATE entity SET is_active = 0 WHERE entity_id = ?',
+      'DELETE FROM entity WHERE entity_id = ?',
       [entityId],
       function(err) {
         db.close()
@@ -1735,94 +1759,114 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
       }
     })
 
-    // First, get all scenario_ids associated with this file via scenario_mapping
-    db.all(
-      `SELECT DISTINCT sm.scenario_id
-       FROM scenario_mapping sm
-       WHERE sm.file_id = ?`,
+    // First, get the file_type to determine which mapping table to use
+    db.get(
+      `SELECT file_type FROM staged_file WHERE file_id = ?`,
       [fileId],
-      (err, scenarios) => {
+      (err, row) => {
         if (err) {
           db.close()
-          return res.status(500).json({ error: 'Failed to query scenarios: ' + err.message })
+          return res.status(500).json({ error: 'Failed to query file type: ' + err.message })
         }
 
-        const scenarioIds = scenarios.map(s => s.scenario_id)
+        if (!row) {
+          db.close()
+          return res.status(404).json({ error: 'File not found' })
+        }
 
-        // Start cascading deletes
-        // 1. Delete from scenario_drivers for all associated scenarios
-        const deleteScenariosPromise = new Promise((resolve, reject) => {
-          if (scenarioIds.length === 0) {
-            return resolve()
-          }
+        const fileType = row.file_type
 
-          const placeholders = scenarioIds.map(() => '?').join(',')
+        // Handle different file types
+        if (fileType === 'scenario') {
+          // Delete scenario mapping configuration and staged file
+          new Promise((resolve, reject) => {
+            db.run(
+              `DELETE FROM scenario_mapping WHERE file_id = ?`,
+              [fileId],
+              (err) => {
+                if (err) reject(err)
+                else resolve()
+              }
+            )
+          })
+            .then(() => {
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staged_file WHERE file_id = ?`,
+                  [fileId],
+                  function(err) {
+                    if (err) reject(err)
+                    else resolve(this.changes)
+                  }
+                )
+              })
+            })
+            .then((changes) => {
+              db.close()
+              res.json({
+                success: true,
+                deleted: changes,
+                message: 'Staged scenario file deleted'
+              })
+            })
+            .catch((err) => {
+              db.close()
+              res.status(500).json({ error: 'Failed to delete: ' + err.message })
+            })
+        } else if (fileType === 'damage_curve') {
+          // Delete damage curve mapping and file
+          new Promise((resolve, reject) => {
+            db.run(
+              `DELETE FROM damage_curve_mapping WHERE file_id = ?`,
+              [fileId],
+              (err) => {
+                if (err) reject(err)
+                else resolve()
+              }
+            )
+          })
+            .then(() => {
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staged_file WHERE file_id = ?`,
+                  [fileId],
+                  function(err) {
+                    if (err) reject(err)
+                    else resolve(this.changes)
+                  }
+                )
+              })
+            })
+            .then((changes) => {
+              db.close()
+              res.json({
+                success: true,
+                deleted: changes,
+                message: 'Damage curve file deleted'
+              })
+            })
+            .catch((err) => {
+              db.close()
+              res.status(500).json({ error: 'Failed to delete: ' + err.message })
+            })
+        } else {
+          // For other file types, just delete the staged_file entry
           db.run(
-            `DELETE FROM scenario_drivers WHERE scenario_id IN (${placeholders})`,
-            scenarioIds,
-            (err) => {
-              if (err) reject(err)
-              else resolve()
+            `DELETE FROM staged_file WHERE file_id = ?`,
+            [fileId],
+            function(err) {
+              db.close()
+              if (err) {
+                return res.status(500).json({ error: 'Failed to delete: ' + err.message })
+              }
+              res.json({
+                success: true,
+                deleted: this.changes,
+                message: 'Staged file deleted'
+              })
             }
           )
-        })
-
-        deleteScenariosPromise
-          .then(() => {
-            // 2. Delete from scenario table
-            if (scenarioIds.length === 0) return Promise.resolve()
-
-            const placeholders = scenarioIds.map(() => '?').join(',')
-            return new Promise((resolve, reject) => {
-              db.run(
-                `DELETE FROM scenario WHERE scenario_id IN (${placeholders})`,
-                scenarioIds,
-                (err) => {
-                  if (err) reject(err)
-                  else resolve()
-                }
-              )
-            })
-          })
-          .then(() => {
-            // 3. Delete from scenario_mapping
-            return new Promise((resolve, reject) => {
-              db.run(
-                `DELETE FROM scenario_mapping WHERE file_id = ?`,
-                [fileId],
-                (err) => {
-                  if (err) reject(err)
-                  else resolve()
-                }
-              )
-            })
-          })
-          .then(() => {
-            // 4. Finally delete from staged_file
-            return new Promise((resolve, reject) => {
-              db.run(
-                `DELETE FROM staged_file WHERE file_id = ?`,
-                [fileId],
-                function(err) {
-                  if (err) reject(err)
-                  else resolve(this.changes)
-                }
-              )
-            })
-          })
-          .then((changes) => {
-            db.close()
-            res.json({
-              success: true,
-              deleted: changes,
-              deletedScenarios: scenarioIds.length,
-              message: `Staged file and ${scenarioIds.length} associated scenario(s) deleted`
-            })
-          })
-          .catch((err) => {
-            db.close()
-            res.status(500).json({ error: 'Failed to delete: ' + err.message })
-          })
+        }
       }
     )
   } catch (error) {
@@ -2793,6 +2837,52 @@ app.post('/api/locations/save-mapping', async (req, res) => {
 })
 
 /**
+ * Get full location staging data (all rows)
+ * GET /api/locations/staging-full
+ * Query params: dbPath, tableName
+ */
+app.get('/api/locations/staging-full', (req, res) => {
+  try {
+    const { dbPath, tableName } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ error: 'Missing tableName parameter' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get all rows from the staging table
+    db.all(
+      `SELECT * FROM ${tableName}`,
+      [],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+        }
+
+        res.json({
+          success: true,
+          data: rows || []
+        })
+      }
+    )
+  } catch (error) {
+    console.error('Staging full data error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Get list of available staging tables for locations
  * GET /api/locations/staging-tables
  * Query params: dbPath
@@ -2883,7 +2973,7 @@ app.get('/api/entities', (req, res) => {
 /**
  * Save location mapping configuration
  * POST /api/locations/save-location-mapping
- * Body: { dbPath, fileId, identifierColumn, latitudeColumn, longitudeColumn, entityColumn, valueColumns, entityMappings }
+ * Body: { dbPath, fileId, identifierColumn, latitudeColumn, longitudeColumn, entityColumn, archetypeColumn, unitColumn, valueColumns, entityMappings }
  */
 app.post('/api/locations/save-location-mapping', async (req, res) => {
   try {
@@ -2894,6 +2984,8 @@ app.post('/api/locations/save-location-mapping', async (req, res) => {
       latitudeColumn,
       longitudeColumn,
       entityColumn,
+      archetypeColumn,
+      unitColumn,
       valueColumns,
       entityMappings
     } = req.body
@@ -2920,6 +3012,8 @@ app.post('/api/locations/save-location-mapping', async (req, res) => {
       latitude_column TEXT,
       longitude_column TEXT,
       entity_column TEXT,
+      archetype_column TEXT,
+      unit_column TEXT,
       value_columns TEXT,
       entity_mappings TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -2930,17 +3024,32 @@ app.post('/api/locations/save-location-mapping', async (req, res) => {
         console.error('Create table error:', err)
       }
 
+      // Add migration for archetype_column and unit_column if they don't exist
+      db.run(`ALTER TABLE location_mapping_config ADD COLUMN archetype_column TEXT`, (alterErr) => {
+        if (alterErr && !alterErr.message.includes('duplicate column')) {
+          console.error('Migration error (archetype_column):', alterErr)
+        }
+      })
+
+      db.run(`ALTER TABLE location_mapping_config ADD COLUMN unit_column TEXT`, (alterErr) => {
+        if (alterErr && !alterErr.message.includes('duplicate column')) {
+          console.error('Migration error (unit_column):', alterErr)
+        }
+      })
+
       // Save or update mapping configuration
       db.run(
         `INSERT INTO location_mapping_config (
           file_id, identifier_column, latitude_column, longitude_column,
-          entity_column, value_columns, entity_mappings, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          entity_column, archetype_column, unit_column, value_columns, entity_mappings, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(file_id) DO UPDATE SET
           identifier_column = excluded.identifier_column,
           latitude_column = excluded.latitude_column,
           longitude_column = excluded.longitude_column,
           entity_column = excluded.entity_column,
+          archetype_column = excluded.archetype_column,
+          unit_column = excluded.unit_column,
           value_columns = excluded.value_columns,
           entity_mappings = excluded.entity_mappings,
           updated_at = CURRENT_TIMESTAMP`,
@@ -2950,6 +3059,8 @@ app.post('/api/locations/save-location-mapping', async (req, res) => {
           latitudeColumn,
           longitudeColumn,
           entityColumn,
+          archetypeColumn,
+          unitColumn,
           JSON.stringify(valueColumns || []),
           JSON.stringify(entityMappings || [])
         ],
@@ -3010,6 +3121,8 @@ app.get('/api/locations/get-location-mapping', (req, res) => {
           latitudeColumn: row.latitude_column,
           longitudeColumn: row.longitude_column,
           entityColumn: row.entity_column,
+          archetypeColumn: row.archetype_column,
+          unitColumn: row.unit_column,
           valueColumns: row.value_columns ? JSON.parse(row.value_columns) : [],
           entityMappings: row.entity_mappings ? JSON.parse(row.entity_mappings) : []
         }
@@ -3388,36 +3501,35 @@ app.get('/api/perils', (req, res) => {
       }
     })
 
-    // Get unique perils from physical_peril table
+    // Get physical risk drivers from driver table
     db.all(
-      `SELECT DISTINCT peril_type, peril_code, description
-       FROM physical_peril
-       ORDER BY peril_type`,
+      `SELECT driver_id, code, name, description
+       FROM driver
+       WHERE category = 'physical' AND is_active = 1
+       ORDER BY code`,
       [],
-      (err, perils) => {
+      (err, drivers) => {
         db.close()
 
         if (err) {
-          // If table doesn't exist, return some default perils
-          return res.json([
-            { peril_id: 1, peril_type: 'FLOOD', peril_code: 'FLOOD', description: 'Flood events' },
-            { peril_id: 2, peril_type: 'HURRICANE', peril_code: 'HURRICANE', description: 'Hurricane/Cyclone events' },
-            { peril_id: 3, peril_type: 'WILDFIRE', peril_code: 'WILDFIRE', description: 'Wildfire events' },
-            { peril_id: 4, peril_type: 'EARTHQUAKE', peril_code: 'EARTHQUAKE', description: 'Earthquake events' },
-            { peril_id: 5, peril_type: 'HEATWAVE', peril_code: 'HEATWAVE', description: 'Extreme heat events' },
-            { peril_id: 6, peril_type: 'STORM', peril_code: 'STORM', description: 'Storm/Wind events' }
-          ])
+          console.error('Error fetching physical risk drivers:', err)
+          return res.status(500).json({ error: 'Failed to fetch physical risk drivers: ' + err.message })
         }
 
-        // Add peril_id if not present
-        const perilsWithId = perils.map((p, idx) => ({
-          peril_id: idx + 1,
-          peril_type: p.peril_type,
-          peril_code: p.peril_code || p.peril_type,
-          description: p.description || `${p.peril_type} events`
+        if (!drivers || drivers.length === 0) {
+          // If no physical risk drivers are defined, return empty array
+          return res.json([])
+        }
+
+        // Convert drivers to peril format expected by frontend
+        const perils = drivers.map((d) => ({
+          peril_id: d.driver_id,
+          peril_type: d.code,
+          peril_code: d.code,
+          description: d.description || d.name
         }))
 
-        res.json(perilsWithId)
+        res.json(perils)
       }
     )
   } catch (error) {
@@ -3429,11 +3541,11 @@ app.get('/api/perils', (req, res) => {
 /**
  * Save damage curve mapping configuration
  * POST /api/damage-curves/save-damage-curve-mapping
- * Body: { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, perilMappings }
+ * Body: { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn, perilMappings }
  */
 app.post('/api/damage-curves/save-damage-curve-mapping', express.json(), (req, res) => {
   try {
-    const { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, perilMappings } = req.body
+    const { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn, perilMappings } = req.body
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -3454,7 +3566,8 @@ app.post('/api/damage-curves/save-damage-curve-mapping', express.json(), (req, r
       outputColumn,
       archetypeColumn,
       perilColumn,
-      unitColumn
+      unitColumn,
+      valueTypeColumn
     })
 
     const perilDriverMapping = JSON.stringify(perilMappings || [])
@@ -5152,9 +5265,12 @@ app.get('/api/results/statement', (req, res) => {
         })
       })
 
-      // Now query statement_result for calculated values
+      // Now query statement_result for calculated values (only for latest scenario)
       db.all(
-        `SELECT line_item_code, value FROM statement_result WHERE period_id = ?`,
+        `SELECT line_item_code, value FROM statement_result
+         WHERE period_id = ?
+         AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
+         LIMIT 100`,
         [period],
         (err, rows) => {
           if (err) {
@@ -5213,9 +5329,35 @@ app.post('/api/calculate', (req, res) => {
     return res.status(400).json({ error: 'dbPath is required' })
   }
 
-  const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
+  // First, clean up old calculation results (keep input data: scenario_drivers, staged_files, statement_template)
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database for cleanup' })
+    }
 
-  exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    db.serialize(() => {
+      // Delete only OUTPUT tables from calculations
+      db.run('DELETE FROM statement_result', (err) => {
+        if (err) console.error('Failed to clear statement_result:', err)
+      })
+      db.run('DELETE FROM pl_result', (err) => {
+        if (err) console.error('Failed to clear pl_result:', err)
+      })
+      db.run('DELETE FROM bs_result', (err) => {
+        if (err) console.error('Failed to clear bs_result:', err)
+      })
+      db.run('DELETE FROM cf_result', (err) => {
+        if (err) console.error('Failed to clear cf_result:', err)
+      })
+      db.run('DELETE FROM carbon_result', (err) => {
+        if (err) console.error('Failed to clear carbon_result:', err)
+      })
+
+      db.close(() => {
+        // Now run the calculation
+        const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
+
+        exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
     if (error) {
       console.error('Calculation error:', error)
       return res.json({
@@ -5247,6 +5389,9 @@ app.post('/api/calculate', (req, res) => {
         success: true,
         output: stdout,
         errors: stderr
+      })
+    })
+        })
       })
     })
   })

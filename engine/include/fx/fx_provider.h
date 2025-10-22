@@ -38,8 +38,12 @@ public:
     /**
      * @brief Construct FX provider
      * @param db Database connection
+     * @param scenario_id Optional scenario ID to load FX rates from scenario_drivers
      */
-    explicit FXProvider(std::shared_ptr<finmodel::database::IDatabase> db);
+    explicit FXProvider(
+        std::shared_ptr<finmodel::database::IDatabase> db,
+        std::optional<int> scenario_id = std::nullopt
+    );
 
     /**
      * @brief Get exchange rate for a specific period
@@ -79,8 +83,9 @@ public:
 
     /**
      * @brief Reload rates from database (clears cache)
+     * @param scenario_id Optional scenario ID to reload rates for a specific scenario
      */
-    void reload();
+    void reload(std::optional<int> scenario_id = std::nullopt);
 
 private:
     /**
@@ -116,6 +121,12 @@ private:
     void load_rates();
 
     /**
+     * @brief Load FX rates from scenario_drivers for a specific scenario
+     * @param scenario_id Scenario ID to load rates for
+     */
+    void load_rates_from_scenario_drivers(int scenario_id);
+
+    /**
      * @brief Get rate from cache or compute inverse
      * @return Rate if found or computable, nullopt otherwise
      */
@@ -127,6 +138,12 @@ private:
 
     // Database connection
     std::shared_ptr<finmodel::database::IDatabase> db_;
+
+    // Optional scenario ID for loading from scenario_drivers
+    std::optional<int> scenario_id_;
+
+    // Base currency for scenario_drivers FX rates (default: CHF)
+    std::string base_currency_;
 
     // Rate cache: (from, to, period) -> rate
     mutable std::unordered_map<RateKey, double, RateKeyHash> rate_cache_;

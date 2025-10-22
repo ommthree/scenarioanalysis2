@@ -24,10 +24,10 @@ UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
     }
 
     // Create FX provider for time-varying currency conversions
-    auto fx_provider = std::make_shared<fx::FXProvider>(db_);
+    fx_provider_ = std::make_shared<fx::FXProvider>(db_);
 
     // Create unit converter with FX provider for driver value conversion
-    auto unit_converter = std::make_shared<core::UnitConverter>(db_, fx_provider);
+    auto unit_converter = std::make_shared<core::UnitConverter>(db_, fx_provider_);
 
     // Initialize value providers
     driver_provider_ = std::make_unique<DriverValueProvider>(db_, unit_converter);
@@ -57,6 +57,11 @@ UnifiedResult UnifiedEngine::calculate(
 ) {
     UnifiedResult result;
     result.success = true;
+
+    // Reload FX provider with scenario-specific rates from scenario_drivers
+    if (fx_provider_) {
+        fx_provider_->reload(scenario_id);
+    }
 
     // Set context for value providers
     driver_provider_->set_context(entity_id, scenario_id, period_id);

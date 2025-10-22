@@ -338,45 +338,60 @@ export default function LoadDamageCurves() {
   }
 
   // Prepare chart data for Recharts based on selected rows
-  // Plot: Y-axis (last column) vs X-axis (penultimate column) for each selected peril (first column)
+  // Plot: Y-axis (damage factor) vs X-axis (intensity) for each series (peril + archetype + value_type)
   const getChartData = () => {
     if (!previewData || selectedRows.length === 0) return []
     if (previewData.headers.length < 3) return [] // Need at least 3 columns
 
-    const perilIdx = 0 // First column = peril/hazard name
-    const xAxisIdx = previewData.headers.length - 2 // Penultimate column = input (e.g., intensity)
-    const yAxisIdx = previewData.headers.length - 1 // Last column = output (e.g., damage factor)
+    // Try to find intensity and damage_factor columns by name
+    let xAxisIdx = previewData.headers.findIndex(h => h.toLowerCase() === 'intensity')
+    let yAxisIdx = previewData.headers.findIndex(h => h.toLowerCase().includes('damage'))
 
-    // Collect all data points organized by peril, then by X value
-    const perilData = new Map<string, Map<string, number>>()
+    // Fallback to penultimate and last columns if not found
+    if (xAxisIdx === -1) xAxisIdx = previewData.headers.length - 2
+    if (yAxisIdx === -1) yAxisIdx = previewData.headers.length - 1
+
+    // Find columns for series naming (peril, archetype, value_type)
+    const perilIdx = previewData.headers.findIndex(h => h.toLowerCase() === 'peril')
+    const archetypeIdx = previewData.headers.findIndex(h => h.toLowerCase() === 'archetype')
+    const valueTypeIdx = previewData.headers.findIndex(h => h.toLowerCase().includes('value') && h.toLowerCase().includes('type'))
+
+    // Collect all data points organized by series, then by X value
+    const seriesData = new Map<string, Map<string, number>>()
 
     selectedRows.forEach(rowIdx => {
       const row = previewData.rows[rowIdx]
       if (!row) return
 
-      const perilName = row[perilIdx] || `Row ${rowIdx}`
+      // Build series name from available columns
+      const parts = []
+      if (perilIdx >= 0 && row[perilIdx]) parts.push(row[perilIdx])
+      if (archetypeIdx >= 0 && row[archetypeIdx]) parts.push(row[archetypeIdx])
+      if (valueTypeIdx >= 0 && row[valueTypeIdx]) parts.push(row[valueTypeIdx])
+
+      const seriesName = parts.length > 0 ? parts.join(' - ') : `Series ${rowIdx}`
       const xValue = String(row[xAxisIdx]).trim() // Ensure consistent string format
       const yValue = parseFloat(row[yAxisIdx])
 
-      console.log(`Row ${rowIdx}: peril="${perilName}", x="${xValue}", y=${yValue}`)
+      console.log(`Row ${rowIdx}: series="${seriesName}", x="${xValue}", y=${yValue}`)
 
       if (isNaN(yValue)) return
 
-      if (!perilData.has(perilName)) {
-        perilData.set(perilName, new Map())
+      if (!seriesData.has(seriesName)) {
+        seriesData.set(seriesName, new Map())
       }
 
-      // Store the value for this peril at this X coordinate
-      perilData.get(perilName)!.set(xValue, yValue)
+      // Store the value for this series at this X coordinate
+      seriesData.get(seriesName)!.set(xValue, yValue)
     })
 
-    // Collect all unique X values across all perils
+    // Collect all unique X values across all series
     const allXValues = new Set<string>()
-    perilData.forEach(xMap => {
+    seriesData.forEach(xMap => {
       xMap.forEach((_, xValue) => allXValues.add(xValue))
     })
 
-    // Sort X values
+    // Sort X values numerically
     const sortedXValues = Array.from(allXValues).sort((a, b) => {
       const aVal = parseFloat(a)
       const bVal = parseFloat(b)
@@ -386,42 +401,52 @@ export default function LoadDamageCurves() {
       return String(a).localeCompare(String(b))
     })
 
-    // Build chart data with all X values, filling in Y values for each peril
-    const allPerilNames = Array.from(perilData.keys())
+    // Build chart data with all X values, filling in Y values for each series
+    const allSeriesNames = Array.from(seriesData.keys())
     const chartData = sortedXValues.map(xValue => {
       const dataPoint: any = { name: xValue }
 
-      // For each peril, add the value if it exists, otherwise add null
-      allPerilNames.forEach(perilName => {
-        const xMap = perilData.get(perilName)
+      // For each series, add the value if it exists, otherwise add null
+      allSeriesNames.forEach(seriesName => {
+        const xMap = seriesData.get(seriesName)
         const yValue = xMap?.get(xValue)
-        dataPoint[perilName] = yValue !== undefined ? yValue : null
+        dataPoint[seriesName] = yValue !== undefined ? yValue : null
       })
 
       return dataPoint
     })
 
     console.log('Chart data generated:', chartData)
-    console.log('Perils:', allPerilNames)
+    console.log('Series:', allSeriesNames)
 
     return chartData
   }
 
-  // Get line names for the chart (peril names from first column of selected rows)
+  // Get line names for the chart (series names from selected rows)
   const getLineNames = () => {
-    if (!previewData) return []
-    const perilIdx = 0
+    if (!previewData || selectedRows.length === 0) return []
 
-    // Get unique peril names from selected rows
-    const perilNames = new Set<string>()
+    // Find columns for series naming
+    const perilIdx = previewData.headers.findIndex(h => h.toLowerCase() === 'peril')
+    const archetypeIdx = previewData.headers.findIndex(h => h.toLowerCase() === 'archetype')
+    const valueTypeIdx = previewData.headers.findIndex(h => h.toLowerCase().includes('value') && h.toLowerCase().includes('type'))
+
+    // Get unique series names from selected rows
+    const seriesNames = new Set<string>()
     selectedRows.forEach(rowIdx => {
       const row = previewData.rows[rowIdx]
       if (row) {
-        perilNames.add(row[perilIdx] || `Row ${rowIdx}`)
+        const parts = []
+        if (perilIdx >= 0 && row[perilIdx]) parts.push(row[perilIdx])
+        if (archetypeIdx >= 0 && row[archetypeIdx]) parts.push(row[archetypeIdx])
+        if (valueTypeIdx >= 0 && row[valueTypeIdx]) parts.push(row[valueTypeIdx])
+
+        const seriesName = parts.length > 0 ? parts.join(' - ') : `Series ${rowIdx}`
+        seriesNames.add(seriesName)
       }
     })
 
-    return Array.from(perilNames)
+    return Array.from(seriesNames)
   }
 
   const chartData = getChartData()

@@ -44,13 +44,17 @@ const MapDamageCurves: React.FC = () => {
   const [archetypeColumn, setArchetypeColumn] = useState<string | null>(null) // asset type
   const [perilColumn, setPerilColumn] = useState<string | null>(null) // peril type
   const [unitColumn, setUnitColumn] = useState<string | null>(null) // intensity unit
+  const [valueTypeColumn, setValueTypeColumn] = useState<string | null>(null) // value type (PPE, BI, INVENTORY)
 
   // Drag state
-  const [draggedRole, setDraggedRole] = useState<'input' | 'output' | 'archetype' | 'peril' | 'unit' | null>(null)
+  const [draggedRole, setDraggedRole] = useState<'input' | 'output' | 'archetype' | 'peril' | 'unit' | 'valueType' | null>(null)
   const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
 
   // Peril mappings: maps csv_row_index to peril_type
   const [perilMappings, setPerilMappings] = useState<Array<{csv_row_index: number, peril_type: string}>>([])
+
+  // CSV Perils: unique peril values from full CSV
+  const [csvPerils, setCsvPerils] = useState<string[]>([])
 
   // AI Mapping state
   const [aiMappingInProgress, setAiMappingInProgress] = useState(false)
@@ -74,43 +78,23 @@ const MapDamageCurves: React.FC = () => {
       .catch(err => console.error('Error fetching staging tables:', err))
   }, [])
 
-  // Fetch perils (unique peril types from physical_peril table or a predefined list)
+  // Fetch perils (physical risk drivers from driver table)
   useEffect(() => {
     fetch(`http://localhost:3001/api/perils?dbPath=${encodeURIComponent(dbPath)}`)
       .then(res => res.json())
       .then(data => {
-        // Ensure we always have at least the 6 default perils
-        const defaultPerils = [
-          { peril_id: 1, peril_type: 'FLOOD', peril_code: 'FLOOD', description: 'Flood events' },
-          { peril_id: 2, peril_type: 'HURRICANE', peril_code: 'HURRICANE', description: 'Hurricane/Cyclone events' },
-          { peril_id: 3, peril_type: 'WILDFIRE', peril_code: 'WILDFIRE', description: 'Wildfire events' },
-          { peril_id: 4, peril_type: 'EARTHQUAKE', peril_code: 'EARTHQUAKE', description: 'Earthquake events' },
-          { peril_id: 5, peril_type: 'HEATWAVE', peril_code: 'HEATWAVE', description: 'Extreme heat events' },
-          { peril_id: 6, peril_type: 'STORM', peril_code: 'STORM', description: 'Storm/Wind events' }
-        ]
-
         if (!data || data.length === 0) {
-          setPerils(defaultPerils)
+          // No physical risk drivers defined
+          setPerils([])
         } else {
-          // Merge database perils with defaults, preferring database values
-          const perilMap = new Map(defaultPerils.map(p => [p.peril_type, p]))
-          data.forEach((p: Peril) => {
-            perilMap.set(p.peril_type, p)
-          })
-          setPerils(Array.from(perilMap.values()))
+          // Use the physical risk drivers returned by the API
+          setPerils(data)
         }
       })
       .catch(err => {
         console.error('Error fetching perils:', err)
-        // Set defaults on error
-        setPerils([
-          { peril_id: 1, peril_type: 'FLOOD', peril_code: 'FLOOD', description: 'Flood events' },
-          { peril_id: 2, peril_type: 'HURRICANE', peril_code: 'HURRICANE', description: 'Hurricane/Cyclone events' },
-          { peril_id: 3, peril_type: 'WILDFIRE', peril_code: 'WILDFIRE', description: 'Wildfire events' },
-          { peril_id: 4, peril_type: 'EARTHQUAKE', peril_code: 'EARTHQUAKE', description: 'Earthquake events' },
-          { peril_id: 5, peril_type: 'HEATWAVE', peril_code: 'HEATWAVE', description: 'Extreme heat events' },
-          { peril_id: 6, peril_type: 'STORM', peril_code: 'STORM', description: 'Storm/Wind events' }
-        ])
+        // Set empty array on error
+        setPerils([])
       })
   }, [])
 
@@ -128,6 +112,7 @@ const MapDamageCurves: React.FC = () => {
           archetypeColumn: archetypeColumn,
           perilColumn: perilColumn,
           unitColumn: unitColumn,
+          valueTypeColumn: valueTypeColumn,
           perilMappings: perilMappings
         }
 
@@ -144,7 +129,49 @@ const MapDamageCurves: React.FC = () => {
     }, 1000) // Debounce for 1 second
 
     return () => clearTimeout(timeoutId)
-  }, [perilMappings, selectedFileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn])
+  }, [perilMappings, selectedFileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn])
+
+  // Extract unique perils from full CSV when peril column is assigned
+  useEffect(() => {
+    if (!selectedFileId || !perilColumn) {
+      setCsvPerils([])
+      return
+    }
+
+    const extractUniquePerils = async () => {
+      try {
+        const response = await fetch(`http://localhost:3001/api/staged-files/${selectedFileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+        const result = await response.json()
+
+        if (result.success && result.csvText) {
+          const lines = result.csvText.split('\n').filter(line => line.trim() !== '')
+          if (lines.length > 0) {
+            const headers = lines[0].split(',').map(h => h.trim())
+            const perilColIndex = headers.indexOf(perilColumn)
+
+            if (perilColIndex >= 0) {
+              const uniquePerils = new Set<string>()
+
+              // Parse all rows (not just first 5)
+              lines.slice(1).forEach(line => {
+                const values = line.split(',').map(v => v.trim())
+                const perilValue = values[perilColIndex]
+                if (perilValue && perilValue !== '') {
+                  uniquePerils.add(perilValue)
+                }
+              })
+
+              setCsvPerils(Array.from(uniquePerils).sort())
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error extracting unique perils:', error)
+      }
+    }
+
+    extractUniquePerils()
+  }, [selectedFileId, perilColumn])
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
@@ -156,11 +183,13 @@ const MapDamageCurves: React.FC = () => {
     // Clear previous data
     setCsvData([])
     setCsvColumns([])
+    setCsvPerils([])
     setInputColumn(null)
     setOutputColumn(null)
     setArchetypeColumn(null)
     setPerilColumn(null)
     setUnitColumn(null)
+    setValueTypeColumn(null)
     setPerilMappings([])
 
     try {
@@ -177,6 +206,7 @@ const MapDamageCurves: React.FC = () => {
           if (mapping.archetypeColumn) setArchetypeColumn(mapping.archetypeColumn)
           if (mapping.perilColumn) setPerilColumn(mapping.perilColumn)
           if (mapping.unitColumn) setUnitColumn(mapping.unitColumn)
+          if (mapping.valueTypeColumn) setValueTypeColumn(mapping.valueTypeColumn)
           setPerilMappings(mapping.perilMappings || [])
         }
       } catch (mappingError) {
@@ -233,20 +263,22 @@ const MapDamageCurves: React.FC = () => {
       output: setOutputColumn,
       archetype: setArchetypeColumn,
       peril: setPerilColumn,
-      unit: setUnitColumn
+      unit: setUnitColumn,
+      valueType: setValueTypeColumn
     }
 
     roleMap[draggedRole](columnName)
     setDraggedRole(null)
   }
 
-  const handleRemoveColumnAssignment = (role: 'input' | 'output' | 'archetype' | 'peril' | 'unit') => {
+  const handleRemoveColumnAssignment = (role: 'input' | 'output' | 'archetype' | 'peril' | 'unit' | 'valueType') => {
     const roleMap = {
       input: setInputColumn,
       output: setOutputColumn,
       archetype: setArchetypeColumn,
       peril: setPerilColumn,
-      unit: setUnitColumn
+      unit: setUnitColumn,
+      valueType: setValueTypeColumn
     }
     roleMap[role](null)
   }
@@ -277,6 +309,7 @@ Identify which columns are:
 3. archetype - Column containing asset type or building archetype
 4. peril - Column containing peril/hazard type (e.g., Flood, Hurricane)
 5. unit - Column containing intensity unit (e.g., meters, km/h) - optional
+6. value_type - Column containing value type (e.g., PPE, BI, INVENTORY) - optional
 
 Return ONLY a JSON object in this format:
 {
@@ -284,7 +317,8 @@ Return ONLY a JSON object in this format:
   "output_column": "column_name",
   "archetype_column": "column_name",
   "peril_column": "column_name",
-  "unit_column": "column_name"
+  "unit_column": "column_name",
+  "value_type_column": "column_name"
 }
 
 Rules:
@@ -293,6 +327,7 @@ Rules:
 - Archetype column might be named asset_type, building_type, archetype
 - Peril column might be named peril, hazard, event_type
 - Unit column is optional and might be named unit, intensity_unit, or might not exist
+- Value type column is optional and might be named value_type, asset_class, line_of_business, or similar (PPE/BI/INVENTORY)
 - If a column doesn't exist, use null`
 
       const response = await fetch('http://localhost:3001/api/claude/messages', {
@@ -323,6 +358,7 @@ Rules:
       if (aiResponse.archetype_column) setArchetypeColumn(aiResponse.archetype_column)
       if (aiResponse.peril_column) setPerilColumn(aiResponse.peril_column)
       if (aiResponse.unit_column) setUnitColumn(aiResponse.unit_column)
+      if (aiResponse.value_type_column) setValueTypeColumn(aiResponse.value_type_column)
 
       setAiMappingMessage('Mapping performed')
       setTimeout(() => setAiMappingMessage(''), 3000)
@@ -439,6 +475,7 @@ Rules:
           archetypeColumn: archetypeColumn,
           perilColumn: perilColumn,
           unitColumn: unitColumn,
+          valueTypeColumn: valueTypeColumn,
           perilMappings: perilMappings
         })
       })
@@ -787,6 +824,31 @@ Rules:
                   <GripVertical className="w-4 h-4" />
                   Unit Column
                 </div>
+
+                <div
+                  draggable
+                  onDragStart={() => handleRoleDragStart('valueType')}
+                  onDragEnd={handleRoleDragEnd}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                    border: '2px solid rgba(99, 102, 241, 0.5)',
+                    borderRadius: '8px',
+                    cursor: 'grab',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#6366f1',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.2)'}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  Value Type Column
+                </div>
               </div>
 
               {/* CSV Preview Table with Droppable Column Headers */}
@@ -800,7 +862,8 @@ Rules:
                         const isArchetypeCol = archetypeColumn === col
                         const isPerilCol = perilColumn === col
                         const isUnitCol = unitColumn === col
-                        const hasAssignment = isInputCol || isOutputCol || isArchetypeCol || isPerilCol || isUnitCol
+                        const isValueTypeCol = valueTypeColumn === col
+                        const hasAssignment = isInputCol || isOutputCol || isArchetypeCol || isPerilCol || isUnitCol || isValueTypeCol
 
                         let bgColor = 'rgba(30, 41, 59, 0.9)'
                         let borderColor = 'rgba(71, 85, 105, 0.3)'
@@ -832,6 +895,11 @@ Rules:
                           borderColor = 'rgba(236, 72, 153, 0.5)'
                           textColor = '#ec4899'
                           badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(236, 72, 153, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Unit</span>
+                        } else if (isValueTypeCol) {
+                          bgColor = 'rgba(99, 102, 241, 0.15)'
+                          borderColor = 'rgba(99, 102, 241, 0.5)'
+                          textColor = '#6366f1'
+                          badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(99, 102, 241, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Value Type</span>
                         }
 
                         return (
@@ -860,6 +928,7 @@ Rules:
                               else if (isArchetypeCol) handleRemoveColumnAssignment('archetype')
                               else if (isPerilCol) handleRemoveColumnAssignment('peril')
                               else if (isUnitCol) handleRemoveColumnAssignment('unit')
+                              else if (isValueTypeCol) handleRemoveColumnAssignment('valueType')
                             }}
                             style={{
                               padding: '12px 16px',
@@ -980,7 +1049,7 @@ Rules:
                 {/* Left Panel - Draggable CSV Rows (Unique Perils Only) */}
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                    CSV Rows (Unique Perils)
+                    CSV Perils
                   </h4>
                   <div style={{
                     maxHeight: '400px',
@@ -989,19 +1058,14 @@ Rules:
                     borderRadius: '8px',
                     padding: '8px'
                   }}>
-                    {(() => {
-                      // Get unique peril identifiers with their first row index
-                      const uniquePerils = new Map<string, number>()
-                      csvData.forEach((row, index) => {
-                        const identifier = getRowIdentifier(row)
-                        if (identifier && !uniquePerils.has(identifier)) {
-                          uniquePerils.set(identifier, index)
-                        }
-                      })
-
-                      return Array.from(uniquePerils.entries()).map(([identifier, index]) => (
+                    {csvPerils.length === 0 ? (
+                      <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        {perilColumn ? 'Loading perils...' : 'Assign peril column above to see CSV perils'}
+                      </div>
+                    ) : (
+                      csvPerils.map((perilName, index) => (
                         <div
-                          key={identifier}
+                          key={perilName}
                           draggable
                           onDragStart={() => handleRowDragStart(index)}
                           style={{
@@ -1028,17 +1092,17 @@ Rules:
                           }}
                         >
                           <GripVertical style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} />
-                          <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{identifier}</span>
+                          <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{perilName}</span>
                         </div>
                       ))
-                    })()}
+                    )}
                   </div>
                 </div>
 
                 {/* Right Panel - Peril Drop Targets */}
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                    Physical Perils
+                    Physical Risk Drivers
                   </h4>
                   <div style={{
                     maxHeight: '400px',

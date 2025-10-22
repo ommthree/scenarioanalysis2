@@ -15,12 +15,21 @@
 namespace finmodel {
 namespace fx {
 
-FXProvider::FXProvider(std::shared_ptr<database::IDatabase> db)
-    : db_(db) {
+FXProvider::FXProvider(
+    std::shared_ptr<database::IDatabase> db,
+    std::optional<int> scenario_id
+)
+    : db_(db)
+    , scenario_id_(scenario_id)
+    , base_currency_("CHF")
+{
     if (!db_) {
         throw std::invalid_argument("Database connection required");
     }
     load_rates();
+    if (scenario_id_.has_value()) {
+        load_rates_from_scenario_drivers(scenario_id_.value());
+    }
 }
 
 void FXProvider::load_rates() {
@@ -103,8 +112,14 @@ std::vector<std::string> FXProvider::get_available_currencies() const {
     return available_currencies_;
 }
 
-void FXProvider::reload() {
+void FXProvider::reload(std::optional<int> scenario_id) {
+    if (scenario_id.has_value()) {
+        scenario_id_ = scenario_id;
+    }
     load_rates();
+    if (scenario_id_.has_value()) {
+        load_rates_from_scenario_drivers(scenario_id_.value());
+    }
 }
 
 std::optional<double> FXProvider::get_rate_from_cache(
@@ -133,6 +148,61 @@ std::optional<double> FXProvider::get_rate_from_cache(
 
     // Rate not found
     return std::nullopt;
+}
+
+void FXProvider::load_rates_from_scenario_drivers(int scenario_id) {
+    // Query FX rates from scenario_drivers
+    // FX drivers are identified by looking for drivers where the unit_code
+    // is the base currency (CHF) and driver_code is a currency code
+    auto query = R"(
+        SELECT
+            driver_code,
+            period_id,
+            value,
+            unit_code
+        FROM scenario_drivers
+        WHERE scenario_id = :sid
+          AND driver_code IN ('USD', 'EUR', 'GBP', 'CHF', 'JPY', 'AUD', 'CAD', 'NZD')
+          AND unit_code = :base_currency
+        ORDER BY driver_code, period_id
+    )";
+
+    auto result_set = db_->execute_query(query, {
+        {"sid", scenario_id},
+        {"base_currency", base_currency_}
+    });
+
+    std::unordered_set<std::string> currency_set;
+
+    while (result_set->next()) {
+        std::string from_currency = result_set->get_string("driver_code");
+        int period_id = result_set->get_int("period_id");
+        double rate = result_set->get_double("value");
+
+        // Rate in scenario_drivers is "CHF per foreign currency"
+        // We need to convert to "foreign currency to CHF" format
+        // If value = 0.91 (CHF per USD), then USD->CHF rate = 0.91
+        RateKey key;
+        key.from_currency = from_currency;
+        key.to_currency = base_currency_;
+        key.period_id = period_id;
+
+        // Store the rate (overwrite if already exists from fx_rate table)
+        rate_cache_[key] = rate;
+
+        // Track available currencies
+        currency_set.insert(from_currency);
+        currency_set.insert(base_currency_);
+    }
+
+    // Merge with existing available currencies
+    for (const auto& currency : currency_set) {
+        if (std::find(available_currencies_.begin(), available_currencies_.end(), currency)
+            == available_currencies_.end()) {
+            available_currencies_.push_back(currency);
+        }
+    }
+    std::sort(available_currencies_.begin(), available_currencies_.end());
 }
 
 } // namespace fx

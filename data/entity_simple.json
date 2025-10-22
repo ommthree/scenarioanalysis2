@@ -1,0 +1,8 @@
+{
+  "code": "SIMPLE",
+  "name": "Simple_Test",
+  "parent_entity_id": 97,
+  "granularity_level": "company",
+  "base_currency": "CHF",
+  "json_metadata": {}
+}

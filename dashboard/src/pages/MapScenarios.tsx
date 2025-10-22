@@ -1143,6 +1143,81 @@ Rules:
                         })}
                       </div>
                     )}
+
+                    {/* FX Drivers Section */}
+                    {drivers.filter(d => d.category?.toLowerCase() === 'fx').length > 0 && (
+                      <div style={{ marginTop: '16px' }}>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          color: '#94a3b8',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                          marginBottom: '8px',
+                          paddingLeft: '4px'
+                        }}>
+                          FX Rates
+                        </div>
+                        {drivers.filter(d => d.category?.toLowerCase() === 'fx').map((driver) => {
+                          const mappedRowIndex = getMappedRow(driver.code)
+                          const hasMapped = mappedRowIndex !== null
+
+                          return (
+                            <div
+                              key={driver.driver_id}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+                                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+                              }}
+                              onDragLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = hasMapped ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)'
+                                e.currentTarget.style.borderColor = hasMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                handleRowDrop(driver.code)
+                                e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+                                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                marginBottom: '4px',
+                                backgroundColor: hasMapped ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)',
+                                borderRadius: '6px',
+                                border: `1px solid ${hasMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'}`,
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <div style={{ fontSize: '13px', fontWeight: 600, color: hasMapped ? '#22c55e' : '#cbd5e1' }}>
+                                    {driver.code}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                    {driver.name}
+                                  </div>
+                                </div>
+                                {hasMapped && mappedRowIndex !== null && (
+                                  <div style={{
+                                    fontSize: '11px',
+                                    color: '#22c55e',
+                                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}>
+                                    → {getRowIdentifier(csvData[mappedRowIndex])}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

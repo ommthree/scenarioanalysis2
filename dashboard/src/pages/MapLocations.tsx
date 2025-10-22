@@ -9,13 +9,6 @@ interface TableInfo {
   fileId: number
 }
 
-interface StagedFile {
-  file_id: number
-  file_name: string
-  row_count: number
-  uploaded_at: string
-}
-
 interface CsvRow {
   [key: string]: any
 }
@@ -43,16 +36,21 @@ const MapLocations: React.FC = () => {
   const [latitudeColumn, setLatitudeColumn] = useState<string | null>(null)
   const [longitudeColumn, setLongitudeColumn] = useState<string | null>(null)
   const [entityColumn, setEntityColumn] = useState<string | null>(null)
+  const [archetypeColumn, setArchetypeColumn] = useState<string | null>(null)
+  const [unitColumn, setUnitColumn] = useState<string | null>(null)
   const [valueStartColumn, setValueStartColumn] = useState<string | null>(null)
   const [valueEndColumn, setValueEndColumn] = useState<string | null>(null)
 
   // Drag state
-  const [draggedRole, setDraggedRole] = useState<'identifier' | 'latitude' | 'longitude' | 'entity' | 'valueStart' | 'valueEnd' | null>(null)
-  const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
+  const [draggedRole, setDraggedRole] = useState<'identifier' | 'latitude' | 'longitude' | 'entity' | 'archetype' | 'unit' | 'valueStart' | 'valueEnd' | null>(null)
+  const [draggedEntityValue, setDraggedEntityValue] = useState<string | null>(null)
 
   // Entity hierarchy and mappings
   const [entities, setEntities] = useState<Entity[]>([])
-  const [entityMappings, setEntityMappings] = useState<Array<{csv_row_index: number, entity_id: number}>>([])
+  const [entityMappings, setEntityMappings] = useState<Array<{csv_entity_value: string, entity_id: number}>>([])
+
+  // CSV Entities: unique entity values from full CSV
+  const [csvEntities, setCsvEntities] = useState<string[]>([])
 
   // AI Mapping state
   const [aiMappingInProgress, setAiMappingInProgress] = useState(false)
@@ -89,6 +87,47 @@ const MapLocations: React.FC = () => {
       })
   }, [])
 
+  // Extract unique entities from full CSV when entity column is assigned
+  useEffect(() => {
+    if (!selectedFileId || !entityColumn || availableTables.length === 0) {
+      setCsvEntities([])
+      return
+    }
+
+    const extractUniqueEntities = async () => {
+      try {
+        const tableInfo = availableTables.find(t => t.fileId === selectedFileId)
+        if (!tableInfo) {
+          console.log('No table info found for fileId:', selectedFileId)
+          return
+        }
+
+        console.log('Extracting unique entities from:', tableInfo.tableName)
+        const response = await fetch(`http://localhost:3001/api/locations/staging-full?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}`)
+        const result = await response.json()
+
+        if (result.success && result.data) {
+          const uniqueEntities = new Set<string>()
+
+          // Extract unique values from the entity column
+          result.data.forEach((row: CsvRow) => {
+            const entityValue = row[entityColumn]
+            if (entityValue && entityValue !== '') {
+              uniqueEntities.add(String(entityValue))
+            }
+          })
+
+          console.log('Found unique entities:', Array.from(uniqueEntities))
+          setCsvEntities(Array.from(uniqueEntities).sort())
+        }
+      } catch (error) {
+        console.error('Error extracting unique entities:', error)
+      }
+    }
+
+    extractUniqueEntities()
+  }, [selectedFileId, entityColumn, availableTables, dbPath])
+
   // Auto-save mappings when they change
   useEffect(() => {
     if (!selectedFileId || !identifierColumn || isLoadingMapping) return
@@ -104,6 +143,8 @@ const MapLocations: React.FC = () => {
           latitudeColumn,
           longitudeColumn,
           entityColumn,
+          archetypeColumn,
+          unitColumn,
           valueColumns,
           entityMappings
         }
@@ -121,7 +162,7 @@ const MapLocations: React.FC = () => {
     }, 1000)
 
     return () => clearTimeout(timeoutId)
-  }, [entityMappings, selectedFileId, identifierColumn, latitudeColumn, longitudeColumn, entityColumn, valueStartColumn, valueEndColumn])
+  }, [entityMappings, selectedFileId, identifierColumn, latitudeColumn, longitudeColumn, entityColumn, archetypeColumn, unitColumn, valueStartColumn, valueEndColumn])
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
@@ -133,10 +174,13 @@ const MapLocations: React.FC = () => {
     // Clear previous data
     setCsvData([])
     setCsvColumns([])
+    setCsvEntities([])
     setIdentifierColumn(null)
     setLatitudeColumn(null)
     setLongitudeColumn(null)
     setEntityColumn(null)
+    setArchetypeColumn(null)
+    setUnitColumn(null)
     setValueStartColumn(null)
     setValueEndColumn(null)
     setEntityMappings([])
@@ -154,6 +198,8 @@ const MapLocations: React.FC = () => {
           if (mapping.latitudeColumn) setLatitudeColumn(mapping.latitudeColumn)
           if (mapping.longitudeColumn) setLongitudeColumn(mapping.longitudeColumn)
           if (mapping.entityColumn) setEntityColumn(mapping.entityColumn)
+          if (mapping.archetypeColumn) setArchetypeColumn(mapping.archetypeColumn)
+          if (mapping.unitColumn) setUnitColumn(mapping.unitColumn)
           if (mapping.valueColumns && mapping.valueColumns.length > 0) {
             setValueStartColumn(mapping.valueColumns[0])
             setValueEndColumn(mapping.valueColumns[mapping.valueColumns.length - 1])
@@ -199,7 +245,7 @@ const MapLocations: React.FC = () => {
     }
   }
 
-  const handleRoleDragStart = (role: 'identifier' | 'latitude' | 'longitude' | 'entity' | 'valueStart' | 'valueEnd') => {
+  const handleRoleDragStart = (role: 'identifier' | 'latitude' | 'longitude' | 'entity' | 'archetype' | 'unit' | 'valueStart' | 'valueEnd') => {
     setDraggedRole(role)
   }
 
@@ -215,6 +261,8 @@ const MapLocations: React.FC = () => {
       latitude: setLatitudeColumn,
       longitude: setLongitudeColumn,
       entity: setEntityColumn,
+      archetype: setArchetypeColumn,
+      unit: setUnitColumn,
       valueStart: setValueStartColumn,
       valueEnd: setValueEndColumn
     }
@@ -223,12 +271,14 @@ const MapLocations: React.FC = () => {
     setDraggedRole(null)
   }
 
-  const handleRemoveColumnAssignment = (role: 'identifier' | 'latitude' | 'longitude' | 'entity' | 'valueStart' | 'valueEnd') => {
+  const handleRemoveColumnAssignment = (role: 'identifier' | 'latitude' | 'longitude' | 'entity' | 'archetype' | 'unit' | 'valueStart' | 'valueEnd') => {
     const roleMap = {
       identifier: setIdentifierColumn,
       latitude: setLatitudeColumn,
       longitude: setLongitudeColumn,
       entity: setEntityColumn,
+      archetype: setArchetypeColumn,
+      unit: setUnitColumn,
       valueStart: setValueStartColumn,
       valueEnd: setValueEndColumn
     }
@@ -260,8 +310,10 @@ Identify which columns are:
 2. latitude - Column containing latitude coordinates (decimal degrees)
 3. longitude - Column containing longitude coordinates (decimal degrees)
 4. entity - Column containing entity/company names or codes (optional)
-5. value_start - First column containing numeric values (e.g., first year or metric)
-6. value_end - Last column containing numeric values (e.g., last year or metric)
+5. archetype - Column containing archetype/category of location (e.g., "Residential", "Commercial", "Industrial")
+6. unit - Column containing units of measurement (e.g., "meters", "km/h", "degrees_C")
+7. value_start - First column containing numeric values (e.g., first year or metric)
+8. value_end - Last column containing numeric values (e.g., last year or metric)
 
 Return ONLY a JSON object in this format:
 {
@@ -269,6 +321,8 @@ Return ONLY a JSON object in this format:
   "latitude_column": "column_name",
   "longitude_column": "column_name",
   "entity_column": "column_name or null",
+  "archetype_column": "column_name or null",
+  "unit_column": "column_name or null",
   "value_start_column": "column_name or null",
   "value_end_column": "column_name or null"
 }
@@ -276,8 +330,10 @@ Return ONLY a JSON object in this format:
 Rules:
 - Latitude typically ranges from -90 to 90
 - Longitude typically ranges from -180 to 180
-- Identifier might be named like "location", "name", "site", "facility"
+- Identifier might be named like "location", "name", "site", "facility", "id"
 - Entity might be named like "company", "entity", "organization"
+- Archetype might be named like "archetype", "type", "category", "class"
+- Unit might be named like "unit", "units", "measurement"
 - Value columns are typically years, quarters, or metrics`
 
       const response = await fetch('http://localhost:3001/api/claude/messages', {
@@ -307,6 +363,8 @@ Rules:
       if (aiResponse.latitude_column) setLatitudeColumn(aiResponse.latitude_column)
       if (aiResponse.longitude_column) setLongitudeColumn(aiResponse.longitude_column)
       if (aiResponse.entity_column) setEntityColumn(aiResponse.entity_column)
+      if (aiResponse.archetype_column) setArchetypeColumn(aiResponse.archetype_column)
+      if (aiResponse.unit_column) setUnitColumn(aiResponse.unit_column)
       if (aiResponse.value_start_column) setValueStartColumn(aiResponse.value_start_column)
       if (aiResponse.value_end_column) setValueEndColumn(aiResponse.value_end_column)
 
@@ -323,14 +381,14 @@ Rules:
   }
 
   const handleAIRowMapping = async () => {
-    if (csvData.length === 0 || entities.length === 0 || !entityColumn) {
+    if (csvEntities.length === 0 || entities.length === 0 || !entityColumn) {
       setAiRowMappingMessage('Error: Missing data or entity column not set')
       setTimeout(() => setAiRowMappingMessage(''), 3000)
       return
     }
 
     setAiRowMappingInProgress(true)
-    setAiRowMappingMessage('AI analyzing rows...')
+    setAiRowMappingMessage('AI analyzing entities...')
 
     try {
       // Prepare entity information
@@ -341,37 +399,32 @@ Rules:
         level: e.level
       }))
 
-      // Prepare CSV row information
-      const csvRowInfo = csvData.map((row, index) => ({
-        index: index,
-        identifier: getRowIdentifier(row)
-      })).filter(r => r.identifier)
+      const prompt = `You are a location-to-entity mapping assistant. Map CSV entity values to entities in the hierarchy.
 
-      const prompt = `You are a location-to-entity mapping assistant. Map CSV location rows to entities in the hierarchy.
-
-Available Entities:
+Available Entities (from database):
 ${JSON.stringify(entityInfo, null, 2)}
 
-CSV Rows (from "${entityColumn}" column):
-${JSON.stringify(csvRowInfo, null, 2)}
+CSV Entity Values (from "${entityColumn}" column):
+${JSON.stringify(csvEntities, null, 2)}
 
 Instructions:
-Match each CSV row to the most appropriate entity based on:
+Match each CSV entity value to the most appropriate database entity based on:
 1. The entity's name and code
-2. The CSV row identifier text
+2. The CSV entity value text
 3. Keywords and patterns that suggest ownership or association
 
 Return ONLY a JSON array of mappings in this format:
 [
-  {"csv_row_index": 0, "entity_id": 123},
-  {"csv_row_index": 1, "entity_id": 456}
+  {"csv_entity_value": "CSV value 1", "entity_id": 123},
+  {"csv_entity_value": "CSV value 2", "entity_id": 456}
 ]
 
 Rules:
 - Only include mappings you are confident about
-- A CSV row can only map to one entity
-- Not all rows need to be mapped
-- Use the exact entity_id values from the Available Entities list`
+- A CSV entity value can only map to one database entity
+- Not all CSV values need to be mapped
+- Use the exact entity_id values from the Available Entities list
+- Use the exact csv_entity_value strings from the CSV Entity Values list`
 
       const response = await fetch('http://localhost:3001/api/claude/messages', {
         method: 'POST',
@@ -398,7 +451,7 @@ Rules:
       // Apply the AI mappings
       setEntityMappings(aiMappings)
 
-      setAiRowMappingMessage(`Mapped ${aiMappings.length} rows`)
+      setAiRowMappingMessage(`Mapped ${aiMappings.length} entities`)
       setTimeout(() => setAiRowMappingMessage(''), 3000)
 
     } catch (error) {
@@ -428,6 +481,8 @@ Rules:
           latitudeColumn,
           longitudeColumn,
           entityColumn,
+          archetypeColumn,
+          unitColumn,
           valueColumns,
           entityMappings
         })
@@ -449,12 +504,18 @@ Rules:
   }
 
   // Row drag handlers for entity mapping
-  const handleRowDragStart = (rowIndex: number) => {
-    setDraggedRowIndex(rowIndex)
+  const handleEntityDragStart = (entityValue: string) => {
+    setDraggedEntityValue(entityValue)
   }
 
-  const handleRowDrop = (entityId: number) => {
-    if (draggedRowIndex === null) return
+  const handleEntityDrop = (entityId: number) => {
+    if (draggedEntityValue === null) return
+
+    // Check if dropping is allowed (leaf-and-branch validation)
+    if (isEntityDisabled(entityId)) {
+      setDraggedEntityValue(null)
+      return
+    }
 
     // Check if this entity already has a mapping
     const existingMappingIndex = entityMappings.findIndex(m => m.entity_id === entityId)
@@ -462,24 +523,93 @@ Rules:
     if (existingMappingIndex >= 0) {
       // Replace existing mapping
       const newMappings = [...entityMappings]
-      newMappings[existingMappingIndex] = { csv_row_index: draggedRowIndex, entity_id: entityId }
+      newMappings[existingMappingIndex] = { csv_entity_value: draggedEntityValue, entity_id: entityId }
       setEntityMappings(newMappings)
     } else {
       // Add new mapping
-      setEntityMappings([...entityMappings, { csv_row_index: draggedRowIndex, entity_id: entityId }])
+      setEntityMappings([...entityMappings, { csv_entity_value: draggedEntityValue, entity_id: entityId }])
     }
 
-    setDraggedRowIndex(null)
+    setDraggedEntityValue(null)
   }
 
-  const getRowIdentifier = (row: CsvRow) => {
-    if (!entityColumn) return ''
-    return row[entityColumn] || ''
-  }
-
-  const getMappedRow = (entityId: number): number | null => {
+  const getMappedEntityValue = (entityId: number): string | null => {
     const mapping = entityMappings.find(m => m.entity_id === entityId)
-    return mapping ? mapping.csv_row_index : null
+    return mapping ? mapping.csv_entity_value : null
+  }
+
+  // Get all ancestor IDs for an entity
+  const getAncestorIds = (entityId: number): number[] => {
+    const ancestors: number[] = []
+    let currentEntity = entities.find(e => e.entity_id === entityId)
+
+    while (currentEntity && currentEntity.parent_id !== null) {
+      ancestors.push(currentEntity.parent_id)
+      currentEntity = entities.find(e => e.entity_id === currentEntity!.parent_id)
+    }
+
+    return ancestors
+  }
+
+  // Get all descendant IDs for an entity
+  const getDescendantIds = (entityId: number): number[] => {
+    const descendants: number[] = []
+    const children = entities.filter(e => e.parent_id === entityId)
+
+    children.forEach(child => {
+      descendants.push(child.entity_id)
+      descendants.push(...getDescendantIds(child.entity_id))
+    })
+
+    return descendants
+  }
+
+  // Check if an entity is disabled due to leaf-and-branch logic
+  const isEntityDisabled = (entityId: number): boolean => {
+    // Get all mapped entity IDs
+    const mappedEntityIds = entityMappings.map(m => m.entity_id)
+
+    // Check if any ancestor is mapped
+    const ancestors = getAncestorIds(entityId)
+    if (ancestors.some(ancestorId => mappedEntityIds.includes(ancestorId))) {
+      return true
+    }
+
+    // Check if any descendant is mapped
+    const descendants = getDescendantIds(entityId)
+    if (descendants.some(descendantId => mappedEntityIds.includes(descendantId))) {
+      return true
+    }
+
+    return false
+  }
+
+  // Build hierarchical tree structure from flat entity list
+  const buildEntityTree = () => {
+    interface TreeNode extends Entity {
+      children: TreeNode[]
+    }
+
+    // Create a map for quick lookup
+    const entityMap = new Map<number, TreeNode>()
+    entities.forEach(entity => {
+      entityMap.set(entity.entity_id, { ...entity, children: [] })
+    })
+
+    // Build the tree by linking children to parents
+    const roots: TreeNode[] = []
+    entityMap.forEach(node => {
+      if (node.parent_id === null) {
+        roots.push(node)
+      } else {
+        const parent = entityMap.get(node.parent_id)
+        if (parent) {
+          parent.children.push(node)
+        }
+      }
+    })
+
+    return roots
   }
 
   const getValueColumns = () => {
@@ -492,18 +622,6 @@ Rules:
 
     return csvColumns.slice(startIdx, endIdx + 1)
   }
-
-  // Group entities by level
-  const getEntitiesByLevel = () => {
-    const byLevel: { [key: number]: Entity[] } = {}
-    entities.forEach(e => {
-      if (!byLevel[e.level]) byLevel[e.level] = []
-      byLevel[e.level].push(e)
-    })
-    return byLevel
-  }
-
-  const entitiesByLevel = getEntitiesByLevel()
 
   return (
     <div className="p-12 max-w-7xl mx-auto" style={{ minHeight: '100vh' }}>
@@ -627,33 +745,58 @@ Rules:
                   </p>
                 </div>
 
-                {/* AI Mapping Button */}
+                {/* AI Mapping and Clear Buttons */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                  <Button
-                    onClick={handleAIMapping}
-                    disabled={aiMappingInProgress}
-                    style={{
-                      backgroundColor: aiMappingInProgress ? '#64748b' : '#8b5cf6',
-                      padding: '10px 20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      border: 'none',
-                      boxShadow: 'none'
-                    }}
-                  >
-                    {aiMappingInProgress ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        AI Mapping...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        AI Mapping
-                      </>
-                    )}
-                  </Button>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Button
+                      onClick={handleAIMapping}
+                      disabled={aiMappingInProgress}
+                      style={{
+                        backgroundColor: aiMappingInProgress ? '#64748b' : '#8b5cf6',
+                        padding: '10px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        border: 'none',
+                        boxShadow: 'none'
+                      }}
+                    >
+                      {aiMappingInProgress ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          AI Mapping...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          AI Mapping
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setIdentifierColumn(null)
+                        setLatitudeColumn(null)
+                        setLongitudeColumn(null)
+                        setEntityColumn(null)
+                        setArchetypeColumn(null)
+                        setUnitColumn(null)
+                        setValueStartColumn(null)
+                        setValueEndColumn(null)
+                      }}
+                      variant="outline"
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                        color: '#ef4444',
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        height: 'auto'
+                      }}
+                    >
+                      Clear Mapping
+                    </Button>
+                  </div>
                   {aiMappingMessage && (
                     <div style={{
                       padding: '6px 12px',
@@ -671,9 +814,9 @@ Rules:
               </div>
 
               {/* Draggable Role Tiles */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
                 <Move className="w-4 h-4 text-muted-foreground" />
-                <h4 className="text-sm font-semibold text-muted-foreground">Column Roles:</h4>
+                <h4 className="text-sm font-semibold text-muted-foreground" style={{ marginLeft: '8px' }}>Column Roles:</h4>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
                 <div
@@ -778,6 +921,56 @@ Rules:
 
                 <div
                   draggable
+                  onDragStart={() => handleRoleDragStart('archetype')}
+                  onDragEnd={handleRoleDragEnd}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(234, 179, 8, 0.2)',
+                    border: '2px solid rgba(234, 179, 8, 0.5)',
+                    borderRadius: '8px',
+                    cursor: 'grab',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#eab308',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(234, 179, 8, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(234, 179, 8, 0.2)'}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  Archetype
+                </div>
+
+                <div
+                  draggable
+                  onDragStart={() => handleRoleDragStart('unit')}
+                  onDragEnd={handleRoleDragEnd}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(6, 182, 212, 0.2)',
+                    border: '2px solid rgba(6, 182, 212, 0.5)',
+                    borderRadius: '8px',
+                    cursor: 'grab',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#06b6d4',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(6, 182, 212, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(6, 182, 212, 0.2)'}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  Unit
+                </div>
+
+                <div
+                  draggable
                   onDragStart={() => handleRoleDragStart('valueStart')}
                   onDragEnd={handleRoleDragEnd}
                   style={{
@@ -837,11 +1030,13 @@ Rules:
                         const isLatitudeCol = latitudeColumn === col
                         const isLongitudeCol = longitudeColumn === col
                         const isEntityCol = entityColumn === col
+                        const isArchetypeCol = archetypeColumn === col
+                        const isUnitCol = unitColumn === col
                         const isValueStartCol = valueStartColumn === col
                         const isValueEndCol = valueEndColumn === col
                         const valueColumns = getValueColumns()
                         const isInValueRange = valueColumns.includes(col)
-                        const hasAssignment = isIdentifierCol || isLatitudeCol || isLongitudeCol || isEntityCol || isValueStartCol || isValueEndCol
+                        const hasAssignment = isIdentifierCol || isLatitudeCol || isLongitudeCol || isEntityCol || isArchetypeCol || isUnitCol || isValueStartCol || isValueEndCol
 
                         let bgColor = 'rgba(30, 41, 59, 0.9)'
                         let borderColor = 'rgba(71, 85, 105, 0.3)'
@@ -870,6 +1065,16 @@ Rules:
                           textColor = '#fb923c'
                           badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(251, 146, 60, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Entity</span>
                           minWidth = '200px'
+                        } else if (isArchetypeCol) {
+                          bgColor = 'rgba(234, 179, 8, 0.15)'
+                          borderColor = 'rgba(234, 179, 8, 0.5)'
+                          textColor = '#eab308'
+                          badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(234, 179, 8, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Archetype</span>
+                        } else if (isUnitCol) {
+                          bgColor = 'rgba(6, 182, 212, 0.15)'
+                          borderColor = 'rgba(6, 182, 212, 0.5)'
+                          textColor = '#06b6d4'
+                          badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(6, 182, 212, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Unit</span>
                         } else if (isValueStartCol) {
                           bgColor = 'rgba(34, 197, 94, 0.15)'
                           borderColor = 'rgba(34, 197, 94, 0.5)'
@@ -911,6 +1116,8 @@ Rules:
                               else if (isLatitudeCol) handleRemoveColumnAssignment('latitude')
                               else if (isLongitudeCol) handleRemoveColumnAssignment('longitude')
                               else if (isEntityCol) handleRemoveColumnAssignment('entity')
+                              else if (isArchetypeCol) handleRemoveColumnAssignment('archetype')
+                              else if (isUnitCol) handleRemoveColumnAssignment('unit')
                               else if (isValueStartCol) handleRemoveColumnAssignment('valueStart')
                               else if (isValueEndCol) handleRemoveColumnAssignment('valueEnd')
                             }}
@@ -975,7 +1182,7 @@ Rules:
         )}
 
         {/* Row Mapping Section */}
-        {selectedFileId && csvData.length > 0 && entityColumn && (
+        {selectedFileId && csvData.length > 0 && (
           <Card className="border-2" style={{
             backgroundColor: 'rgba(30, 41, 59, 0.6)',
             backdropFilter: 'blur(10px)',
@@ -989,36 +1196,52 @@ Rules:
                     Map Locations to Entities
                   </h3>
                   <p style={{ fontSize: '13px', color: '#94a3b8' }}>
-                    Drag CSV rows from the left and drop them onto entities on the right to create mappings
+                    Drag CSV entity values from the left and drop them onto entities on the right to create mappings
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                  <Button
-                    onClick={handleAIRowMapping}
-                    disabled={aiRowMappingInProgress || !entityColumn}
-                    style={{
-                      backgroundColor: aiRowMappingInProgress ? '#64748b' : '#8b5cf6',
-                      padding: '8px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      border: 'none',
-                      boxShadow: 'none',
-                      fontSize: '13px'
-                    }}
-                  >
-                    {aiRowMappingInProgress ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        AI Mapping...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        AI Map Rows
-                      </>
-                    )}
-                  </Button>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Button
+                      onClick={handleAIRowMapping}
+                      disabled={aiRowMappingInProgress || !entityColumn}
+                      style={{
+                        backgroundColor: aiRowMappingInProgress ? '#64748b' : '#8b5cf6',
+                        padding: '8px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        border: 'none',
+                        boxShadow: 'none',
+                        fontSize: '13px'
+                      }}
+                    >
+                      {aiRowMappingInProgress ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          AI Mapping...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          AI Map Entities
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => setEntityMappings([])}
+                      variant="outline"
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                        color: '#ef4444',
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        height: 'auto'
+                      }}
+                    >
+                      Clear Mapping
+                    </Button>
+                  </div>
                   {aiRowMappingMessage && (
                     <div style={{
                       padding: '6px 12px',
@@ -1036,10 +1259,10 @@ Rules:
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {/* Left Panel - Draggable CSV Rows */}
+                {/* Left Panel - Draggable CSV Entity Values */}
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                    CSV Rows
+                    {entityColumn ? 'CSV Entities' : 'Entity Values'}
                   </h4>
                   <div style={{
                     maxHeight: '400px',
@@ -1048,15 +1271,55 @@ Rules:
                     borderRadius: '8px',
                     padding: '8px'
                   }}>
-                    {csvData.map((row, index) => {
-                      const identifier = getRowIdentifier(row)
-                      if (!identifier) return null
+                    {(() => {
+                      console.log('Render check - entityColumn:', entityColumn, 'csvEntities:', csvEntities)
+                      if (!entityColumn) {
+                        return (
+                          <div
+                            draggable
+                            onDragStart={() => handleEntityDragStart('__ALL_LOCATIONS__')}
+                            style={{
+                              padding: '8px 12px',
+                              marginBottom: '4px',
+                              backgroundColor: 'rgba(51, 65, 85, 0.5)',
+                              borderRadius: '6px',
+                              cursor: 'grab',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              transition: 'all 0.2s ease',
+                              border: '1px solid transparent'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+                              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                              e.currentTarget.style.transform = 'translateX(4px)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                              e.currentTarget.style.borderColor = 'transparent'
+                              e.currentTarget.style.transform = 'translateX(0)'
+                            }}
+                          >
+                            <GripVertical style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} />
+                            <span style={{ fontSize: '13px', color: '#94a3b8' }}>Entity Mapping</span>
+                          </div>
+                        )
+                      }
 
-                      return (
+                      if (csvEntities.length === 0) {
+                        return (
+                          <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                            Loading unique entities...
+                          </div>
+                        )
+                      }
+
+                      return csvEntities.map((entityValue) => (
                         <div
-                          key={index}
+                          key={entityValue}
                           draggable
-                          onDragStart={() => handleRowDragStart(index)}
+                          onDragStart={() => handleEntityDragStart(entityValue)}
                           style={{
                             padding: '8px 12px',
                             marginBottom: '4px',
@@ -1081,17 +1344,17 @@ Rules:
                           }}
                         >
                           <GripVertical style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} />
-                          <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{identifier}</span>
+                          <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{entityValue}</span>
                         </div>
-                      )
-                    })}
+                      ))
+                    })()}
                   </div>
                 </div>
 
-                {/* Right Panel - Entity Drop Targets (Grouped by Level) */}
+                {/* Right Panel - Entity Drop Targets (Cascading Hierarchy) */}
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                    Entities (by hierarchy level)
+                    Entity Hierarchy
                   </h4>
                   <div style={{
                     maxHeight: '400px',
@@ -1100,60 +1363,94 @@ Rules:
                     borderRadius: '8px',
                     padding: '8px'
                   }}>
-                    {Object.keys(entitiesByLevel).sort((a, b) => Number(a) - Number(b)).map(level => (
-                      <div key={level} style={{ marginBottom: '16px' }}>
-                        <div style={{
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          color: '#94a3b8',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          marginBottom: '8px',
-                          paddingLeft: '4px'
-                        }}>
-                          Level {level}
-                        </div>
-                        {(entitiesByLevel[level] || []).map((entity) => {
-                          const mappedRowIndex = getMappedRow(entity.entity_id)
-                          const hasMapped = mappedRowIndex !== null
+                    {(() => {
+                      const entityTree = buildEntityTree()
 
-                          return (
+                      const renderEntityNode = (node: Entity & { children: any[] }, depth: number = 0): React.ReactElement => {
+                        const mappedValue = getMappedEntityValue(node.entity_id)
+                        const hasMapped = mappedValue !== null
+                        const isDisabled = isEntityDisabled(node.entity_id)
+
+                        return (
+                          <React.Fragment key={node.entity_id}>
                             <div
-                              key={entity.entity_id}
                               onDragOver={(e) => {
                                 e.preventDefault()
-                                e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
-                                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+                                if (!isDisabled) {
+                                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+                                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+                                }
                               }}
                               onDragLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = hasMapped ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)'
-                                e.currentTarget.style.borderColor = hasMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'
+                                if (isDisabled) {
+                                  e.currentTarget.style.backgroundColor = 'rgba(100, 116, 139, 0.2)'
+                                  e.currentTarget.style.borderColor = 'rgba(100, 116, 139, 0.3)'
+                                } else if (hasMapped) {
+                                  e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+                                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
+                                } else {
+                                  e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.4)'
+                                  e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                                }
                               }}
                               onDrop={(e) => {
                                 e.preventDefault()
-                                handleRowDrop(entity.entity_id)
-                                e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
-                                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
+                                if (!isDisabled) {
+                                  handleEntityDrop(node.entity_id)
+                                  e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+                                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
+                                }
                               }}
                               style={{
                                 padding: '10px 12px',
                                 marginBottom: '4px',
-                                backgroundColor: hasMapped ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)',
+                                marginLeft: `${depth * 20}px`,
+                                backgroundColor: isDisabled
+                                  ? 'rgba(100, 116, 139, 0.2)'
+                                  : hasMapped
+                                    ? 'rgba(34, 197, 94, 0.1)'
+                                    : 'rgba(30, 41, 59, 0.4)',
                                 borderRadius: '6px',
-                                border: `1px solid ${hasMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'}`,
-                                transition: 'all 0.2s ease'
+                                border: `1px solid ${
+                                  isDisabled
+                                    ? 'rgba(100, 116, 139, 0.3)'
+                                    : hasMapped
+                                      ? 'rgba(34, 197, 94, 0.5)'
+                                      : 'rgba(71, 85, 105, 0.3)'
+                                }`,
+                                transition: 'all 0.2s ease',
+                                cursor: isDisabled ? 'not-allowed' : 'default',
+                                opacity: isDisabled ? 0.5 : 1
                               }}
+                              title={isDisabled ? 'Cannot map: ancestor or descendant already mapped' : ''}
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div>
-                                  <div style={{ fontSize: '13px', fontWeight: 600, color: hasMapped ? '#22c55e' : '#cbd5e1' }}>
-                                    {entity.entity_code}
+                                <div style={{ flex: 1 }}>
+                                  <div style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: isDisabled ? '#64748b' : hasMapped ? '#22c55e' : '#cbd5e1',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                  }}>
+                                    {depth > 0 && (
+                                      <span style={{ color: '#64748b', fontSize: '11px' }}>
+                                        {'└─ '}
+                                      </span>
+                                    )}
+                                    {node.entity_code}
                                   </div>
-                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
-                                    {entity.entity_name}
+                                  <div style={{
+                                    fontSize: '11px',
+                                    color: '#94a3b8',
+                                    marginTop: '2px',
+                                    marginLeft: depth > 0 ? '20px' : '0'
+                                  }}>
+                                    {node.entity_name}
                                   </div>
                                 </div>
-                                {hasMapped && mappedRowIndex !== null && (
+                                {hasMapped && mappedValue && (
                                   <div style={{
                                     fontSize: '11px',
                                     color: '#22c55e',
@@ -1162,17 +1459,22 @@ Rules:
                                     borderRadius: '4px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '4px'
+                                    gap: '4px',
+                                    marginLeft: '8px',
+                                    flexShrink: 0
                                   }}>
-                                    → {getRowIdentifier(csvData[mappedRowIndex])}
+                                    → {mappedValue}
                                   </div>
                                 )}
                               </div>
                             </div>
-                          )
-                        })}
-                      </div>
-                    ))}
+                            {node.children && node.children.map((child: any) => renderEntityNode(child, depth + 1))}
+                          </React.Fragment>
+                        )
+                      }
+
+                      return entityTree.map(root => renderEntityNode(root, 0))
+                    })()}
                   </div>
                 </div>
               </div>

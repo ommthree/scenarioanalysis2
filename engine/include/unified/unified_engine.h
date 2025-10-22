@@ -176,6 +176,9 @@ private:
     std::shared_ptr<database::IDatabase> db_;
     core::FormulaEvaluator evaluator_;
 
+    // FX provider for currency conversions (stored to reload with scenario_id)
+    std::shared_ptr<fx::FXProvider> fx_provider_;
+
     // Value providers
     std::unique_ptr<DriverValueProvider> driver_provider_;           // Scenario drivers from scenario_drivers table
     std::unique_ptr<bs::StatementValueProvider> statement_provider_; // All financial statement values (P&L, BS, CF)

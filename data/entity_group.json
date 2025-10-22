@@ -1,0 +1,8 @@
+{
+  "code": "GROUP",
+  "name": "Test_Group",
+  "parent_entity_id": null,
+  "granularity_level": "group",
+  "base_currency": "CHF",
+  "json_metadata": {}
+}
