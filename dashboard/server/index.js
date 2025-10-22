@@ -5214,11 +5214,11 @@ app.get('/api/results/periods', (req, res) => {
 })
 
 /**
- * Get financial statement results for a specific period
- * GET /api/results/statement?dbPath=...&period=1
+ * Get financial statement results for a specific period and entity
+ * GET /api/results/statement?dbPath=...&period=1&entityId=...
  */
 app.get('/api/results/statement', (req, res) => {
-  const { dbPath, period } = req.query
+  const { dbPath, period, entityId } = req.query
 
   if (!dbPath || !period) {
     return res.status(400).json({ error: 'Database path and period are required' })
@@ -5266,13 +5266,24 @@ app.get('/api/results/statement', (req, res) => {
       })
 
       // Now query statement_result for calculated values (only for latest scenario)
-      db.all(
-        `SELECT line_item_code, value FROM statement_result
-         WHERE period_id = ?
-         AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
-         LIMIT 100`,
-        [period],
-        (err, rows) => {
+      // If entityId is provided, filter by that entity; otherwise get latest entity
+      let query, params
+      if (entityId) {
+        query = `SELECT line_item_code, value FROM statement_result
+                 WHERE period_id = ? AND entity_id = ?
+                 AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
+                 LIMIT 100`
+        params = [period, entityId]
+      } else {
+        query = `SELECT line_item_code, value FROM statement_result
+                 WHERE period_id = ?
+                 AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
+                 AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ?)
+                 LIMIT 100`
+        params = [period, period]
+      }
+
+      db.all(query, params, (err, rows) => {
           if (err) {
             db.close()
             return res.status(500).json({ error: err.message })
@@ -5315,6 +5326,41 @@ app.get('/api/results/statement', (req, res) => {
           res.json({ success: true, lineItems })
         }
       )
+    }
+  )
+})
+
+/**
+ * Get all entities with hierarchy information
+ * GET /api/results/entities?dbPath=...
+ */
+app.get('/api/results/entities', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Database path is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  db.all(
+    `SELECT entity_id, code, name, granularity_level, parent_entity_id
+     FROM entity
+     WHERE is_active = 1
+     ORDER BY entity_id`,
+    [],
+    (err, rows) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      res.json({ success: true, entities: rows || [] })
     }
   )
 })

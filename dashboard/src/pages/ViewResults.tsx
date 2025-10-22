@@ -15,26 +15,37 @@ interface Section {
   items: LineItem[]
 }
 
+interface Entity {
+  entity_id: number
+  code: string
+  name: string
+  granularity_level: string
+  parent_entity_id: number | null
+}
+
 export default function ViewResults() {
   const [periods, setPeriods] = useState<number[]>([])
   const [currentPeriod, setCurrentPeriod] = useState(1)
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [currentEntity, setCurrentEntity] = useState<number | null>(null)
   const [sections, setSections] = useState<Section[]>([])
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
-  // Load available periods and initial data
+  // Load available periods, entities, and initial data
   useEffect(() => {
     loadPeriods()
+    loadEntities()
   }, [])
 
-  // Load data when period changes
+  // Load data when period or entity changes
   useEffect(() => {
     if (periods.length > 0) {
-      loadResultsForPeriod(currentPeriod)
+      loadResultsForPeriod(currentPeriod, currentEntity)
     }
-  }, [currentPeriod, periods])
+  }, [currentPeriod, currentEntity, periods])
 
   const loadPeriods = async () => {
     try {
@@ -50,12 +61,31 @@ export default function ViewResults() {
     }
   }
 
-  const loadResultsForPeriod = async (period: number) => {
+  const loadEntities = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/results/entities?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+
+      if (data.success && data.entities.length > 0) {
+        setEntities(data.entities)
+        // Set default to highest entity_id (root level)
+        const maxEntity = Math.max(...data.entities.map((e: Entity) => e.entity_id))
+        setCurrentEntity(maxEntity)
+      }
+    } catch (error) {
+      console.error('Error loading entities:', error)
+    }
+  }
+
+  const loadResultsForPeriod = async (period: number, entityId: number | null) => {
     setLoading(true)
     try {
-      const response = await fetch(
-        `http://localhost:3001/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&period=${period}`
-      )
+      let url = `http://localhost:3001/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&period=${period}`
+      if (entityId !== null) {
+        url += `&entityId=${entityId}`
+      }
+
+      const response = await fetch(url)
       const data = await response.json()
 
       if (data.success) {
@@ -120,58 +150,97 @@ export default function ViewResults() {
         </p>
       </div>
 
-      {/* Period Slider */}
+      {/* Period Slider and Entity Selector */}
       {periods.length > 0 && (
-        <Card style={{
-          backgroundColor: 'rgba(15, 23, 42, 0.9)',
-          border: '1px solid rgba(59, 130, 246, 0.3)',
-          marginBottom: '24px'
-        }}>
-          <CardContent style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
-                  Time Period
-                </label>
-                <span style={{
-                  fontSize: '18px',
-                  fontWeight: 'bold',
-                  color: '#3b82f6',
-                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                  padding: '4px 16px',
-                  borderRadius: '6px'
-                }}>
-                  Period {currentPeriod}
-                </span>
-              </div>
+        <>
+          <Card style={{
+            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            marginBottom: '16px'
+          }}>
+            <CardContent style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                    Time Period
+                  </label>
+                  <span style={{
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    color: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    padding: '4px 16px',
+                    borderRadius: '6px'
+                  }}>
+                    Period {currentPeriod}
+                  </span>
+                </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <span style={{ fontSize: '12px', color: '#64748b', minWidth: '60px' }}>
-                  Period {Math.min(...periods)}
-                </span>
-                <input
-                  type="range"
-                  min={Math.min(...periods)}
-                  max={Math.max(...periods)}
-                  step={1}
-                  value={currentPeriod}
-                  onChange={(e) => setCurrentPeriod(parseInt(e.target.value))}
-                  style={{
-                    flex: 1,
-                    height: '6px',
-                    borderRadius: '3px',
-                    backgroundColor: 'rgba(71, 85, 105, 0.4)',
-                    outline: 'none',
-                    appearance: 'none'
-                  }}
-                />
-                <span style={{ fontSize: '12px', color: '#64748b', minWidth: '60px', textAlign: 'right' }}>
-                  Period {Math.max(...periods)}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', minWidth: '60px' }}>
+                    Period {Math.min(...periods)}
+                  </span>
+                  <input
+                    type="range"
+                    min={Math.min(...periods)}
+                    max={Math.max(...periods)}
+                    step={1}
+                    value={currentPeriod}
+                    onChange={(e) => setCurrentPeriod(parseInt(e.target.value))}
+                    style={{
+                      flex: 1,
+                      height: '6px',
+                      borderRadius: '3px',
+                      backgroundColor: 'rgba(71, 85, 105, 0.4)',
+                      outline: 'none',
+                      appearance: 'none'
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#64748b', minWidth: '60px', textAlign: 'right' }}>
+                    Period {Math.max(...periods)}
+                  </span>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Entity Selector */}
+          {entities.length > 0 && (
+            <Card style={{
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              marginBottom: '24px'
+            }}>
+              <CardContent style={{ padding: '24px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                    Entity
+                  </label>
+                  <select
+                    value={currentEntity ?? ''}
+                    onChange={(e) => setCurrentEntity(parseInt(e.target.value))}
+                    style={{
+                      backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '6px',
+                      padding: '12px',
+                      color: '#fff',
+                      fontSize: '14px',
+                      outline: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {entities.map((entity) => (
+                      <option key={entity.entity_id} value={entity.entity_id}>
+                        {entity.name} ({entity.code}) - {entity.granularity_level}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       {/* Financial Statement */}
@@ -210,6 +279,11 @@ export default function ViewResults() {
               borderBottom: '2px solid rgba(59, 130, 246, 0.3)'
             }}>
               Financial Statement - Period {currentPeriod}
+              {currentEntity && entities.length > 0 && (
+                <span style={{ color: '#94a3b8', fontSize: '16px', fontWeight: '400', marginLeft: '12px' }}>
+                  {entities.find(e => e.entity_id === currentEntity)?.name || ''}
+                </span>
+              )}
             </h2>
 
             {sections.map((section) => (
