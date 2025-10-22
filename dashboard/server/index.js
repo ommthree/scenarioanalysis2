@@ -4112,30 +4112,50 @@ app.post('/api/hazard-maps/load', upload.single('file'), async (req, res) => {
           })
           const columnDefs = sanitizedColumns.map(col => `"${col}" TEXT`).join(', ')
 
-          db.run(`DROP TABLE IF EXISTS staging_hazard_map`, (err) => {
+          // Check if staging_hazard_map table exists, create if not
+          db.get(`SELECT name FROM sqlite_master WHERE type='table' AND name='staging_hazard_map'`, (err, row) => {
             if (err) {
-              console.error('Drop table error:', err)
+              console.error('Check table error:', err)
               db.close()
               fs.unlinkSync(file.path)
-              return res.status(500).json({ error: 'Failed to drop old staging table' })
+              return res.status(500).json({ error: 'Failed to check staging table' })
             }
 
-            db.run(`CREATE TABLE staging_hazard_map (
-              staging_id INTEGER PRIMARY KEY AUTOINCREMENT,
-              file_id INTEGER,
-              ${columnDefs},
-              imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              is_mapped INTEGER DEFAULT 0,
-              FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
-            )`, (err) => {
-            if (err) {
-              console.error('Create table error:', err)
-              db.close()
-              fs.unlinkSync(file.path)
-              return res.status(500).json({ error: 'Failed to create staging table' })
+            const createTableIfNeeded = (callback) => {
+              if (!row) {
+                // Table doesn't exist, create it
+                db.run(`CREATE TABLE staging_hazard_map (
+                  staging_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  file_id INTEGER,
+                  ${columnDefs},
+                  imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  is_mapped INTEGER DEFAULT 0,
+                  FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
+                )`, callback)
+              } else {
+                // Table exists, just continue
+                callback(null)
+              }
             }
 
-            // Insert records
+            createTableIfNeeded((err) => {
+              if (err) {
+                console.error('Create table error:', err)
+                db.close()
+                fs.unlinkSync(file.path)
+                return res.status(500).json({ error: 'Failed to create staging table' })
+              }
+
+              // Delete existing rows for this file_id before inserting new data
+              db.run(`DELETE FROM staging_hazard_map WHERE file_id = ?`, [fileId], (err) => {
+                if (err) {
+                  console.error('Delete old rows error:', err)
+                  db.close()
+                  fs.unlinkSync(file.path)
+                  return res.status(500).json({ error: 'Failed to delete old rows' })
+                }
+
+                // Insert records
             const placeholders = sanitizedColumns.map(() => '?').join(', ')
             const columnNames = sanitizedColumns.map(c => `"${c}"`).join(', ')
             const stmt = db.prepare(
@@ -4171,15 +4191,94 @@ app.post('/api/hazard-maps/load', upload.single('file'), async (req, res) => {
                 rowCount: inserted,
                 fileId: fileId
               })
-            })
-          })
-        })
-      })
-    })
+            }) // end stmt.finalize
+              }) // end db.run DELETE
+            }) // end createTableIfNeeded
+          }) // end db.get
+        }) // end db.run INSERT staged_file
+    }) // end db.serialize
   } catch (error) {
     console.error('Hazard map import error:', error)
     res.status(500).json({ error: error.message })
   }
+})
+
+/**
+ * Get all scenarios
+ * GET /api/scenarios/list
+ */
+app.get('/api/scenarios/list', (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Get scenarios and extract file_id from code (format: SCENARIO_X_FILEY)
+  db.all('SELECT scenario_id, code, name, description FROM scenario ORDER BY name', [], (err, rows) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: 'Failed to fetch scenarios: ' + err.message })
+    }
+
+    // Parse codes to extract file IDs and fetch file names
+    const fileIds = new Set()
+    rows.forEach(row => {
+      const match = row.code.match(/FILE(\d+)/i)
+      if (match) {
+        fileIds.add(parseInt(match[1]))
+      }
+    })
+
+    if (fileIds.size === 0) {
+      db.close()
+      return res.json({ success: true, scenarios: rows })
+    }
+
+    // Fetch file names for the extracted file IDs
+    const placeholders = Array.from(fileIds).map(() => '?').join(',')
+    db.all(
+      `SELECT file_id, file_name FROM staged_file WHERE file_id IN (${placeholders})`,
+      Array.from(fileIds),
+      (err, files) => {
+        db.close()
+        if (err) {
+          console.error('Error fetching file names:', err)
+          return res.json({ success: true, scenarios: rows })
+        }
+
+        // Create a map of file_id -> file_name
+        const fileMap = {}
+        files.forEach(f => {
+          fileMap[f.file_id] = f.file_name
+        })
+
+        // Add file info to scenarios
+        const enrichedScenarios = rows.map(row => {
+          const match = row.code.match(/SCENARIO_(\d+)_FILE(\d+)/i)
+          if (match) {
+            const scenarioNum = match[1]
+            const fileId = parseInt(match[2])
+            return {
+              ...row,
+              scenario_number: scenarioNum,
+              source_file_id: fileId,
+              source_file_name: fileMap[fileId] || 'unknown'
+            }
+          }
+          return row
+        })
+
+        res.json({ success: true, scenarios: enrichedScenarios })
+      }
+    )
+  })
 })
 
 /**
@@ -4675,16 +4774,37 @@ app.post('/api/hazard-maps/save-hazard-map-mapping', (req, res) => {
     varianceColumns: varianceColumns || []
   }
 
+  // Use UPSERT to preserve mapping_id and prevent CASCADE DELETE
   db.run(
-    `INSERT OR REPLACE INTO hazard_map_mapping (file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    `INSERT INTO hazard_map_mapping (file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(file_id) DO UPDATE SET
+       peril_id = excluded.peril_id,
+       latitude_column = excluded.latitude_column,
+       longitude_column = excluded.longitude_column,
+       units_column = excluded.units_column,
+       intensity_columns = excluded.intensity_columns,
+       variance_columns = excluded.variance_columns,
+       updated_at = datetime('now')`,
     [fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn || null, JSON.stringify(intensityColumns || []), JSON.stringify(varianceColumns || [])],
     function(err) {
-      db.close()
       if (err) {
+        db.close()
         return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
       }
-      res.json({ success: true, message: 'Hazard map mapping saved' })
+
+      // Get the mapping_id that was just inserted/updated
+      db.get(
+        'SELECT mapping_id FROM hazard_map_mapping WHERE file_id = ?',
+        [fileId],
+        (err, row) => {
+          db.close()
+          if (err || !row) {
+            return res.status(500).json({ error: 'Failed to retrieve mapping ID' })
+          }
+          res.json({ success: true, message: 'Hazard map mapping saved', mappingId: row.mapping_id })
+        }
+      )
     }
   )
 })
@@ -4707,7 +4827,7 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
   })
 
   db.get(
-    `SELECT file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns
+    `SELECT mapping_id, file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns
      FROM hazard_map_mapping
      WHERE file_id = ?`,
     [fileId],
@@ -4722,6 +4842,7 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
       }
 
       const mapping = {
+        mappingId: row.mapping_id,
         perilId: row.peril_id,
         latitudeColumn: row.latitude_column,
         longitudeColumn: row.longitude_column,

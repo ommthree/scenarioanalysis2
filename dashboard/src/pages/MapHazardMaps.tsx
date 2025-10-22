@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles } from 'lucide-react'
+import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles, CheckCircle2, Circle, Activity } from 'lucide-react'
 
 interface PhysicalPeril {
   peril_id: number
@@ -15,6 +15,16 @@ interface Scenario {
   scenario_id: number
   code: string
   name: string
+  scenario_number?: string
+  source_file_id?: number
+  source_file_name?: string
+}
+
+interface HazardMapMapping {
+  mapping_id: number
+  file_name: string
+  peril_type: string
+  peril_code: string
 }
 
 interface StagedFile {
@@ -56,6 +66,12 @@ export default function MapHazardMaps() {
   const [aiMappingInProgress, setAiMappingInProgress] = useState(false)
   const [aiMappingMessage, setAiMappingMessage] = useState('')
 
+  // Scenario Linking State
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [currentMappingId, setCurrentMappingId] = useState<number | null>(null)
+  const [selectedScenarios, setSelectedScenarios] = useState<Set<number>>(new Set())
+  const [scenarioSaveStatus, setScenarioSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
@@ -80,6 +96,18 @@ export default function MapHazardMaps() {
         setPhysicalPerils(data || [])
       })
       .catch(err => console.error('Error fetching physical perils:', err))
+  }, [])
+
+  // Fetch scenarios for linking
+  useEffect(() => {
+    fetch(`http://localhost:3001/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setScenarios(data.scenarios || [])
+        }
+      })
+      .catch(err => console.error('Error fetching scenarios:', err))
   }, [])
 
   // Auto-save mappings when they change
@@ -111,6 +139,11 @@ export default function MapHazardMaps() {
         })
         const result = await response.json()
         console.log('Auto-save result:', result)
+
+        // Update mapping ID from response to enable Step 4
+        if (result.success && result.mappingId) {
+          setCurrentMappingId(result.mappingId)
+        }
       } catch (err) {
         console.error('Auto-save error:', err)
       }
@@ -139,6 +172,8 @@ export default function MapHazardMaps() {
     setVarianceStartColumn(null)
     setVarianceEndColumn(null)
     setUnitsColumn(null)
+    setCurrentMappingId(null)
+    setSelectedScenarios(new Set())
 
     try {
       // Load saved mapping if it exists
@@ -163,6 +198,24 @@ export default function MapHazardMaps() {
           if (mapping.varianceColumns && mapping.varianceColumns.length > 0) {
             setVarianceStartColumn(mapping.varianceColumns[0])
             setVarianceEndColumn(mapping.varianceColumns[mapping.varianceColumns.length - 1])
+          }
+
+          // Load mapping_id and scenario links
+          if (mapping.mappingId) {
+            setCurrentMappingId(mapping.mappingId)
+
+            // Load existing scenario mappings
+            try {
+              const scenarioResponse = await fetch(
+                `http://localhost:3001/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${mapping.mappingId}`
+              )
+              const scenarioData = await scenarioResponse.json()
+              if (scenarioData.success && scenarioData.scenarios) {
+                setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.scenario_id)))
+              }
+            } catch (err) {
+              console.error('Error loading scenario mappings:', err)
+            }
           }
         }
       } catch (mappingError) {
@@ -361,6 +414,24 @@ Rules:
         throw new Error(result.error || 'Failed to save mapping')
       }
 
+      // Load the mapping_id and existing scenario links
+      if (result.mappingId) {
+        setCurrentMappingId(result.mappingId)
+
+        // Load existing scenario mappings
+        try {
+          const scenarioResponse = await fetch(
+            `http://localhost:3001/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${result.mappingId}`
+          )
+          const scenarioData = await scenarioResponse.json()
+          if (scenarioData.success && scenarioData.scenarios) {
+            setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.scenario_id)))
+          }
+        } catch (err) {
+          console.error('Error loading scenario mappings:', err)
+        }
+      }
+
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
@@ -390,6 +461,63 @@ Rules:
     if (startIdx === -1 || endIdx === -1) return []
 
     return csvColumns.slice(startIdx, endIdx + 1)
+  }
+
+  const toggleScenario = async (scenarioId: number) => {
+    const newSelected = new Set(selectedScenarios)
+    if (newSelected.has(scenarioId)) {
+      newSelected.delete(scenarioId)
+    } else {
+      newSelected.add(scenarioId)
+    }
+    setSelectedScenarios(newSelected)
+
+    // Auto-save scenario selection
+    if (currentMappingId) {
+      try {
+        await fetch('http://localhost:3001/api/hazard-maps/save-scenario-mappings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dbPath,
+            mappingId: currentMappingId,
+            scenarioIds: Array.from(newSelected)
+          })
+        })
+      } catch (err) {
+        console.error('Error auto-saving scenario mappings:', err)
+      }
+    }
+  }
+
+  const handleSaveScenarios = async () => {
+    if (!currentMappingId) return
+
+    setScenarioSaveStatus('saving')
+
+    try {
+      const response = await fetch('http://localhost:3001/api/hazard-maps/save-scenario-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          mappingId: currentMappingId,
+          scenarioIds: Array.from(selectedScenarios)
+        })
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save scenario mappings')
+      }
+
+      setScenarioSaveStatus('success')
+      setTimeout(() => setScenarioSaveStatus('idle'), 2000)
+    } catch (err) {
+      console.error('Error saving scenarios:', err)
+      setScenarioSaveStatus('error')
+      setTimeout(() => setScenarioSaveStatus('idle'), 3000)
+    }
   }
 
   const selectedPeril = physicalPerils.find(p => p.peril_id === selectedPerilId)
@@ -961,7 +1089,83 @@ Rules:
           </Card>
         )}
 
-        {/* Save Button */}
+        {/* Step 4: Link to Scenarios */}
+        {currentMappingId && scenarios.length > 0 && (
+          <Card className="border-2" style={{
+            backgroundColor: 'rgba(30, 41, 59, 0.6)',
+            backdropFilter: 'blur(10px)',
+            borderColor: 'rgba(100, 116, 139, 0.3)',
+            marginBottom: '24px'
+          }}>
+            <div style={{ paddingTop: '6px', paddingBottom: '12px', paddingLeft: '24px', paddingRight: '24px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '12px' }}>
+                Step 4: Link to Scenarios
+              </h3>
+              <p style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '16px' }}>
+                Select which scenarios should use this hazard map
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                {scenarios.map((scenario) => {
+                  const isSelected = selectedScenarios.has(scenario.scenario_id)
+
+                  return (
+                    <button
+                      key={scenario.scenario_id}
+                      onClick={() => toggleScenario(scenario.scenario_id)}
+                      style={{
+                        padding: '16px',
+                        backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                        border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                          e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                          e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                        }
+                      }}
+                    >
+                      {isSelected ? (
+                        <CheckCircle2 style={{ width: '20px', height: '20px', color: '#10b981', flexShrink: 0 }} />
+                      ) : (
+                        <Circle style={{ width: '20px', height: '20px', color: '#64748b', flexShrink: 0 }} />
+                      )}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: isSelected ? '#10b981' : '#e2e8f0' }}>
+                          {scenario.scenario_number && scenario.source_file_name
+                            ? `Scenario ${scenario.scenario_number} from file ${scenario.source_file_name}`
+                            : scenario.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                          {scenario.code}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <p style={{ fontSize: '12px', color: '#64748b', marginTop: '12px', textAlign: 'center' }}>
+                Scenario selections are saved automatically
+              </p>
+            </div>
+          </Card>
+        )}
+
+        {/* Save Configuration Button */}
         {selectedFileId && selectedPerilId && latitudeColumn && longitudeColumn && (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Button

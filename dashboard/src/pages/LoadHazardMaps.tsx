@@ -221,14 +221,14 @@ export default function LoadHazardMaps() {
         }
       }
 
-      // Clear hazard map files immediately
-      setHazardMapFiles([])
-
       setLoadSuccess(true)
       setLoadMessage(`Successfully loaded ${fileCount} hazard map file(s)`)
 
-      // Refresh staged files list
+      // Refresh staged files list FIRST
       await fetchStagedFiles()
+
+      // Then clear hazard map files so they move from unstaged to staged section
+      setHazardMapFiles([])
 
       setTimeout(() => {
         setLoadSuccess(false)
