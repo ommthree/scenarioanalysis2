@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { BarChart3, ChevronRight, ChevronDown } from 'lucide-react'
+import { BarChart3, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 interface LineItem {
   code: string
@@ -21,6 +22,7 @@ interface Entity {
   name: string
   granularity_level: string
   parent_entity_id: number | null
+  children?: Entity[]
 }
 
 export default function ViewResults() {
@@ -30,6 +32,7 @@ export default function ViewResults() {
   const [currentEntity, setCurrentEntity] = useState<number | null>(null)
   const [sections, setSections] = useState<Section[]>([])
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
@@ -61,16 +64,50 @@ export default function ViewResults() {
     }
   }
 
+  const buildTree = (flatEntities: Entity[]): Entity[] => {
+    const entityMap = new Map<number, Entity>()
+    const roots: Entity[] = []
+
+    // First pass: create all entities with children array
+    flatEntities.forEach(e => {
+      entityMap.set(e.entity_id, {
+        ...e,
+        children: []
+      })
+    })
+
+    // Second pass: build tree structure
+    flatEntities.forEach(e => {
+      const entity = entityMap.get(e.entity_id)!
+      if (e.parent_entity_id) {
+        const parent = entityMap.get(e.parent_entity_id)
+        if (parent) {
+          parent.children!.push(entity)
+        }
+      } else {
+        roots.push(entity)
+      }
+    })
+
+    return roots
+  }
+
   const loadEntities = async () => {
     try {
       const response = await fetch(`http://localhost:3001/api/results/entities?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
 
       if (data.success && data.entities.length > 0) {
-        setEntities(data.entities)
+        const tree = buildTree(data.entities)
+        setEntities(tree)
         // Set default to highest entity_id (root level)
         const maxEntity = Math.max(...data.entities.map((e: Entity) => e.entity_id))
         setCurrentEntity(maxEntity)
+        // Expand all root nodes by default
+        tree.forEach(e => {
+          if (e.entity_id) expandedNodes.add(e.entity_id)
+        })
+        setExpandedNodes(new Set(expandedNodes))
       }
     } catch (error) {
       console.error('Error loading entities:', error)
@@ -125,6 +162,89 @@ export default function ViewResults() {
       newExpanded.add(sectionName)
     }
     setExpandedSections(newExpanded)
+  }
+
+  const toggleNode = (entityId: number) => {
+    const newExpanded = new Set(expandedNodes)
+    if (newExpanded.has(entityId)) {
+      newExpanded.delete(entityId)
+    } else {
+      newExpanded.add(entityId)
+    }
+    setExpandedNodes(newExpanded)
+  }
+
+  const renderEntityTree = (entities: Entity[], level = 0): JSX.Element => {
+    return (
+      <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
+        {entities.map((entity) => {
+          const hasChildren = entity.children && entity.children.length > 0
+          const isExpanded = entity.entity_id ? expandedNodes.has(entity.entity_id) : false
+          const isSelected = currentEntity === entity.entity_id
+
+          return (
+            <div key={entity.entity_id}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '10px 12px',
+                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+                  border: `1px solid ${isSelected ? 'rgba(59, 130, 246, 0.5)' : 'rgba(59, 130, 246, 0.2)'}`,
+                  borderRadius: '6px',
+                  marginBottom: '6px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => setCurrentEntity(entity.entity_id)}
+              >
+                {hasChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (entity.entity_id) toggleNode(entity.entity_id)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: '8px' }}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown style={{ width: '16px', height: '16px', color: '#3b82f6' }} />
+                    ) : (
+                      <ChevronRight style={{ width: '16px', height: '16px', color: '#3b82f6' }} />
+                    )}
+                  </button>
+                )}
+                {!hasChildren && <div style={{ width: '24px' }} />}
+
+                <Building2 style={{ width: '16px', height: '16px', color: '#3b82f6', marginRight: '8px' }} />
+
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '14px', fontWeight: isSelected ? '600' : '400', color: '#fff' }}>
+                    {entity.name}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                    {entity.code} • {entity.granularity_level}
+                  </div>
+                </div>
+              </div>
+
+              {hasChildren && isExpanded && renderEntityTree(entity.children!, level + 1)}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const findEntityInTree = (entities: Entity[], entityId: number): Entity | null => {
+    for (const entity of entities) {
+      if (entity.entity_id === entityId) {
+        return entity
+      }
+      if (entity.children) {
+        const found = findEntityInTree(entity.children, entityId)
+        if (found) return found
+      }
+    }
+    return null
   }
 
   const formatValue = (value: number) => {
@@ -211,31 +331,14 @@ export default function ViewResults() {
               border: '1px solid rgba(59, 130, 246, 0.3)',
               marginBottom: '24px'
             }}>
-              <CardContent style={{ padding: '24px' }}>
+              <CardContent style={{ padding: '20px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
-                    Entity
+                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>
+                    Select Entity
                   </label>
-                  <select
-                    value={currentEntity ?? ''}
-                    onChange={(e) => setCurrentEntity(parseInt(e.target.value))}
-                    style={{
-                      backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                      border: '1px solid rgba(59, 130, 246, 0.3)',
-                      borderRadius: '6px',
-                      padding: '12px',
-                      color: '#fff',
-                      fontSize: '14px',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {entities.map((entity) => (
-                      <option key={entity.entity_id} value={entity.entity_id}>
-                        {entity.name} ({entity.code}) - {entity.granularity_level}
-                      </option>
-                    ))}
-                  </select>
+                  <ScrollArea style={{ maxHeight: '300px', paddingRight: '8px' }}>
+                    {renderEntityTree(entities)}
+                  </ScrollArea>
                 </div>
               </CardContent>
             </Card>
@@ -281,7 +384,7 @@ export default function ViewResults() {
               Financial Statement - Period {currentPeriod}
               {currentEntity && entities.length > 0 && (
                 <span style={{ color: '#94a3b8', fontSize: '16px', fontWeight: '400', marginLeft: '12px' }}>
-                  {entities.find(e => e.entity_id === currentEntity)?.name || ''}
+                  {findEntityInTree(entities, currentEntity)?.name || ''}
                 </span>
               )}
             </h2>

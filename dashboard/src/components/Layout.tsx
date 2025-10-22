@@ -22,7 +22,8 @@ import {
   TrendingUp,
   Save,
   Network,
-  Shuffle
+  Shuffle,
+  LineChart
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -102,12 +103,13 @@ export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
       items: [
         { path: '/run/definition', icon: PenTool, label: 'Definition' },
         { path: '/run/execute', icon: Play, label: 'Perform Calculation' },
+        { path: '/visualize', icon: BarChart3, label: 'View Results' },
       ]
     },
     {
       title: 'Visualise',
       items: [
-        { path: '/visualize', icon: BarChart3, label: 'Results' },
+        { path: '/explore', icon: LineChart, label: 'Explore' },
       ]
     },
   ]
