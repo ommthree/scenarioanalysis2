@@ -229,7 +229,7 @@ export default function LoadConversions() {
         <div className="flex flex-col items-center" style={{ gap: '32px' }}>
           {/* File Selection Card */}
           <Card className="border-2" style={{ width: '540px', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
-            <CardContent className="p-8">
+            <CardContent style={{ paddingTop: '32px', paddingBottom: '56px', paddingLeft: '56px', paddingRight: '56px' }}>
               <div className="flex flex-col" style={{ gap: '32px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '8px', marginLeft: '1.5rem' }}>
                   <div style={{ marginTop: '17px' }}>
@@ -428,7 +428,7 @@ export default function LoadConversions() {
           {/* Preview Table - Only show when a file is selected */}
           {previewData && previewData.headers.length > 0 && (
             <Card className="border-2" style={{ width: '100%', maxWidth: '900px', backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
-              <CardContent className="p-8">
+              <CardContent style={{ paddingTop: '32px', paddingBottom: '56px', paddingLeft: '56px', paddingRight: '56px' }}>
                 <h3 className="font-semibold text-lg mb-6" style={{ marginLeft: '1.5rem' }}>Table Preview</h3>
                 <div style={{ maxHeight: '500px', overflowY: 'auto', marginLeft: '1.5rem', marginRight: '1.5rem' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>

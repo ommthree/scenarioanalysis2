@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2 } from 'lucide-react'
+import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2, Save } from 'lucide-react'
 
 interface LogEntry {
   timestamp: string
@@ -15,6 +15,7 @@ export default function PerformCalculation() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [runName, setRunName] = useState('')
   const [verbosity, setVerbosity] = useState<'quiet' | 'verbose' | 'debug'>('verbose')
+  const [isSaving, setIsSaving] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Load run definition and previous logs on mount
@@ -284,6 +285,50 @@ export default function PerformCalculation() {
     localStorage.removeItem('calculationLogs')
   }
 
+  const handleSaveRun = async () => {
+    setIsSaving(true)
+    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+
+    try {
+      // Get the current run config
+      const saved = localStorage.getItem('runDefinition')
+      const config = saved ? JSON.parse(saved) : { runName }
+
+      // Use run name from config or fallback to state
+      const actualRunName = config.runName || runName || 'Unnamed Run'
+
+      // Generate timestamp-based unique ID
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+      const uniqueRunName = `${actualRunName}_${timestamp}`
+
+      // Get description from config or use empty string
+      const description = config.description || config.runDescription || ''
+
+      const response = await fetch('http://localhost:3001/api/runs/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          runName: uniqueRunName,
+          runDescription: description,
+          config
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to save run')
+      }
+
+      const result = await response.json()
+      addLog('success', `Run saved successfully as "${uniqueRunName}"`)
+    } catch (err) {
+      addLog('error', `Failed to save run: ${err}`)
+      alert(err instanceof Error ? err.message : 'Failed to save run')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <div style={{
       padding: '48px',
@@ -347,6 +392,28 @@ export default function PerformCalculation() {
                   <option value="debug">Debug</option>
                 </select>
               </div>
+
+              {/* Save Run Button - only show when calculation succeeded */}
+              {runStatus === 'success' && (
+                <Button
+                  onClick={handleSaveRun}
+                  disabled={isSaving}
+                  style={{
+                    backgroundColor: '#8b5cf6',
+                    color: '#fff',
+                    padding: '12px 24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '20px',
+                    opacity: isSaving ? 0.5 : 1,
+                    cursor: isSaving ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <Save style={{ width: '16px', height: '16px' }} />
+                  {isSaving ? 'Saving...' : 'Save Run'}
+                </Button>
+              )}
 
               {!isRunning ? (
                 <Button

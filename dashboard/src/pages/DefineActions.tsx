@@ -833,34 +833,16 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
           </p>
         </div>
 
-        {/* Template Selector - Top Bar */}
+        {/* Template Selector - Tile Selector */}
         <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginBottom: '24px' }}>
           <CardContent style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff', minWidth: '120px' }}>
-                Select Template:
-              </label>
-              <select
-                value={filterTemplate?.template_code || ''}
-                onChange={(e) => handleFilterTemplateSelect(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                  border: '1px solid rgba(59, 130, 246, 0.3)',
-                  borderRadius: '6px',
-                  color: '#fff',
-                  fontSize: '14px'
-                }}
-              >
-                <option value="">No template selected - showing all actions</option>
-                {templates.map(t => (
-                  <option key={t.template_code} value={t.template_code}>{t.template_name}</option>
-                ))}
-              </select>
+            <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>
+                Select Template
+              </h3>
               {filterTemplate && (
                 <div style={{
-                  padding: '8px 16px',
+                  padding: '6px 12px',
                   backgroundColor: 'rgba(59, 130, 246, 0.2)',
                   border: '1px solid rgba(59, 130, 246, 0.4)',
                   borderRadius: '6px',
@@ -871,6 +853,86 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   {getRelevantActions().length} implementable action{getRelevantActions().length !== 1 ? 's' : ''}
                 </div>
               )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              <button
+                onClick={() => handleFilterTemplateSelect('')}
+                style={{
+                  padding: '12px 20px',
+                  backgroundColor: !filterTemplate ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                  border: !filterTemplate ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  minWidth: '200px'
+                }}
+                onMouseEnter={(e) => {
+                  if (filterTemplate) {
+                    e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                    e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (filterTemplate) {
+                    e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                    e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                  }
+                }}
+              >
+                <FileSpreadsheet className="w-5 h-5" style={{ color: !filterTemplate ? '#10b981' : '#94a3b8' }} />
+                <span style={{
+                  color: !filterTemplate ? '#10b981' : '#e2e8f0',
+                  fontSize: '14px',
+                  fontWeight: !filterTemplate ? 600 : 500
+                }}>
+                  All Templates
+                </span>
+              </button>
+              {templates.map(template => {
+                const isSelected = filterTemplate?.template_code === template.template_code
+                return (
+                  <button
+                    key={template.template_code}
+                    onClick={() => handleFilterTemplateSelect(template.template_code)}
+                    style={{
+                      padding: '12px 20px',
+                      backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                      border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      minWidth: '200px'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                        e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                        e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                      }
+                    }}
+                  >
+                    <FileSpreadsheet className="w-5 h-5" style={{ color: isSelected ? '#10b981' : '#94a3b8' }} />
+                    <span style={{
+                      color: isSelected ? '#10b981' : '#e2e8f0',
+                      fontSize: '14px',
+                      fontWeight: isSelected ? 600 : 500
+                    }}>
+                      {template.template_name}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </CardContent>
         </Card>

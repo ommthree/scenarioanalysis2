@@ -5398,6 +5398,441 @@ app.post('/api/calculate', (req, res) => {
 })
 
 /**
+ * ======================
+ * Saved Runs API Endpoints
+ * ======================
+ */
+
+/**
+ * Save current run (snapshot all tables + config)
+ */
+app.post('/api/runs/save', express.json(), (req, res) => {
+  const { dbPath, runName, runDescription, config } = req.body
+
+  console.log('[Save Run] Request received:', { dbPath, runName, runDescription, hasConfig: !!config })
+
+  if (!dbPath || !runName || !config) {
+    console.error('[Save Run] Missing required fields')
+    return res.status(400).json({ error: 'Missing required fields: dbPath, runName, config' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+
+    // Capture snapshot of all relevant tables
+    const snapshot = {}
+
+    db.serialize(() => {
+      // Get staged_file with csv_content
+      db.all('SELECT * FROM staged_file', (err, rows) => {
+        if (err) {
+          console.error('[Save Run] Failed to query staged_file:', err.message)
+          db.close()
+          return res.status(500).json({ error: 'Failed to query staged_file: ' + err.message })
+        }
+        snapshot.staged_file = rows
+
+        // Get scenario
+        db.all('SELECT * FROM scenario', (err, rows) => {
+          if (err) {
+            db.close()
+            return res.status(500).json({ error: 'Failed to query scenario: ' + err.message })
+          }
+          snapshot.scenario = rows
+
+          // Get scenario_drivers
+          db.all('SELECT * FROM scenario_drivers', (err, rows) => {
+            if (err) {
+              db.close()
+              return res.status(500).json({ error: 'Failed to query scenario_drivers: ' + err.message })
+            }
+            snapshot.scenario_drivers = rows
+
+            // Get statement_result
+            db.all('SELECT * FROM statement_result', (err, rows) => {
+              if (err) {
+                db.close()
+                return res.status(500).json({ error: 'Failed to query statement_result: ' + err.message })
+              }
+              snapshot.statement_result = rows
+
+              // Get pl_result
+              db.all('SELECT * FROM pl_result', (err, rows) => {
+                if (err) {
+                  db.close()
+                  return res.status(500).json({ error: 'Failed to query pl_result: ' + err.message })
+                }
+                snapshot.pl_result = rows
+
+                // Get bs_result
+                db.all('SELECT * FROM bs_result', (err, rows) => {
+                  if (err) {
+                    db.close()
+                    return res.status(500).json({ error: 'Failed to query bs_result: ' + err.message })
+                  }
+                  snapshot.bs_result = rows
+
+                  // Get cf_result
+                  db.all('SELECT * FROM cf_result', (err, rows) => {
+                    if (err) {
+                      db.close()
+                      return res.status(500).json({ error: 'Failed to query cf_result: ' + err.message })
+                    }
+                    snapshot.cf_result = rows
+
+                    // Get carbon_result
+                    db.all('SELECT * FROM carbon_result', (err, rows) => {
+                      if (err) {
+                        db.close()
+                        return res.status(500).json({ error: 'Failed to query carbon_result: ' + err.message })
+                      }
+                      snapshot.carbon_result = rows
+
+                      // Get statement_mapping
+                      db.all('SELECT * FROM statement_mapping', (err, rows) => {
+                        if (err) {
+                          db.close()
+                          return res.status(500).json({ error: 'Failed to query statement_mapping: ' + err.message })
+                        }
+                        snapshot.statement_mapping = rows
+
+                      // Save to saved_runs table
+                      const stmt = db.prepare(`
+                        INSERT INTO saved_runs (run_name, run_description, config_data, snapshot_data)
+                        VALUES (?, ?, ?, ?)
+                      `)
+
+                      stmt.run(
+                        runName,
+                        runDescription || '',
+                        JSON.stringify(config),
+                        JSON.stringify(snapshot),
+                        function (err) {
+                          if (err) {
+                            console.error('[Save Run] Database insert error:', err.message)
+                            db.close()
+                            return res.status(500).json({ error: 'Failed to save run: ' + err.message })
+                          }
+
+                          console.log('[Save Run] Successfully saved run with ID:', this.lastID)
+                          db.close()
+                          res.json({ success: true, runId: this.lastID, message: 'Run saved successfully' })
+                        }
+                      )
+                      stmt.finalize()
+                      })
+                    })
+                  })
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
+/**
+ * List all saved runs
+ */
+app.get('/api/runs/list', (req, res) => {
+  const dbPath = req.query.dbPath
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Missing dbPath parameter' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+
+    db.all(
+      'SELECT run_id, run_name, run_description, saved_at, config_data FROM saved_runs ORDER BY saved_at DESC',
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to list runs: ' + err.message })
+        }
+
+        // Parse config_data for each row
+        const runs = rows.map(row => ({
+          run_id: row.run_id,
+          run_name: row.run_name,
+          run_description: row.run_description,
+          saved_at: row.saved_at,
+          config: JSON.parse(row.config_data)
+        }))
+
+        res.json({ success: true, runs })
+      }
+    )
+  })
+})
+
+/**
+ * Restore a saved run
+ */
+app.post('/api/runs/restore', express.json(), (req, res) => {
+  const { dbPath, runId } = req.body
+
+  if (!dbPath || !runId) {
+    return res.status(400).json({ error: 'Missing required fields: dbPath, runId' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+
+    // Get the saved run
+    db.get('SELECT snapshot_data, config_data FROM saved_runs WHERE run_id = ?', [runId], (err, row) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to retrieve run: ' + err.message })
+      }
+
+      if (!row) {
+        db.close()
+        return res.status(404).json({ error: 'Run not found' })
+      }
+
+      const snapshot = JSON.parse(row.snapshot_data)
+      const config = JSON.parse(row.config_data)
+
+      db.serialize(() => {
+        // Wrap entire restore in a transaction for atomicity
+        db.run('BEGIN TRANSACTION', (err) => {
+          if (err) {
+            console.error('Failed to begin transaction:', err)
+            db.close()
+            return res.status(500).json({ error: 'Failed to begin transaction: ' + err.message })
+          }
+        })
+
+        // Clear only OUTPUT data - preserve templates and definitions
+        console.log('[Restore Run] Clearing output data...')
+        db.run('DELETE FROM statement_result')
+        db.run('DELETE FROM pl_result')
+        db.run('DELETE FROM bs_result')
+        db.run('DELETE FROM cf_result')
+        db.run('DELETE FROM carbon_result')
+
+        // Clear INPUT data for this specific run
+        db.run('DELETE FROM staged_file')
+        db.run('DELETE FROM scenario')
+        db.run('DELETE FROM scenario_drivers')
+
+        // DO NOT delete: entity, statement_template, line_item_template, formula, validation_rule, etc.
+        console.log('[Restore Run] Cleared transient data, preserving schema definitions')
+
+        // Restore staged_file
+        if (snapshot.staged_file && snapshot.staged_file.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO staged_file (file_id, file_name, file_type, row_count, uploaded_at, is_valid, csv_content)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.staged_file.forEach(row => {
+            stmt.run(row.file_id, row.file_name, row.file_type, row.row_count, row.uploaded_at, row.is_valid, row.csv_content)
+          })
+          stmt.finalize()
+        }
+
+        // Restore scenario with ALL required fields
+        if (snapshot.scenario && snapshot.scenario.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO scenario (
+              scenario_id, code, name, description, parent_scenario_id,
+              json_drivers, statement_template_id, tax_strategy_id,
+              base_currency, enable_lineage_tracking, created_at, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.scenario.forEach(row => {
+            stmt.run(
+              row.scenario_id,
+              row.code,
+              row.name || row.code,  // Use code as fallback for name
+              row.description,
+              row.parent_scenario_id,
+              row.json_drivers || '[]',
+              row.statement_template_id,
+              row.tax_strategy_id || 1,
+              row.base_currency || 'USD',
+              row.enable_lineage_tracking !== undefined ? row.enable_lineage_tracking : 1,
+              row.created_at,
+              row.created_by
+            )
+          })
+          stmt.finalize()
+        }
+
+        // Restore scenario_drivers with current schema
+        if (snapshot.scenario_drivers && snapshot.scenario_drivers.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO scenario_drivers (
+              entity_id, scenario_id, period_id, driver_code, value, unit_code, is_populated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.scenario_drivers.forEach(row => {
+            stmt.run(
+              row.entity_id || '97',  // Use saved entity_id or default
+              row.scenario_id,
+              row.period_id,
+              row.driver_code,
+              row.value,
+              row.unit_code || row.unit || 'CHF',  // Handle old 'unit' field name
+              row.is_populated !== undefined ? row.is_populated : 1
+            )
+          })
+          stmt.finalize()
+        }
+
+        // Restore statement_result
+        if (snapshot.statement_result && snapshot.statement_result.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO statement_result (scenario_id, period_id, entity_id, line_item_code, value, is_populated)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.statement_result.forEach(row => {
+            stmt.run(
+              row.scenario_id,
+              row.period_id,
+              row.entity_id,
+              row.line_item_code,
+              row.value,
+              row.is_populated !== undefined ? row.is_populated : 1
+            )
+          })
+          stmt.finalize()
+        }
+
+        // Restore pl_result
+        if (snapshot.pl_result && snapshot.pl_result.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO pl_result (scenario_id, period_id, entity_id, line_item_code, value, is_populated)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.pl_result.forEach(row => {
+            stmt.run(row.scenario_id, row.period_id, row.entity_id, row.line_item_code, row.value, row.is_populated !== undefined ? row.is_populated : 1)
+          })
+          stmt.finalize()
+        }
+
+        // Restore bs_result
+        if (snapshot.bs_result && snapshot.bs_result.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO bs_result (scenario_id, period_id, entity_id, line_item_code, value, is_populated)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.bs_result.forEach(row => {
+            stmt.run(row.scenario_id, row.period_id, row.entity_id, row.line_item_code, row.value, row.is_populated !== undefined ? row.is_populated : 1)
+          })
+          stmt.finalize()
+        }
+
+        // Restore cf_result
+        if (snapshot.cf_result && snapshot.cf_result.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO cf_result (scenario_id, period_id, entity_id, line_item_code, value, is_populated)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.cf_result.forEach(row => {
+            stmt.run(row.scenario_id, row.period_id, row.entity_id, row.line_item_code, row.value, row.is_populated !== undefined ? row.is_populated : 1)
+          })
+          stmt.finalize()
+        }
+
+        // Restore carbon_result
+        if (snapshot.carbon_result && snapshot.carbon_result.length > 0) {
+          const stmt = db.prepare(`
+            INSERT INTO carbon_result (scenario_id, period_id, entity_id, line_item_code, value, is_populated)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.carbon_result.forEach(row => {
+            stmt.run(row.scenario_id, row.period_id, row.entity_id, row.line_item_code, row.value, row.is_populated !== undefined ? row.is_populated : 1)
+          })
+          stmt.finalize()
+        }
+
+        // Restore statement_mapping
+        if (snapshot.statement_mapping && snapshot.statement_mapping.length > 0) {
+          // First clear existing mappings
+          db.run('DELETE FROM statement_mapping')
+
+          const stmt = db.prepare(`
+            INSERT INTO statement_mapping (mapping_id, template_code, statement_type, company_id, column_mapping, csv_file_name, created_at, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          snapshot.statement_mapping.forEach(row => {
+            stmt.run(
+              row.mapping_id,
+              row.template_code,
+              row.statement_type,
+              row.company_id,
+              row.column_mapping,
+              row.csv_file_name,
+              row.created_at,
+              row.last_updated
+            )
+          })
+          stmt.finalize()
+        }
+
+        // Commit the transaction
+        db.run('COMMIT', (err) => {
+          if (err) {
+            console.error('Failed to commit transaction:', err)
+            db.run('ROLLBACK')
+            db.close()
+            return res.status(500).json({ error: 'Failed to restore run: ' + err.message })
+          }
+
+          console.log('[Restore Run] Transaction committed successfully')
+          db.close()
+          res.json({ success: true, config, message: 'Run restored successfully' })
+        })
+      })
+    })
+  })
+})
+
+/**
+ * Delete a saved run
+ */
+app.delete('/api/runs/:runId', (req, res) => {
+  const dbPath = req.query.dbPath
+  const runId = req.params.runId
+
+  if (!dbPath || !runId) {
+    return res.status(400).json({ error: 'Missing dbPath or runId' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+
+    db.run('DELETE FROM saved_runs WHERE run_id = ?', [runId], function (err) {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to delete run: ' + err.message })
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Run not found' })
+      }
+
+      res.json({ success: true, message: 'Run deleted successfully' })
+    })
+  })
+})
+
+/**
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {
@@ -5408,3 +5843,119 @@ const PORT = 3001
 app.listen(PORT, () => {
   console.log(`Dashboard API server running on http://localhost:${PORT}`)
 })
+
+/**
+ * ======================
+ * Database Backup/Restore API Endpoints
+ * ======================
+ */
+
+/**
+ * Create database backup
+ */
+app.post('/api/database/backup', express.json(), (req, res) => {
+  const { dbPath } = req.body
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Missing dbPath parameter' })
+  }
+
+  const backupDir = path.join(path.dirname(dbPath), 'backups')
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+  const backupPath = path.join(backupDir, `finmodel_backup_${timestamp}.db`)
+
+  try {
+    // Create backups directory if it doesn't exist
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true })
+    }
+
+    // Copy database file
+    fs.copyFileSync(dbPath, backupPath)
+
+    console.log(`[Backup] Created backup: ${backupPath}`)
+    res.json({ 
+      success: true, 
+      backupPath,
+      timestamp,
+      message: 'Backup created successfully' 
+    })
+  } catch (err) {
+    console.error('[Backup] Error:', err.message)
+    res.status(500).json({ error: 'Failed to create backup: ' + err.message })
+  }
+})
+
+/**
+ * List available backups
+ */
+app.get('/api/database/backups', (req, res) => {
+  const dbPath = req.query.dbPath
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Missing dbPath parameter' })
+  }
+
+  const backupDir = path.join(path.dirname(dbPath), 'backups')
+
+  try {
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ success: true, backups: [] })
+    }
+
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.endsWith('.db'))
+      .map(f => {
+        const fullPath = path.join(backupDir, f)
+        const stats = fs.statSync(fullPath)
+        return {
+          filename: f,
+          path: fullPath,
+          size: stats.size,
+          created: stats.mtime.toISOString()
+        }
+      })
+      .sort((a, b) => new Date(b.created) - new Date(a.created))
+
+    res.json({ success: true, backups: files })
+  } catch (err) {
+    console.error('[Backups List] Error:', err.message)
+    res.status(500).json({ error: 'Failed to list backups: ' + err.message })
+  }
+})
+
+/**
+ * Restore database from backup
+ */
+app.post('/api/database/restore', express.json(), (req, res) => {
+  const { dbPath, backupPath } = req.body
+
+  if (!dbPath || !backupPath) {
+    return res.status(400).json({ error: 'Missing dbPath or backupPath parameter' })
+  }
+
+  try {
+    // Verify backup exists
+    if (!fs.existsSync(backupPath)) {
+      return res.status(404).json({ error: 'Backup file not found' })
+    }
+
+    // Create a safety backup of current state before restoring
+    const safetyBackupPath = dbPath + '.before_restore'
+    fs.copyFileSync(dbPath, safetyBackupPath)
+
+    // Restore from backup
+    fs.copyFileSync(backupPath, dbPath)
+
+    console.log(`[Restore] Restored from backup: ${backupPath}`)
+    res.json({ 
+      success: true, 
+      message: 'Database restored successfully',
+      safetyBackupPath
+    })
+  } catch (err) {
+    console.error('[Restore] Error:', err.message)
+    res.status(500).json({ error: 'Failed to restore backup: ' + err.message })
+  }
+})
+

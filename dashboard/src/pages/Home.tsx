@@ -66,15 +66,12 @@ export default function Home() {
         margin: '0 auto'
       }}>
         <p style={{
-          fontSize: '20px',
+          fontSize: '18px',
           color: '#94a3b8',
           marginBottom: '32px',
           lineHeight: '1.6'
         }}>
-          Daedalus is the next-generation financial modeling platform that empowers organizations
-          to navigate uncertainty with confidence. Built on a powerful scenario engine, our platform
-          enables you to model complex financial statements, test multiple scenarios, and understand
-          the ripple effects of every decision.
+          Next-generation financial modeling platform for navigating uncertainty with confidence. Model complex statements, test scenarios, and understand decision impacts.
         </p>
 
         <div style={{
@@ -92,7 +89,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -104,8 +101,7 @@ export default function Home() {
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Define your financial statements with hierarchical line items and formulas.
-              Our intelligent engine automatically handles dependencies and calculates cascading effects.
+              Define financial statements with formulas that automatically handle dependencies and cascading effects.
             </p>
           </div>
 
@@ -117,7 +113,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -129,8 +125,7 @@ export default function Home() {
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Model unlimited scenarios with different driver assumptions. Compare outcomes
-              side-by-side and understand the full range of possible futures.
+              Model unlimited scenarios with different assumptions and compare outcomes side-by-side.
             </p>
           </div>
 
@@ -142,20 +137,19 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              🌍 Physical Risk Integration
+              🌍 Physical Risk
             </h3>
             <p style={{
               fontSize: '14px',
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Incorporate climate and physical risk factors into your models. Map hazards,
-              locations, and damage curves to understand real-world exposures.
+              Incorporate climate risk factors by mapping hazards, locations, and damage curves.
             </p>
           </div>
 
@@ -167,20 +161,19 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              ⚡ Intelligent Validation
+              ⚡ Smart Validation
             </h3>
             <p style={{
               fontSize: '14px',
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Built-in validation rules catch errors before they propagate. Define constraints
-              and business rules that ensure your models stay consistent.
+              Built-in validation rules catch errors and ensure models stay consistent.
             </p>
           </div>
 
@@ -192,20 +185,19 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              🔄 Management Actions
+              🔄 Conditional Actions
             </h3>
             <p style={{
               fontSize: '14px',
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Model strategic interventions that trigger based on specific conditions.
-              See how proactive decisions can change your financial trajectory.
+              Model strategic interventions that trigger automatically based on conditions or time.
             </p>
           </div>
 
@@ -217,20 +209,91 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '20px',
+              fontSize: '18px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              📊 Powerful Visualization
+              📊 Visualization
             </h3>
             <p style={{
               fontSize: '14px',
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Interactive charts and dashboards bring your data to life. Explore results
-              across scenarios, time periods, and entities with intuitive visual tools.
+              Explore results across scenarios, time periods, and entities with interactive charts.
+            </p>
+          </div>
+
+          {/* Feature 7 */}
+          <div style={{
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '12px',
+            padding: '24px'
+          }}>
+            <h3 style={{
+              fontSize: '18px',
+              fontWeight: '600',
+              color: '#3b82f6',
+              marginBottom: '12px'
+            }}>
+              🎲 Monte Carlo Analysis
+            </h3>
+            <p style={{
+              fontSize: '14px',
+              color: '#cbd5e1',
+              lineHeight: '1.6'
+            }}>
+              Run thousands of simulations with probabilistic inputs to understand outcome distributions.
+            </p>
+          </div>
+
+          {/* Feature 8 */}
+          <div style={{
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '12px',
+            padding: '24px'
+          }}>
+            <h3 style={{
+              fontSize: '18px',
+              fontWeight: '600',
+              color: '#3b82f6',
+              marginBottom: '12px'
+            }}>
+              🔄 Transition Planning
+            </h3>
+            <p style={{
+              fontSize: '14px',
+              color: '#cbd5e1',
+              lineHeight: '1.6'
+            }}>
+              Model abatement pathways with marginal cost curves to plan net-zero transitions.
+            </p>
+          </div>
+
+          {/* Feature 9 */}
+          <div style={{
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: '12px',
+            padding: '24px'
+          }}>
+            <h3 style={{
+              fontSize: '18px',
+              fontWeight: '600',
+              color: '#3b82f6',
+              marginBottom: '12px'
+            }}>
+              ⏱️ Timed Actions
+            </h3>
+            <p style={{
+              fontSize: '14px',
+              color: '#cbd5e1',
+              lineHeight: '1.6'
+            }}>
+              Schedule interventions at specific periods or trigger them based on business rules.
             </p>
           </div>
         </div>

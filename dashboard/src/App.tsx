@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 import Database from './pages/Database'
+import SavedCalcs from './pages/SavedCalcs'
 import LoadStatements from './pages/LoadStatements'
 import LoadScenarios from './pages/LoadScenarios'
 import LoadLocations from './pages/LoadLocations'
@@ -48,7 +49,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/data/database" element={<Database />} />
-          <Route path="/data/stored-calcs" element={<Dashboard />} />
+          <Route path="/data/stored-calcs" element={<SavedCalcs />} />
           <Route path="/inputs/statements" element={<LoadStatements />} />
           <Route path="/inputs/map-statements" element={<MapStatements />} />
           <Route path="/inputs/scenarios" element={<LoadScenarios />} />
