@@ -5180,6 +5180,44 @@ app.post('/api/ingest/scenarios', async (req, res) => {
     }
   }
 
+  // Clean up all scenarios and results before starting ingestion
+  const cleanupDatabase = () => {
+    return new Promise((resolve, reject) => {
+      logVerbose('Cleaning up old scenarios and results...')
+      db.serialize(() => {
+        db.run('DELETE FROM scenario', (err) => {
+          if (err) console.error('Failed to clear scenario:', err)
+        })
+        db.run('DELETE FROM scenario_drivers', (err) => {
+          if (err) console.error('Failed to clear scenario_drivers:', err)
+        })
+        db.run('DELETE FROM statement_result', (err) => {
+          if (err) console.error('Failed to clear statement_result:', err)
+        })
+        db.run('DELETE FROM statement_result_by_driver', (err) => {
+          if (err) console.error('Failed to clear statement_result_by_driver:', err)
+        })
+        db.run('DELETE FROM pl_result', (err) => {
+          if (err) console.error('Failed to clear pl_result:', err)
+        })
+        db.run('DELETE FROM bs_result', (err) => {
+          if (err) console.error('Failed to clear bs_result:', err)
+        })
+        db.run('DELETE FROM cf_result', (err) => {
+          if (err) console.error('Failed to clear cf_result:', err)
+        })
+        db.run('DELETE FROM carbon_result', (err) => {
+          if (err) {
+            console.error('Failed to clear carbon_result:', err)
+            return reject(err)
+          }
+          logVerbose('Cleanup complete')
+          resolve()
+        })
+      })
+    })
+  }
+
   const ingestScenarios = () => {
     return new Promise((resolve, reject) => {
       logVerbose('Querying database tables: scenario_mapping JOIN staged_file')
@@ -5384,6 +5422,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
   }
 
   try {
+    await cleanupDatabase()
     const result = await ingestScenarios()
     res.json({ success: true, ...result, logs })
   } catch (error) {
@@ -5398,7 +5437,11 @@ app.post('/api/ingest/scenarios', async (req, res) => {
  * Get available periods from scenario_drivers
  * GET /api/results/periods?dbPath=...
  */
-app.get('/api/results/periods', (req, res) => {
+/**
+ * Get list of scenarios with their metadata
+ * GET /api/results/scenarios?dbPath=...
+ */
+app.get('/api/results/scenarios', (req, res) => {
   const { dbPath } = req.query
 
   if (!dbPath) {
@@ -5412,9 +5455,51 @@ app.get('/api/results/periods', (req, res) => {
   })
 
   db.all(
-    `SELECT DISTINCT period_id FROM statement_result ORDER BY period_id`,
+    `SELECT
+      s.scenario_id,
+      s.code,
+      s.name,
+      COUNT(DISTINCT sr.period_id) as num_periods
+    FROM scenario s
+    LEFT JOIN statement_result sr ON s.scenario_id = sr.scenario_id
+    GROUP BY s.scenario_id
+    ORDER BY s.scenario_id`,
     [],
     (err, rows) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: err.message })
+      }
+
+      db.close()
+      res.json({ success: true, scenarios: rows })
+    }
+  )
+})
+
+app.get('/api/results/periods', (req, res) => {
+  const { dbPath, scenarioId } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Database path is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  let query, params
+  if (scenarioId) {
+    query = `SELECT DISTINCT period_id FROM statement_result WHERE scenario_id = ? ORDER BY period_id`
+    params = [scenarioId]
+  } else {
+    query = `SELECT DISTINCT period_id FROM statement_result ORDER BY period_id`
+    params = []
+  }
+
+  db.all(query, params, (err, rows) => {
       if (err) {
         db.close()
         return res.status(500).json({ error: err.message })
@@ -5429,10 +5514,10 @@ app.get('/api/results/periods', (req, res) => {
 
 /**
  * Get financial statement results for a specific period and entity
- * GET /api/results/statement?dbPath=...&period=1&entityId=...
+ * GET /api/results/statement?dbPath=...&period=1&entityId=...&scenarioId=...
  */
 app.get('/api/results/statement', (req, res) => {
-  const { dbPath, period, entityId } = req.query
+  const { dbPath, period, entityId, scenarioId } = req.query
 
   if (!dbPath || !period) {
     return res.status(400).json({ error: 'Database path and period are required' })
@@ -5475,26 +5560,44 @@ app.get('/api/results/statement', (req, res) => {
           display_name: item.display_name,
           section: item.section || 'Other',
           is_computed: item.formula ? true : false,
-          display_order: item.display_order || 999
+          display_order: item.display_order || 999,
+          sign_convention: item.sign_convention || 'positive'
         })
       })
 
-      // Now query statement_result for calculated values (only for latest scenario)
+      // Now query statement_result for calculated values
       // If entityId is provided, filter by that entity; otherwise get latest entity
       let query, params
-      if (entityId) {
-        query = `SELECT line_item_code, value FROM statement_result
-                 WHERE period_id = ? AND entity_id = ?
-                 AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
-                 LIMIT 100`
-        params = [period, entityId]
+      if (scenarioId) {
+        // Use specific scenario
+        if (entityId) {
+          query = `SELECT line_item_code, value FROM statement_result
+                   WHERE period_id = ? AND entity_id = ? AND scenario_id = ?
+                   LIMIT 100`
+          params = [period, entityId, scenarioId]
+        } else {
+          query = `SELECT line_item_code, value FROM statement_result
+                   WHERE period_id = ? AND scenario_id = ?
+                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ? AND scenario_id = ?)
+                   LIMIT 100`
+          params = [period, scenarioId, period, scenarioId]
+        }
       } else {
-        query = `SELECT line_item_code, value FROM statement_result
-                 WHERE period_id = ?
-                 AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
-                 AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ?)
-                 LIMIT 100`
-        params = [period, period]
+        // Default to latest scenario
+        if (entityId) {
+          query = `SELECT line_item_code, value FROM statement_result
+                   WHERE period_id = ? AND entity_id = ?
+                   AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
+                   LIMIT 100`
+          params = [period, entityId]
+        } else {
+          query = `SELECT line_item_code, value FROM statement_result
+                   WHERE period_id = ?
+                   AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
+                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ?)
+                   LIMIT 100`
+          params = [period, period]
+        }
       }
 
       db.all(query, params, (err, rows) => {
@@ -5515,16 +5618,22 @@ app.get('/api/results/statement', (req, res) => {
               display_name: row.line_item_code,
               section: 'Other',
               is_computed: false,
-              display_order: 999
+              display_order: 999,
+              sign_convention: 'positive'
             }
             return {
               code: row.line_item_code,
               display_name: metadata.display_name,
               section: metadata.section,
               is_computed: metadata.is_computed,
+              sign_convention: metadata.sign_convention,
               value: row.value
             }
           })
+
+          // Debug: Log line items with sign convention
+          console.log('[Statement Results] Line items with sign_convention:',
+            lineItems.map(li => ({ code: li.code, sign_convention: li.sign_convention })))
 
           // Sort by section and display_order
           lineItems.sort((a, b) => {
@@ -5583,7 +5692,7 @@ app.get('/api/results/entities', (req, res) => {
  * GET /api/results/driver-decomposition?dbPath=...&period=1&entityId=...&lineItemCode=...
  */
 app.get('/api/results/driver-decomposition', (req, res) => {
-  const { dbPath, period, entityId, lineItemCode } = req.query
+  const { dbPath, period, entityId, lineItemCode, scenarioId } = req.query
 
   if (!dbPath || !period || !entityId || !lineItemCode) {
     return res.status(400).json({ error: 'Database path, period, entityId, and lineItemCode are required' })
@@ -5595,22 +5704,32 @@ app.get('/api/results/driver-decomposition', (req, res) => {
     }
   })
 
-  db.all(
-    `SELECT driver_code, value
-     FROM statement_result_by_driver
-     WHERE period_id = ? AND entity_id = ? AND line_item_code = ?
-     ORDER BY driver_code`,
-    [period, entityId, lineItemCode],
-    (err, rows) => {
-      db.close()
+  let query, params
+  if (scenarioId) {
+    query = `SELECT driver_code, value
+             FROM statement_result_by_driver
+             WHERE period_id = ? AND entity_id = ? AND line_item_code = ? AND scenario_id = ?
+             ORDER BY driver_code`
+    params = [period, entityId, lineItemCode, scenarioId]
+  } else {
+    // Default to latest scenario for backward compatibility
+    query = `SELECT driver_code, value
+             FROM statement_result_by_driver
+             WHERE period_id = ? AND entity_id = ? AND line_item_code = ?
+             AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result_by_driver)
+             ORDER BY driver_code`
+    params = [period, entityId, lineItemCode]
+  }
 
-      if (err) {
-        return res.status(500).json({ error: err.message })
-      }
+  db.all(query, params, (err, rows) => {
+    db.close()
 
-      res.json({ success: true, drivers: rows || [] })
+    if (err) {
+      return res.status(500).json({ error: err.message })
     }
-  )
+
+    res.json({ success: true, drivers: rows || [] })
+  })
 })
 
 /**
@@ -5623,38 +5742,10 @@ app.post('/api/calculate', (req, res) => {
     return res.status(400).json({ error: 'dbPath is required' })
   }
 
-  // First, clean up old calculation results (keep input data: scenario_drivers, staged_files, statement_template)
-  const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database for cleanup' })
-    }
+  // Run the calculation directly (cleanup happens at the start of ingestion now)
+  const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
 
-    db.serialize(() => {
-      // Delete only OUTPUT tables from calculations
-      db.run('DELETE FROM statement_result', (err) => {
-        if (err) console.error('Failed to clear statement_result:', err)
-      })
-      db.run('DELETE FROM statement_result_by_driver', (err) => {
-        if (err) console.error('Failed to clear statement_result_by_driver:', err)
-      })
-      db.run('DELETE FROM pl_result', (err) => {
-        if (err) console.error('Failed to clear pl_result:', err)
-      })
-      db.run('DELETE FROM bs_result', (err) => {
-        if (err) console.error('Failed to clear bs_result:', err)
-      })
-      db.run('DELETE FROM cf_result', (err) => {
-        if (err) console.error('Failed to clear cf_result:', err)
-      })
-      db.run('DELETE FROM carbon_result', (err) => {
-        if (err) console.error('Failed to clear carbon_result:', err)
-      })
-
-      db.close(() => {
-        // Now run the calculation
-        const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
-
-        exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+  exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
     if (error) {
       console.error('Calculation error:', error)
       return res.json({
@@ -5686,9 +5777,6 @@ app.post('/api/calculate', (req, res) => {
         success: true,
         output: stdout,
         errors: stderr
-      })
-    })
-        })
       })
     })
   })

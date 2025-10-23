@@ -249,43 +249,46 @@ export default function MapStatements() {
     }
   }
 
-  const restoreSavedMappings = async () => {
+  const restoreSavedMappings = async (targetStatementType?: 'pnl' | 'bs' | 'cf' | 'carbon') => {
     if (!selectedCompany || templates.length === 0) return
 
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
-      // First, reset template selections and mappings (but preserve csvData)
-      setStatementMappings(prev => ({
-        pnl: {
-          ...prev.pnl,
-          selectedTemplate: null,
-          hierarchicalMappings: [],
-          expandedNodes: new Set()
-        },
-        bs: {
-          ...prev.bs,
-          selectedTemplate: null,
-          hierarchicalMappings: [],
-          expandedNodes: new Set()
-        },
-        cf: {
-          ...prev.cf,
-          selectedTemplate: null,
-          hierarchicalMappings: [],
-          expandedNodes: new Set()
-        },
-        carbon: {
-          ...prev.carbon,
-          selectedTemplate: null,
-          hierarchicalMappings: [],
-          expandedNodes: new Set()
-        }
-      }))
+      // Only reset state when restoring all types (e.g., on company change)
+      // When restoring a specific type (after file selection), don't reset - just update if mapping exists
+      if (!targetStatementType) {
+        setStatementMappings(prev => ({
+          pnl: {
+            ...prev.pnl,
+            selectedTemplate: null,
+            hierarchicalMappings: [],
+            expandedNodes: new Set()
+          },
+          bs: {
+            ...prev.bs,
+            selectedTemplate: null,
+            hierarchicalMappings: [],
+            expandedNodes: new Set()
+          },
+          cf: {
+            ...prev.cf,
+            selectedTemplate: null,
+            hierarchicalMappings: [],
+            expandedNodes: new Set()
+          },
+          carbon: {
+            ...prev.carbon,
+            selectedTemplate: null,
+            hierarchicalMappings: [],
+            expandedNodes: new Set()
+          }
+        }))
+      }
 
       // Restore mappings for each statement type
       // Query for mappings with the exact frontend type (pnl, bs, cf, carbon)
-      const types: Array<'pnl' | 'bs' | 'carbon' | 'cf'> = ['pnl', 'bs', 'cf', 'carbon']
+      const types: Array<'pnl' | 'bs' | 'carbon' | 'cf'> = targetStatementType ? [targetStatementType] : ['pnl', 'bs', 'cf', 'carbon']
       for (const type of types) {
         const response = await fetch(
           `http://localhost:3001/api/statements/get-all-mappings?${new URLSearchParams({
@@ -554,8 +557,8 @@ export default function MapStatements() {
     // Add a small delay to ensure state has updated
     await new Promise(resolve => setTimeout(resolve, 100))
 
-    // Restore saved mappings after CSV loads
-    await restoreSavedMappings()
+    // Restore saved mappings after CSV loads (only for this statement type)
+    await restoreSavedMappings(statementType)
   }
 
   const [draggedRole, setDraggedRole] = useState<'lineItem' | 'value' | 'currency' | null>(null)

@@ -324,9 +324,18 @@ export default function TemplateEditor() {
                         className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                         placeholder="REVENUE - COST_OF_GOODS_SOLD"
                       />
-                      <p className="text-xs text-slate-400 mt-1">
-                        Leave blank to use base_value_source. Use driver: prefix for explicit driver refs.
-                      </p>
+                      <div className="mt-2 p-3 bg-slate-800 border border-slate-600 rounded-md">
+                        <p className="text-xs font-medium text-slate-300 mb-2">Formula Reference Syntax:</p>
+                        <ul className="text-xs text-slate-400 space-y-1">
+                          <li><code className="text-blue-400 bg-slate-700 px-1 py-0.5 rounded">LINE_ITEM</code> - Current period line item value</li>
+                          <li><code className="text-blue-400 bg-slate-700 px-1 py-0.5 rounded">LINE_ITEM[t-1]</code> - Prior period line item value</li>
+                          <li><code className="text-blue-400 bg-slate-700 px-1 py-0.5 rounded">DRIVER:NAME</code> - Scenario driver value from scenario_drivers table</li>
+                          <li><code className="text-blue-400 bg-slate-700 px-1 py-0.5 rounded">BASE:LINE_ITEM</code> - Period 0 (base) historical statement value</li>
+                        </ul>
+                        <p className="text-xs text-slate-400 mt-2">
+                          Example: <code className="text-green-400 bg-slate-700 px-1 py-0.5 rounded">DRIVER:REVENUE_GROWTH * BASE:REVENUE</code>
+                        </p>
+                      </div>
                     </div>
 
                     <div>

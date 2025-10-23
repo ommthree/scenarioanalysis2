@@ -45,6 +45,7 @@
 #include "bs/providers/statement_value_provider.h"
 #include "cf/providers/cf_value_provider.h"
 #include "unified/providers/driver_value_provider.h"
+#include "unified/providers/base_value_provider.h"
 #include "unified/validation_rule_engine.h"
 #include <memory>
 #include <string>
@@ -187,6 +188,15 @@ public:
     void set_prior_period_values(const std::map<std::string, double>& prior_values);
 
     /**
+     * @brief Set base period values for BASE: references
+     * @param base_values Map of line item code → value from period 0 (historical base)
+     *
+     * This allows formulas to reference base period historical values using BASE: syntax.
+     * Used for growth calculations: e.g., REVENUE = DRIVER:REVENUE * BASE:REVENUE
+     */
+    void set_base_period_values(const std::map<std::string, double>& base_values);
+
+    /**
      * @brief Set entity hierarchy for rollup aggregation
      * @param hierarchy EntityHierarchyManager instance
      *
@@ -243,6 +253,7 @@ private:
 
     // Value providers
     std::unique_ptr<DriverValueProvider> driver_provider_;           // Scenario drivers from scenario_drivers table
+    std::unique_ptr<BaseValueProvider> base_provider_;               // Base period (period 0) statement values
     std::unique_ptr<bs::StatementValueProvider> statement_provider_; // All financial statement values (P&L, BS, CF)
 
     // Validation rule engine (data-driven validation)

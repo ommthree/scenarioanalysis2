@@ -8,6 +8,7 @@ interface LineItem {
   display_name: string
   section: string
   is_computed: boolean
+  sign_convention?: string
   value: number
 }
 
@@ -30,7 +31,16 @@ interface Entity {
   children?: Entity[]
 }
 
+interface Scenario {
+  scenario_id: number
+  code: string
+  name: string
+  num_periods: number
+}
+
 export default function ViewResults() {
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [currentScenario, setCurrentScenario] = useState<number | null>(null)
   const [periods, setPeriods] = useState<number[]>([])
   const [currentPeriod, setCurrentPeriod] = useState(1)
   const [entities, setEntities] = useState<Entity[]>([])
@@ -44,11 +54,18 @@ export default function ViewResults() {
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
-  // Load available periods, entities, and initial data
+  // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
-    loadPeriods()
+    loadScenarios()
     loadEntities()
   }, [])
+
+  // Reload periods when scenario changes
+  useEffect(() => {
+    if (currentScenario !== null) {
+      loadPeriods()
+    }
+  }, [currentScenario])
 
   // Load data when period or entity changes
   useEffect(() => {
@@ -57,9 +74,34 @@ export default function ViewResults() {
     }
   }, [currentPeriod, currentEntity, periods])
 
+  const loadScenarios = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/results/scenarios?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+
+      if (data.success && data.scenarios.length > 0) {
+        setScenarios(data.scenarios)
+        // Default to first scenario with multi-period data
+        const multiPeriodScenario = data.scenarios.find((s: Scenario) => s.num_periods > 1)
+        if (multiPeriodScenario) {
+          setCurrentScenario(multiPeriodScenario.scenario_id)
+        } else {
+          setCurrentScenario(data.scenarios[0].scenario_id)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading scenarios:', error)
+    }
+  }
+
   const loadPeriods = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`)
+      let url = `http://localhost:3001/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`
+      if (currentScenario !== null) {
+        url += `&scenarioId=${currentScenario}`
+      }
+
+      const response = await fetch(url)
       const data = await response.json()
 
       if (data.success && data.periods.length > 0) {
@@ -128,9 +170,15 @@ export default function ViewResults() {
       if (entityId !== null) {
         url += `&entityId=${entityId}`
       }
+      if (currentScenario !== null) {
+        url += `&scenarioId=${currentScenario}`
+      }
 
       const response = await fetch(url)
       const data = await response.json()
+
+      // Debug: Log line items to check sign_convention
+      console.log('[ViewResults] Received line items:', data.lineItems?.map((li: LineItem) => ({ code: li.code, sign_convention: li.sign_convention, value: li.value })))
 
       if (data.success) {
         // Group line items by section
@@ -159,7 +207,10 @@ export default function ViewResults() {
           const newDriverData = new Map<string, DriverContribution[]>()
           for (const item of data.lineItems) {
             try {
-              const driverUrl = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`
+              let driverUrl = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`
+              if (currentScenario !== null) {
+                driverUrl += `&scenarioId=${currentScenario}`
+              }
               const driverResponse = await fetch(driverUrl)
               const driverData = await driverResponse.json()
               if (driverData.success) {
@@ -203,7 +254,10 @@ export default function ViewResults() {
     if (!currentEntity) return false
 
     try {
-      const url = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`
+      let url = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`
+      if (currentScenario !== null) {
+        url += `&scenarioId=${currentScenario}`
+      }
       const response = await fetch(url)
       const data = await response.json()
 
@@ -328,6 +382,42 @@ export default function ViewResults() {
           Financial statement results by period
         </p>
       </div>
+
+      {/* Scenario Selector */}
+      {scenarios.length > 0 && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          marginBottom: '16px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                Scenario
+              </label>
+              <select
+                value={currentScenario || ''}
+                onChange={(e) => setCurrentScenario(parseInt(e.target.value))}
+                style={{
+                  backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                {scenarios.map((scenario) => (
+                  <option key={scenario.scenario_id} value={scenario.scenario_id}>
+                    {scenario.name} ({scenario.code}) - {scenario.num_periods} period{scenario.num_periods !== 1 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Period Slider and Entity Selector */}
       {periods.length > 0 && (
@@ -534,13 +624,13 @@ export default function ViewResults() {
                             </div>
                             <span style={{
                               fontSize: '16px',
-                              color: item.value < 0 ? '#ef4444' : '#22c55e',
+                              color: item.sign_convention === 'negative' ? '#ef4444' : '#22c55e',
                               fontWeight: '600',
                               fontFamily: 'monospace',
                               minWidth: '150px',
                               textAlign: 'right'
                             }}>
-                              {item.value < 0 ? '(' : ''}{formatValue(Math.abs(item.value))}{item.value < 0 ? ')' : ''}
+                              {item.sign_convention === 'negative' ? '(' : ''}{formatValue(item.value)}{item.sign_convention === 'negative' ? ')' : ''}
                             </span>
                           </div>
 

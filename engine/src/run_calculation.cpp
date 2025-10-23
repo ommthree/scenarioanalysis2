@@ -163,18 +163,33 @@ int main(int argc, char* argv[]) {
                 if (period_id == 0) {
                     std::cout << "  Opening period: loading base statements for leaf entities" << std::endl;
 
-                    // Load all values from staging balance sheet directly
-                    auto staging_query = db->execute_query(
+                    std::map<std::string, double> staging_values;
+
+                    // Load all values from staging balance sheet
+                    auto bs_query = db->execute_query(
                         "SELECT line_item, value FROM staging_statement_balance_sheet",
                         {}
                     );
-
-                    std::map<std::string, double> staging_values;
-                    while (staging_query->next()) {
-                        std::string line_item_code = staging_query->get_string("line_item");
-                        double value = std::stod(staging_query->get_string("value"));
+                    while (bs_query->next()) {
+                        std::string line_item_code = bs_query->get_string("line_item");
+                        double value = std::stod(bs_query->get_string("value"));
                         staging_values[line_item_code] = value;
                     }
+
+                    // Load all values from staging P&L
+                    auto pnl_query = db->execute_query(
+                        "SELECT line_item, value FROM staging_statement_pnl",
+                        {}
+                    );
+                    int pnl_count = 0;
+                    while (pnl_query->next()) {
+                        std::string line_item_code = pnl_query->get_string("line_item");
+                        double value = std::stod(pnl_query->get_string("value"));
+                        staging_values[line_item_code] = value;
+                        pnl_count++;
+                        std::cout << "    Loaded PNL: " << line_item_code << " = " << value << std::endl;
+                    }
+                    std::cout << "  Loaded " << pnl_count << " P&L items" << std::endl;
 
                     // Populate leaf entities only
                     auto levels = hierarchy->get_levels();

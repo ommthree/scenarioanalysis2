@@ -31,6 +31,7 @@ UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
 
     // Initialize value providers
     driver_provider_ = std::make_unique<DriverValueProvider>(db_, unit_converter);
+    base_provider_ = std::make_unique<BaseValueProvider>(db_, unit_converter);  // Base period (period 0) values with FX conversion
     statement_provider_ = std::make_unique<bs::StatementValueProvider>(db_);
 
     // Initialize validation rule engine
@@ -43,9 +44,10 @@ UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
     // Register providers with evaluator
     // Order matters: try more specific providers first
     // Register providers with evaluator
-    // Order: drivers first for "driver:XXX" syntax, then statement values for "XXX" references
+    // Order: statement values FIRST for "XXX" references, then base for "base:XXX", then drivers for "driver:XXX"
+    providers_.push_back(statement_provider_.get());   // Financial statement values (calculated) - CHECK FIRST
+    providers_.push_back(base_provider_.get());        // Base period values (with base: prefix)
     providers_.push_back(driver_provider_.get());      // Scenario drivers (with driver: prefix)
-    providers_.push_back(statement_provider_.get());   // Financial statement values (calculated)
 }
 
 UnifiedResult UnifiedEngine::calculate(
@@ -69,6 +71,12 @@ UnifiedResult UnifiedEngine::calculate(
 
     // Load driver mappings from template (base_value_source → driver_code)
     driver_provider_->load_template_mappings(template_code);
+
+    // Load base period (period 0) statement values for BASE: references
+    // Only needed for period 1+ since period 0 IS the base period
+    if (period_id > 0) {
+        base_provider_->load_base_values(entity_id, scenario_id, template_code);
+    }
 
     // Populate opening balance sheet values
     populate_opening_values(opening_bs);
@@ -173,9 +181,15 @@ UnifiedResult UnifiedEngine::calculate(
             // Calculate value using formula or provider lookup
             double value = calculate_line_item(code, line_item->formula, line_item->sign_convention, ctx, line_item);
 
-            // Store in result
+            // Apply sign convention when storing (so formulas see correct signs)
+            double signed_value = value;
+            if (line_item->sign_convention == SignConvention::NEGATIVE) {
+                signed_value = -value;
+            }
+
+            // Store in result (with original sign) and current_values (with convention applied)
             result.line_items[code] = value;
-            current_values_[code] = value;
+            current_values_[code] = signed_value;
 
             // Update statement provider so subsequent formulas can reference this
             statement_provider_->set_current_values(current_values_);
@@ -439,6 +453,12 @@ void UnifiedEngine::set_prior_period_values(const std::map<std::string, double>&
     statement_provider_->set_prior_period_values(prior_values);
 }
 
+void UnifiedEngine::set_base_period_values(const std::map<std::string, double>& base_values) {
+    if (base_provider_) {
+        base_provider_->set_base_values(base_values);
+    }
+}
+
 void UnifiedEngine::set_entity_hierarchy(const core::EntityHierarchyManager* hierarchy) {
     hierarchy_ = hierarchy;
 }
@@ -536,6 +556,12 @@ double UnifiedEngine::calculate_single_line_item(
     driver_provider_->load_template_mappings(template_code);
     statement_provider_->set_context(entity_id, scenario_id);
 
+    // Load base period (period 0) statement values for BASE: references
+    // Only needed for period 1+ since period 0 IS the base period
+    if (period_id > 0) {
+        base_provider_->load_base_values(entity_id, scenario_id, template_code);
+    }
+
     // Create context
     int entity_id_int = std::hash<std::string>{}(entity_id);
     core::Context ctx(scenario_id, period_id, entity_id_int);
@@ -552,6 +578,7 @@ double UnifiedEngine::calculate_single_line_item(
 
             // For current period dependencies, check if they exist in current_values_
             if (current_values_.find(dep) == current_values_.end()) {
+                std::cerr << "      ↳ Missing dependency: " << dep << " for " << line_item_code << std::endl;
                 is_populated = false;
                 return 0.0;
             }
@@ -562,8 +589,14 @@ double UnifiedEngine::calculate_single_line_item(
     try {
         double value = calculate_line_item(line_item_code, line_item->formula, line_item->sign_convention, ctx, line_item);
 
-        // Store in current values for subsequent calculations
-        current_values_[line_item_code] = value;
+        // Apply sign convention when storing (so formulas see correct signs)
+        double signed_value = value;
+        if (line_item->sign_convention == SignConvention::NEGATIVE) {
+            signed_value = -value;
+        }
+
+        // Store in current values for subsequent calculations (with sign applied)
+        current_values_[line_item_code] = signed_value;
         statement_provider_->set_current_values(current_values_);
 
         is_populated = true;
@@ -571,6 +604,7 @@ double UnifiedEngine::calculate_single_line_item(
 
     } catch (const std::exception& e) {
         // Calculation failed - mark as unpopulated
+        std::cerr << "      ↳ Exception calculating " << line_item_code << ": " << e.what() << std::endl;
         is_populated = false;
         return 0.0;
     }

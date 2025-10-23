@@ -77,46 +77,11 @@ export default function PerformCalculation() {
     addLog('info', `Starting calculation run: ${runName} (${verbosity} mode)`)
 
     if (verbosity !== 'quiet') {
-      addLog('info', 'Step 1: Ingesting statement data from staged files...')
+      addLog('info', 'Step 1: Ingesting scenario data from staged files...')
     }
 
     try {
-      // Step 1: Ingest statements
-      const stmtResponse = await fetch('http://localhost:3001/api/ingest/statements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath, verbosity })
-      })
-
-      if (!stmtResponse.ok) {
-        const errorText = await stmtResponse.text()
-        throw new Error(`Statement ingestion failed: ${errorText}`)
-      }
-
-      const stmtResult = await stmtResponse.json()
-
-      // Display logs from backend if verbosity is not quiet
-      if (stmtResult.logs && verbosity !== 'quiet') {
-        stmtResult.logs.forEach((log: { level: string, message: string }) => {
-          if (verbosity === 'debug' || (verbosity === 'verbose' && log.level === 'verbose')) {
-            addLog('info', log.message)
-          }
-        })
-      }
-
-      if (stmtResult.success) {
-        if (verbosity === 'quiet') {
-          addLog('success', `Statements ingested: ${stmtResult.inserted} values`)
-        }
-      } else {
-        throw new Error(stmtResult.error || 'Statement ingestion failed')
-      }
-
-      // Step 2: Ingest scenarios
-      if (verbosity !== 'quiet') {
-        addLog('info', 'Step 2: Ingesting scenario data from staged files...')
-      }
-
+      // Step 1: Ingest scenarios (this also cleans up old data)
       const scenResponse = await fetch('http://localhost:3001/api/ingest/scenarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,6 +110,41 @@ export default function PerformCalculation() {
         }
       } else {
         throw new Error(scenResult.error || 'Scenario ingestion failed')
+      }
+
+      // Step 2: Ingest statements (now that scenarios exist)
+      if (verbosity !== 'quiet') {
+        addLog('info', 'Step 2: Ingesting statement data from staged files...')
+      }
+
+      const stmtResponse = await fetch('http://localhost:3001/api/ingest/statements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath, verbosity })
+      })
+
+      if (!stmtResponse.ok) {
+        const errorText = await stmtResponse.text()
+        throw new Error(`Statement ingestion failed: ${errorText}`)
+      }
+
+      const stmtResult = await stmtResponse.json()
+
+      // Display logs from backend if verbosity is not quiet
+      if (stmtResult.logs && verbosity !== 'quiet') {
+        stmtResult.logs.forEach((log: { level: string, message: string }) => {
+          if (verbosity === 'debug' || (verbosity === 'verbose' && log.level === 'verbose')) {
+            addLog('info', log.message)
+          }
+        })
+      }
+
+      if (stmtResult.success) {
+        if (verbosity === 'quiet') {
+          addLog('success', `Statements ingested: ${stmtResult.inserted} values`)
+        }
+      } else {
+        throw new Error(stmtResult.error || 'Statement ingestion failed')
       }
 
       // Step 3: Run calculation engine

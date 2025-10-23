@@ -107,7 +107,7 @@ const DefineFormulas: React.FC = () => {
     setSelectedLineItem(lineItem)
   }
 
-  const handleDragStart = (e: React.DragEvent, type: 'row' | 'prior' | 'driver' | 'operator', value: string) => {
+  const handleDragStart = (e: React.DragEvent, type: 'row' | 'prior' | 'base' | 'driver' | 'operator', value: string) => {
     e.dataTransfer.setData('text/plain', value)
     e.dataTransfer.effectAllowed = 'copy'
   }
@@ -631,6 +631,51 @@ ${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so yo
                             }}
                           >
                             {item.code}[t-1]
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Base Period Rows */}
+                  <Card className="border-2" style={{
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderColor: 'rgba(245, 158, 11, 0.3)'
+                  }}>
+                    <CardContent style={{ padding: '16px' }}>
+                      <h4 style={{
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#f59e0b',
+                        marginBottom: '12px'
+                      }}>
+                        Base Period Rows (Period 0)
+                      </h4>
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        maxHeight: '200px',
+                        overflowY: 'auto'
+                      }}>
+                        {selectedTemplate.line_items.map(item => (
+                          <div
+                            key={item.code}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, 'base', `BASE:${item.code}`)}
+                            onClick={() => addToFormula(`BASE:${item.code}`)}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                              border: '1px solid rgba(245, 158, 11, 0.4)',
+                              borderRadius: '4px',
+                              color: '#f59e0b',
+                              fontSize: '12px',
+                              cursor: 'grab',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            BASE:{item.code}
                           </div>
                         ))}
                       </div>
