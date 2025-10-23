@@ -173,16 +173,13 @@ double DriverValueProvider::get_value(const std::string& key, const core::Contex
 void DriverValueProvider::load_drivers() const {
     driver_cache_.clear();
 
-    // Query drivers for both the specified entity AND global physical risk drivers
-    // Physical risk drivers use entity_id = 'PHYSICAL_RISK' and apply to all entities
+    // Query drivers - drivers are global and apply to all entities
     std::ostringstream query;
     query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
-          << "WHERE (entity_id = :entity_id OR entity_id = 'PHYSICAL_RISK') "
-          << "AND scenario_id = :scenario_id "
+          << "WHERE scenario_id = :scenario_id "
           << "AND period_id = :period_id";
 
     ParamMap params;
-    params["entity_id"] = entity_id_;
     params["scenario_id"] = scenario_id_;
     params["period_id"] = period_id_;
 

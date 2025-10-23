@@ -190,12 +190,12 @@ export default function PerformCalculation() {
         throw new Error(calcResult.error || 'Calculation failed')
       }
 
-      if (verbosity === 'debug' && calcResult.output) {
+      if ((verbosity === 'debug' || verbosity === 'verbose') && calcResult.output) {
         const outputLines = calcResult.output.split('\n').filter((line: string) => line.trim())
         outputLines.forEach((line: string) => addLog('info', line))
       }
 
-      if (verbosity === 'debug') {
+      if (verbosity === 'debug' || verbosity === 'verbose') {
         addLog('success', '✓ Calculation engine completed successfully')
         addLog('info', 'Results stored in database')
       }

@@ -94,11 +94,15 @@ void EntityHierarchyManager::build_hierarchy(const std::vector<EntityNode>& enti
         // Add to depth index
         by_depth_[depth].push_back(current_id);
 
+        // Store children for current entity
+        if (children_map_.find(current_id) != children_map_.end()) {
+            entities_[current_id].children = children_map_[current_id];
+        }
+
         // Enqueue children
         if (children_map_.find(current_id) != children_map_.end()) {
             for (const auto& child_id : children_map_[current_id]) {
                 entities_[child_id].depth = depth + 1;
-                entities_[child_id].children = children_map_[child_id];  // Store children reference
                 queue.push({child_id, depth + 1});
             }
         }

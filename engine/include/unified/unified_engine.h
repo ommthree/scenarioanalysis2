@@ -182,6 +182,29 @@ public:
      */
     void set_entity_hierarchy(const core::EntityHierarchyManager* hierarchy);
 
+    /**
+     * @brief Calculate a single line item for an entity
+     * @param entity_id Entity identifier
+     * @param scenario_id Scenario identifier
+     * @param period_id Period identifier
+     * @param line_item_code Code of the line item to calculate
+     * @param template_code Template code
+     * @param is_populated Output: whether calculation succeeded (true) or missing dependency (false)
+     * @return Calculated value (may be 0.0 if unpopulated)
+     *
+     * This method is used by the hierarchical calculation orchestration.
+     * It attempts to calculate ONE line item, checking dependencies.
+     * If dependencies are unpopulated (is_populated=0), returns false.
+     */
+    double calculate_single_line_item(
+        const EntityID& entity_id,
+        ScenarioID scenario_id,
+        PeriodID period_id,
+        const std::string& line_item_code,
+        const std::string& template_code,
+        bool& is_populated
+    );
+
 private:
     std::shared_ptr<database::IDatabase> db_;
     core::FormulaEvaluator evaluator_;

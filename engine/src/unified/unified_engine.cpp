@@ -440,5 +440,71 @@ std::optional<double> UnifiedEngine::try_rollup_from_children(
     return total;
 }
 
+double UnifiedEngine::calculate_single_line_item(
+    const EntityID& entity_id,
+    ScenarioID scenario_id,
+    PeriodID period_id,
+    const std::string& line_item_code,
+    const std::string& template_code,
+    bool& is_populated
+) {
+    // Load template to get line item definition
+    auto tmpl = core::StatementTemplate::load_from_database(db_.get(), template_code);
+    if (!tmpl) {
+        is_populated = false;
+        return 0.0;
+    }
+
+    auto line_item = tmpl->get_line_item(line_item_code);
+    if (!line_item) {
+        is_populated = false;
+        return 0.0;
+    }
+
+    // Set up providers with correct context
+    driver_provider_->set_context(entity_id, scenario_id, period_id);
+    driver_provider_->load_template_mappings(template_code);
+    statement_provider_->set_context(entity_id, scenario_id);
+
+    // Create context
+    int entity_id_int = std::hash<std::string>{}(entity_id);
+    core::Context ctx(scenario_id, period_id, entity_id_int);
+
+    // Check if all dependencies are populated (in current_values_ map)
+    // Dependencies that are unpopulated will cause this item to be unpopulated
+    if (!line_item->dependencies.empty()) {
+        for (const auto& dep : line_item->dependencies) {
+            // Skip [t-1] dependencies - these are satisfied by prior period values
+            // that were already set on the statement provider
+            if (dep.find("[t-1]") != std::string::npos) {
+                continue;
+            }
+
+            // For current period dependencies, check if they exist in current_values_
+            if (current_values_.find(dep) == current_values_.end()) {
+                is_populated = false;
+                return 0.0;
+            }
+        }
+    }
+
+    // Try to calculate the line item
+    try {
+        double value = calculate_line_item(line_item_code, line_item->formula, line_item->sign_convention, ctx, line_item);
+
+        // Store in current values for subsequent calculations
+        current_values_[line_item_code] = value;
+        statement_provider_->set_current_values(current_values_);
+
+        is_populated = true;
+        return value;
+
+    } catch (const std::exception& e) {
+        // Calculation failed - mark as unpopulated
+        is_populated = false;
+        return 0.0;
+    }
+}
+
 } // namespace unified
 } // namespace finmodel

@@ -1311,10 +1311,10 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           // Force period_id to 0 for balance sheet items since they represent opening balances
           insertSql = `
             INSERT OR REPLACE INTO scenario_drivers
-            (entity_id, scenario_id, period_id, driver_code, value, unit_code, is_populated)
-            VALUES (?, ?, 0, ?, ?, 'CHF', 1)
+            (scenario_id, period_id, driver_code, value, unit_code, is_populated)
+            VALUES (?, 0, ?, ?, 'CHF', 1)
           `
-          insertParams = [targetEntityId, scenarioId, line_item_code, value]
+          insertParams = [scenarioId, line_item_code, value]
         } else {
           // For CF - skip for now
           // TODO: Implement CF storage
@@ -5108,9 +5108,9 @@ app.post('/api/ingest/statements', async (req, res) => {
                   await new Promise((res, rej) => {
                     db.run(
                       `INSERT OR REPLACE INTO scenario_drivers
-                       (entity_id, scenario_id, period_id, driver_code, value, unit_code)
-                       VALUES (?, ?, 0, ?, ?, 'USD')`,
-                      [entityId, scenarioId, hm.line_item_code, value],
+                       (scenario_id, period_id, driver_code, value, unit_code)
+                       VALUES (?, 0, ?, ?, 'USD')`,
+                      [scenarioId, hm.line_item_code, value],
                       (err) => (err ? rej(err) : (totalInserted++, res()))
                     )
                   })
@@ -5182,45 +5182,14 @@ app.post('/api/ingest/scenarios', async (req, res) => {
 
   const ingestScenarios = () => {
     return new Promise((resolve, reject) => {
-      // First, get the entity_id from statement_mapping (use the most recent one with csv_content)
-      logVerbose('Querying statement_mapping table to determine entity_id')
-      db.get(
-        `SELECT sm.column_mapping
-         FROM statement_mapping sm
-         JOIN staged_file sf ON sf.file_name = sm.csv_file_name
-         WHERE sf.csv_content IS NOT NULL
-         ORDER BY sm.mapping_id DESC
-         LIMIT 1`,
+      logVerbose('Querying database tables: scenario_mapping JOIN staged_file')
+      // Get all scenario mappings
+      db.all(
+        `SELECT scm.*, sf.file_name
+         FROM scenario_mapping scm
+         JOIN staged_file sf ON sf.file_id = scm.file_id`,
         [],
-        (stmtErr, stmtMapping) => {
-          if (stmtErr) return reject(stmtErr)
-
-          let entityId = 'TEST_L1' // fallback default
-          if (stmtMapping && stmtMapping.column_mapping) {
-            try {
-              const columnMapping = JSON.parse(stmtMapping.column_mapping)
-              const hierarchicalMappings = columnMapping.hierarchical_mappings || []
-              if (hierarchicalMappings.length > 0 && hierarchicalMappings[0].entity_path) {
-                // Use the first (top/group level) entity from entity_path
-                entityId = hierarchicalMappings[0].entity_path[0]
-                logVerbose(`Using entity_id from most recent statement mapping: ${entityId}`)
-                logDebug('Entity determined from statement_mapping.column_mapping.hierarchical_mappings[0].entity_path[0]')
-              }
-            } catch (parseErr) {
-              logDebug('Failed to parse statement mapping, using fallback entity_id: TEST_L1')
-            }
-          } else {
-            logDebug('No statement mapping found, using fallback entity_id: TEST_L1')
-          }
-
-          logVerbose('Querying database tables: scenario_mapping JOIN staged_file')
-          // Get all scenario mappings
-          db.all(
-            `SELECT scm.*, sf.file_name
-             FROM scenario_mapping scm
-             JOIN staged_file sf ON sf.file_id = scm.file_id`,
-            [],
-            async (err, mappings) => {
+        async (err, mappings) => {
               if (err) return reject(err)
               logVerbose(`Found ${mappings.length} scenario mapping(s)`)
               if (mappings.length === 0) {
@@ -5368,7 +5337,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                     mapped_to_driver_code: varMapping.driver_code
                   })
 
-                  // Insert value for each period
+                  // Insert value for each period (drivers are global, no entity_id)
                   for (let periodIndex = 0; periodIndex < periodColumns.length; periodIndex++) {
                     const periodCol = periodColumns[periodIndex]
                     const value = parseFloat(csvRow[periodCol] || 0)
@@ -5378,7 +5347,6 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                       source_csv_value: csvRow[periodCol],
                       parsed_value: value,
                       insert_to_table: 'scenario_drivers',
-                      entity_id: entityId,
                       scenario_id: scenarioId,
                       period_id: periodIndex + 1,
                       driver_code: varMapping.driver_code,
@@ -5389,9 +5357,9 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                     await new Promise((res, rej) => {
                       db.run(
                         `INSERT OR REPLACE INTO scenario_drivers
-                         (entity_id, scenario_id, period_id, driver_code, value, unit_code)
-                         VALUES (?, ?, ?, ?, ?, ?)`,
-                        [entityId, scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
+                         (scenario_id, period_id, driver_code, value, unit_code)
+                         VALUES (?, ?, ?, ?, ?)`,
+                        [scenarioId, periodIndex + 1, varMapping.driver_code, value, unitCode],
                         (err) => (err ? rej(err) : (driversInserted++, res()))
                       )
                     })
@@ -5412,8 +5380,6 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               }
             }
           )
-        }
-      )
     })
   }
 
