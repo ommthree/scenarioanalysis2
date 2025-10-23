@@ -154,6 +154,29 @@ export default function Database() {
     }
   }
 
+  const handleDeleteBackup = async (backupPath: string, filename: string) => {
+    if (!confirm(`Delete backup "${filename}"? This cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch('http://localhost:3001/api/database/backup', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupPath })
+      })
+      const result = await response.json()
+      if (result.success) {
+        alert('Backup deleted successfully!')
+        loadBackups()
+      } else {
+        alert('Failed to delete backup: ' + result.error)
+      }
+    } catch (err) {
+      alert('Failed to delete backup: ' + err)
+    }
+  }
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleString('en-US', {
@@ -335,24 +358,44 @@ export default function Database() {
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                           <span style={{ fontSize: '13px', color: '#fff', fontWeight: 500 }}>{backup.filename}</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestore(backup.path, backup.filename)}
-                            style={{
-                              padding: '4px 12px',
-                              fontSize: '12px',
-                              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                              color: '#10b981',
-                              borderColor: 'rgba(16, 185, 129, 0.5)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px'
-                            }}
-                          >
-                            <RotateCcw style={{ width: '12px', height: '12px' }} />
-                            Restore
-                          </Button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRestore(backup.path, backup.filename)}
+                              style={{
+                                padding: '4px 12px',
+                                fontSize: '12px',
+                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                color: '#10b981',
+                                borderColor: 'rgba(16, 185, 129, 0.5)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <RotateCcw style={{ width: '12px', height: '12px' }} />
+                              Restore
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteBackup(backup.path, backup.filename)}
+                              style={{
+                                padding: '4px 12px',
+                                fontSize: '12px',
+                                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                                color: '#ef4444',
+                                borderColor: 'rgba(239, 68, 68, 0.5)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <Trash2 style={{ width: '12px', height: '12px' }} />
+                              Delete
+                            </Button>
+                          </div>
                         </div>
                         <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94a3b8' }}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

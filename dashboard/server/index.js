@@ -6147,6 +6147,41 @@ app.post('/api/database/backup', express.json(), (req, res) => {
 })
 
 /**
+ * Delete database backup
+ */
+app.delete('/api/database/backup', express.json(), (req, res) => {
+  const { backupPath } = req.body
+
+  if (!backupPath) {
+    return res.status(400).json({ error: 'Missing backupPath parameter' })
+  }
+
+  try {
+    // Verify the file exists and is in the backups directory
+    if (!fs.existsSync(backupPath)) {
+      return res.status(404).json({ error: 'Backup file not found' })
+    }
+
+    // Safety check: ensure the file is in a backups directory
+    if (!backupPath.includes('/backups/') && !backupPath.includes('\\backups\\')) {
+      return res.status(403).json({ error: 'Can only delete files from backups directory' })
+    }
+
+    // Delete the backup file
+    fs.unlinkSync(backupPath)
+
+    console.log(`[Backup] Deleted backup: ${backupPath}`)
+    res.json({
+      success: true,
+      message: 'Backup deleted successfully'
+    })
+  } catch (err) {
+    console.error('[Backup] Delete error:', err.message)
+    res.status(500).json({ error: 'Failed to delete backup: ' + err.message })
+  }
+})
+
+/**
  * List available backups
  */
 app.get('/api/database/backups', (req, res) => {
