@@ -153,6 +153,24 @@ export default function ViewResults() {
 
         // Expand all sections by default
         setExpandedSections(new Set(sectionsArray.map(s => s.name)))
+
+        // Load driver data for all line items to know which are expandable
+        if (entityId !== null) {
+          const newDriverData = new Map<string, DriverContribution[]>()
+          for (const item of data.lineItems) {
+            try {
+              const driverUrl = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`
+              const driverResponse = await fetch(driverUrl)
+              const driverData = await driverResponse.json()
+              if (driverData.success) {
+                newDriverData.set(item.code, driverData.drivers || [])
+              }
+            } catch (error) {
+              console.error(`Error loading drivers for ${item.code}:`, error)
+            }
+          }
+          setDriverData(newDriverData)
+        }
       }
     } catch (error) {
       console.error('Error loading results:', error)
@@ -182,18 +200,22 @@ export default function ViewResults() {
   }
 
   const loadDriverDecomposition = async (lineItemCode: string) => {
-    if (!currentEntity) return
+    if (!currentEntity) return false
 
     try {
       const url = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`
       const response = await fetch(url)
       const data = await response.json()
 
-      if (data.success && data.drivers.length > 0) {
-        setDriverData(prev => new Map(prev).set(lineItemCode, data.drivers))
+      if (data.success) {
+        // Store the result even if empty, so we know we've checked
+        setDriverData(prev => new Map(prev).set(lineItemCode, data.drivers || []))
+        return data.drivers && data.drivers.length > 0
       }
+      return false
     } catch (error) {
       console.error('Error loading driver decomposition:', error)
+      return false
     }
   }
 
@@ -463,7 +485,9 @@ export default function ViewResults() {
                   <div style={{ paddingLeft: '32px' }}>
                     {section.items.map((item) => {
                       const isExpanded = expandedLineItems.has(item.code)
-                      const drivers = driverData.get(item.code) || []
+                      const drivers = driverData.get(item.code)
+                      const hasDrivers = drivers !== undefined && drivers.length > 0
+                      const hasBeenChecked = driverData.has(item.code)
 
                       return (
                         <div key={item.code}>
@@ -476,17 +500,19 @@ export default function ViewResults() {
                               padding: '12px 16px',
                               borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
                               backgroundColor: item.is_computed ? 'rgba(34, 197, 94, 0.05)' : 'transparent',
-                              cursor: 'pointer'
+                              cursor: hasDrivers || !hasBeenChecked ? 'pointer' : 'default'
                             }}
-                            onClick={() => toggleLineItem(item.code)}
+                            onClick={() => hasDrivers || !hasBeenChecked ? toggleLineItem(item.code) : null}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              {/* Expand/Collapse Icon */}
+                              {/* Expand/Collapse Icon - only show if has drivers or not yet checked */}
                               <div style={{ width: '16px', height: '16px' }}>
-                                {isExpanded ? (
-                                  <ChevronDown style={{ width: '16px', height: '16px', color: '#3b82f6' }} />
-                                ) : (
-                                  <ChevronRight style={{ width: '16px', height: '16px', color: '#64748b' }} />
+                                {(hasDrivers || !hasBeenChecked) && (
+                                  isExpanded ? (
+                                    <ChevronDown style={{ width: '16px', height: '16px', color: '#3b82f6' }} />
+                                  ) : (
+                                    <ChevronRight style={{ width: '16px', height: '16px', color: '#64748b' }} />
+                                  )
                                 )}
                               </div>
 
@@ -519,9 +545,9 @@ export default function ViewResults() {
                           </div>
 
                           {/* Driver Contributions */}
-                          {isExpanded && drivers.length > 0 && (
+                          {isExpanded && hasDrivers && (
                             <div style={{ paddingLeft: '48px', backgroundColor: 'rgba(15, 23, 42, 0.4)' }}>
-                              {drivers.map((driver) => (
+                              {drivers!.map((driver) => (
                                 <div
                                   key={driver.driver_code}
                                   style={{
