@@ -153,6 +153,9 @@ int main(int argc, char* argv[]) {
                 // Storage for results: entity_id → (line_item_code → {value, is_populated})
                 std::map<std::string, std::map<std::string, std::pair<double, bool>>> period_results;
 
+                // Driver decomposition tracking: {entity_id, line_item_code, driver_code, value}
+                std::vector<std::tuple<std::string, std::string, std::string, double>> all_driver_contributions;
+
                 // For period 0 (opening balance):
                 // 1. Load base values from staging for leaf entities only
                 // 2. Roll up to parents via summation
@@ -332,6 +335,14 @@ int main(int argc, char* argv[]) {
                                 // Success! Store result
                                 period_results[entity_id][line_item.code] = {value, true};
 
+                                // Capture driver contributions for this line item
+                                auto driver_contribs = engine.get_last_driver_contributions();
+                                for (const auto& contrib : driver_contribs) {
+                                    all_driver_contributions.push_back(
+                                        std::make_tuple(entity_id, contrib.line_item_code, contrib.driver_code, contrib.value)
+                                    );
+                                }
+
                                 // Roll up to parent immediately after each successful calculation
                                 if (hierarchy) {
                                     auto entity_node = hierarchy->get_entity(entity_id);
@@ -415,6 +426,37 @@ int main(int argc, char* argv[]) {
                 }
 
                 std::cout << "✓ Period " << period_id << " complete: saved " << saved_count << " values" << std::endl;
+
+                // Save driver decomposition data
+                if (!all_driver_contributions.empty()) {
+                    std::cout << "Saving driver decomposition..." << std::endl;
+                    int driver_saved_count = 0;
+
+                    for (const auto& [entity_id, line_item_code, driver_code, value] : all_driver_contributions) {
+                        ParamMap driver_params;
+                        driver_params["entity_id"] = entity_id;
+                        driver_params["scenario_id"] = scenario_id;
+                        driver_params["period_id"] = period_id;
+                        driver_params["line_item_code"] = line_item_code;
+                        driver_params["driver_code"] = driver_code;
+                        driver_params["value"] = value;
+
+                        try {
+                            db->execute_update(
+                                "INSERT OR REPLACE INTO statement_result_by_driver "
+                                "(entity_id, scenario_id, period_id, line_item_code, driver_code, value) "
+                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :driver_code, :value)",
+                                driver_params
+                            );
+                            driver_saved_count++;
+                        } catch (const std::exception& e) {
+                            std::cerr << "Warning: Failed to save driver contribution for " << entity_id
+                                     << " / " << line_item_code << " / " << driver_code << ": " << e.what() << std::endl;
+                        }
+                    }
+
+                    std::cout << "✓ Saved " << driver_saved_count << " driver contributions" << std::endl;
+                }
             }
 
             std::cout << "\n✓ Scenario " << scenario_id << " completed" << std::endl;

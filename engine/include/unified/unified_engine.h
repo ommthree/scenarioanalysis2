@@ -218,6 +218,22 @@ public:
         bool& is_populated
     );
 
+    /**
+     * @brief Get driver contributions for the last calculated line item
+     * @return Vector of driver contributions from the most recent calculation
+     *
+     * This is used by run_calculation to retrieve driver decomposition
+     * after each calculate_single_line_item call.
+     */
+    std::vector<DriverContribution> get_last_driver_contributions() const;
+
+    /**
+     * @brief Clear accumulated driver contributions
+     *
+     * Call this at the start of each period to reset state.
+     */
+    void clear_driver_contributions();
+
 private:
     std::shared_ptr<database::IDatabase> db_;
     core::FormulaEvaluator evaluator_;
@@ -244,6 +260,9 @@ private:
 
     // Entity hierarchy (optional, for rollup aggregation)
     const core::EntityHierarchyManager* hierarchy_ = nullptr;
+
+    // Driver contributions from the last calculation (for decomposition tracking)
+    std::vector<DriverContribution> last_driver_contributions_;
 
     /**
      * @brief Calculate a single line item

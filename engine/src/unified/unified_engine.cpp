@@ -255,6 +255,9 @@ double UnifiedEngine::calculate_line_item(
     const core::Context& ctx,
     const core::LineItem* line_item [[maybe_unused]]
 ) {
+    // Clear previous contributions for this line item
+    // (We'll accumulate new ones during this calculation)
+
     if (!formula.has_value() || formula->empty()) {
         // No formula: try to get from providers
         // Note: We do NOT apply sign convention to driver values - they are already signed correctly
@@ -262,15 +265,46 @@ double UnifiedEngine::calculate_line_item(
         for (auto* provider : providers_) {
             if (provider->has_value(code)) {
                 double value = provider->get_value(code, ctx);
+
+                // Track driver contribution (direct driver value)
+                std::string driver_code = driver_provider_->resolve_driver_code(code);
+                if (driver_provider_->has_value(driver_code)) {
+                    DriverContribution contrib;
+                    contrib.line_item_code = code;
+                    contrib.driver_code = driver_code;
+                    contrib.value = value;
+                    last_driver_contributions_.push_back(contrib);
+                }
+
                 return value;  // Return as-is, no sign conversion
             }
         }
         return 0.0;
     }
 
-    // Has formula: evaluate it
+    // Has formula: evaluate it and extract driver dependencies
     try {
         double value = evaluator_.evaluate(formula.value(), providers_, ctx);
+
+        // Track driver contributions (from formula dependencies)
+        auto dependencies = evaluator_.extract_dependencies(formula.value());
+        for (const auto& dep : dependencies) {
+            // Check if dependency is a driver reference (starts with "driver:")
+            if (dep.length() > 7 && dep.substr(0, 7) == "driver:") {
+                std::string driver_code = dep.substr(7);
+                try {
+                    double driver_val = driver_provider_->get_value(dep, ctx);
+                    DriverContribution contrib;
+                    contrib.line_item_code = code;
+                    contrib.driver_code = driver_code;
+                    contrib.value = driver_val;
+                    last_driver_contributions_.push_back(contrib);
+                } catch (...) {
+                    // Driver not found, skip
+                }
+            }
+        }
+
         // Sign convention already applied in formula for computed values
         return value;
     } catch (const std::exception& e) {
@@ -481,6 +515,9 @@ double UnifiedEngine::calculate_single_line_item(
     const std::string& template_code,
     bool& is_populated
 ) {
+    // Clear driver contributions from previous calculation
+    last_driver_contributions_.clear();
+
     // Load template to get line item definition
     auto tmpl = core::StatementTemplate::load_from_database(db_.get(), template_code);
     if (!tmpl) {
@@ -537,6 +574,14 @@ double UnifiedEngine::calculate_single_line_item(
         is_populated = false;
         return 0.0;
     }
+}
+
+std::vector<DriverContribution> UnifiedEngine::get_last_driver_contributions() const {
+    return last_driver_contributions_;
+}
+
+void UnifiedEngine::clear_driver_contributions() {
+    last_driver_contributions_.clear();
 }
 
 } // namespace unified
