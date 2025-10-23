@@ -11,6 +11,11 @@ interface LineItem {
   value: number
 }
 
+interface DriverContribution {
+  driver_code: string
+  value: number
+}
+
 interface Section {
   name: string
   items: LineItem[]
@@ -33,6 +38,8 @@ export default function ViewResults() {
   const [sections, setSections] = useState<Section[]>([])
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
+  const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set())
+  const [driverData, setDriverData] = useState<Map<string, DriverContribution[]>>(new Map())
   const [loading, setLoading] = useState(true)
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
@@ -172,6 +179,36 @@ export default function ViewResults() {
       newExpanded.add(entityId)
     }
     setExpandedNodes(newExpanded)
+  }
+
+  const loadDriverDecomposition = async (lineItemCode: string) => {
+    if (!currentEntity) return
+
+    try {
+      const url = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`
+      const response = await fetch(url)
+      const data = await response.json()
+
+      if (data.success && data.drivers.length > 0) {
+        setDriverData(prev => new Map(prev).set(lineItemCode, data.drivers))
+      }
+    } catch (error) {
+      console.error('Error loading driver decomposition:', error)
+    }
+  }
+
+  const toggleLineItem = (lineItemCode: string) => {
+    const newExpanded = new Set(expandedLineItems)
+    if (newExpanded.has(lineItemCode)) {
+      newExpanded.delete(lineItemCode)
+    } else {
+      newExpanded.add(lineItemCode)
+      // Load driver data if not already loaded
+      if (!driverData.has(lineItemCode)) {
+        loadDriverDecomposition(lineItemCode)
+      }
+    }
+    setExpandedLineItems(newExpanded)
   }
 
   const renderEntityTree = (entities: Entity[], level = 0): JSX.Element => {
@@ -424,47 +461,102 @@ export default function ViewResults() {
                 {/* Section Items */}
                 {expandedSections.has(section.name) && (
                   <div style={{ paddingLeft: '32px' }}>
-                    {section.items.map((item) => (
-                      <div
-                        key={item.code}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '12px 16px',
-                          borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
-                          backgroundColor: item.is_computed ? 'rgba(34, 197, 94, 0.05)' : 'transparent'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={{
-                            fontSize: '14px',
-                            color: '#94a3b8',
-                            fontFamily: 'monospace',
-                            minWidth: '120px'
-                          }}>
-                            {item.code}
-                          </span>
-                          <span style={{
-                            fontSize: '14px',
-                            color: '#fff',
-                            fontWeight: item.is_computed ? '600' : '400'
-                          }}>
-                            {item.display_name}
-                          </span>
+                    {section.items.map((item) => {
+                      const isExpanded = expandedLineItems.has(item.code)
+                      const drivers = driverData.get(item.code) || []
+
+                      return (
+                        <div key={item.code}>
+                          {/* Line Item Row */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '12px 16px',
+                              borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+                              backgroundColor: item.is_computed ? 'rgba(34, 197, 94, 0.05)' : 'transparent',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => toggleLineItem(item.code)}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              {/* Expand/Collapse Icon */}
+                              <div style={{ width: '16px', height: '16px' }}>
+                                {isExpanded ? (
+                                  <ChevronDown style={{ width: '16px', height: '16px', color: '#3b82f6' }} />
+                                ) : (
+                                  <ChevronRight style={{ width: '16px', height: '16px', color: '#64748b' }} />
+                                )}
+                              </div>
+
+                              <span style={{
+                                fontSize: '14px',
+                                color: '#94a3b8',
+                                fontFamily: 'monospace',
+                                minWidth: '120px'
+                              }}>
+                                {item.code}
+                              </span>
+                              <span style={{
+                                fontSize: '14px',
+                                color: '#fff',
+                                fontWeight: item.is_computed ? '600' : '400'
+                              }}>
+                                {item.display_name}
+                              </span>
+                            </div>
+                            <span style={{
+                              fontSize: '16px',
+                              color: item.value < 0 ? '#ef4444' : '#22c55e',
+                              fontWeight: '600',
+                              fontFamily: 'monospace',
+                              minWidth: '150px',
+                              textAlign: 'right'
+                            }}>
+                              {item.value < 0 ? '(' : ''}{formatValue(Math.abs(item.value))}{item.value < 0 ? ')' : ''}
+                            </span>
+                          </div>
+
+                          {/* Driver Contributions */}
+                          {isExpanded && drivers.length > 0 && (
+                            <div style={{ paddingLeft: '48px', backgroundColor: 'rgba(15, 23, 42, 0.4)' }}>
+                              {drivers.map((driver) => (
+                                <div
+                                  key={driver.driver_code}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '8px 16px',
+                                    borderBottom: '1px solid rgba(71, 85, 105, 0.2)'
+                                  }}
+                                >
+                                  <span style={{
+                                    fontSize: '13px',
+                                    color: '#94a3b8',
+                                    fontFamily: 'monospace',
+                                    fontStyle: 'italic'
+                                  }}>
+                                    {driver.driver_code}
+                                  </span>
+                                  <span style={{
+                                    fontSize: '14px',
+                                    color: driver.value < 0 ? '#ef4444' : '#22c55e',
+                                    fontWeight: '500',
+                                    fontFamily: 'monospace',
+                                    minWidth: '150px',
+                                    textAlign: 'right'
+                                  }}>
+                                    {driver.value < 0 ? '(' : ''}{formatValue(Math.abs(driver.value))}{driver.value < 0 ? ')' : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <span style={{
-                          fontSize: '16px',
-                          color: item.value < 0 ? '#ef4444' : '#22c55e',
-                          fontWeight: '600',
-                          fontFamily: 'monospace',
-                          minWidth: '150px',
-                          textAlign: 'right'
-                        }}>
-                          {item.value < 0 ? '(' : ''}{formatValue(Math.abs(item.value))}{item.value < 0 ? ')' : ''}
-                        </span>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>

@@ -5580,6 +5580,40 @@ app.get('/api/results/entities', (req, res) => {
 })
 
 /**
+ * GET /api/results/driver-decomposition?dbPath=...&period=1&entityId=...&lineItemCode=...
+ */
+app.get('/api/results/driver-decomposition', (req, res) => {
+  const { dbPath, period, entityId, lineItemCode } = req.query
+
+  if (!dbPath || !period || !entityId || !lineItemCode) {
+    return res.status(400).json({ error: 'Database path, period, entityId, and lineItemCode are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  db.all(
+    `SELECT driver_code, value
+     FROM statement_result_by_driver
+     WHERE period_id = ? AND entity_id = ? AND line_item_code = ?
+     ORDER BY driver_code`,
+    [period, entityId, lineItemCode],
+    (err, rows) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      res.json({ success: true, drivers: rows || [] })
+    }
+  )
+})
+
+/**
  * Run calculation engine
  */
 app.post('/api/calculate', (req, res) => {
@@ -5599,6 +5633,9 @@ app.post('/api/calculate', (req, res) => {
       // Delete only OUTPUT tables from calculations
       db.run('DELETE FROM statement_result', (err) => {
         if (err) console.error('Failed to clear statement_result:', err)
+      })
+      db.run('DELETE FROM statement_result_by_driver', (err) => {
+        if (err) console.error('Failed to clear statement_result_by_driver:', err)
       })
       db.run('DELETE FROM pl_result', (err) => {
         if (err) console.error('Failed to clear pl_result:', err)
