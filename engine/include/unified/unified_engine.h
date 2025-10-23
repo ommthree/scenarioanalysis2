@@ -54,11 +54,24 @@ namespace finmodel {
 namespace unified {
 
 /**
+ * @brief Driver contribution for a line item calculation
+ */
+struct DriverContribution {
+    std::string line_item_code;
+    std::string driver_code;
+    double value;
+};
+
+/**
  * @brief Result of unified calculation containing all line items
  */
 struct UnifiedResult {
     /// All calculated line items (code → value)
     std::map<std::string, double> line_items;
+
+    /// Driver decomposition: line_item_code → list of (driver_code, value) contributions
+    /// Used to decompose income statement impact by driver
+    std::vector<DriverContribution> driver_contributions;
 
     /// Success flag
     bool success = true;

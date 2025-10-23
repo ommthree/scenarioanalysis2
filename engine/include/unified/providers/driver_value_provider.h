@@ -81,6 +81,13 @@ public:
      */
     double get_value(const std::string& key, const core::Context& ctx) const override;
 
+    /**
+     * @brief Resolve line item code to driver code using mapping
+     * @param line_item_code Line item code from template
+     * @return Driver code to look up in scenario_drivers, or original code if no mapping
+     */
+    std::string resolve_driver_code(const std::string& line_item_code) const;
+
 private:
     std::shared_ptr<database::IDatabase> db_;
     std::shared_ptr<core::UnitConverter> unit_converter_;
@@ -99,13 +106,6 @@ private:
      * @brief Load all drivers for current context into cache
      */
     void load_drivers() const;
-
-    /**
-     * @brief Resolve line item code to driver code using mapping
-     * @param line_item_code Line item code from template
-     * @return Driver code to look up in scenario_drivers, or original code if no mapping
-     */
-    std::string resolve_driver_code(const std::string& line_item_code) const;
 };
 
 } // namespace unified

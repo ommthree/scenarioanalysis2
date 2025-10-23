@@ -180,6 +180,39 @@ UnifiedResult UnifiedEngine::calculate(
             // Update statement provider so subsequent formulas can reference this
             statement_provider_->set_current_values(current_values_);
 
+            // Track driver contributions for decomposition
+            // For line items without formula, they come directly from a driver
+            if (!line_item->formula.has_value() || line_item->formula->empty()) {
+                // Direct driver value
+                std::string driver_code = driver_provider_->resolve_driver_code(code);
+                if (driver_provider_->has_value("driver:" + driver_code)) {
+                    DriverContribution contrib;
+                    contrib.line_item_code = code;
+                    contrib.driver_code = driver_code;
+                    contrib.value = value;
+                    result.driver_contributions.push_back(contrib);
+                }
+            } else {
+                // Formula-based calculation - extract driver dependencies
+                auto dependencies = evaluator_.extract_dependencies(line_item->formula.value());
+                for (const auto& dep : dependencies) {
+                    // Check if dependency is a driver reference (starts with "driver:")
+                    if (dep.length() > 7 && dep.substr(0, 7) == "driver:") {
+                        std::string driver_code = dep.substr(7);
+                        try {
+                            double driver_val = driver_provider_->get_value(dep, ctx);
+                            DriverContribution contrib;
+                            contrib.line_item_code = code;
+                            contrib.driver_code = driver_code;
+                            contrib.value = driver_val;
+                            result.driver_contributions.push_back(contrib);
+                        } catch (...) {
+                            // Driver not found, skip
+                        }
+                    }
+                }
+            }
+
         } catch (const std::exception& e) {
             // If calculation failed and we have hierarchy, try rollup from children
             if (hierarchy_ && line_item->aggregation_method == "sum") {
