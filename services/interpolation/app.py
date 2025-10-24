@@ -106,6 +106,21 @@ def interpolate_period(grid_lats, grid_lons, intensities, variances,
     """
     Interpolate a single period using Kriging (primary) or bilinear (fallback).
     """
+    # Skip Kriging for large grids (> 10,000 points) as it's O(n³)
+    if len(grid_lats) > 10000:
+        logger.info(f"Period {period}: Large grid ({len(grid_lats)} points), using bilinear interpolation")
+        try:
+            return bilinear_interpolation(
+                grid_lats, grid_lons, intensities, variances,
+                target_lats, target_lons, period
+            )
+        except Exception as bilinear_error:
+            logger.error(f"Period {period}: Bilinear interpolation failed ({str(bilinear_error)})")
+            return nearest_neighbor_interpolation(
+                grid_lats, grid_lons, intensities, variances,
+                target_lats, target_lons, period
+            )
+
     try:
         # Primary method: Ordinary Kriging
         logger.info(f"Period {period}: Attempting Kriging interpolation")
@@ -132,72 +147,76 @@ def interpolate_period(grid_lats, grid_lons, intensities, variances,
         # Fallback: Bilinear interpolation
         logger.warning(f"Period {period}: Kriging failed ({str(kriging_error)}), falling back to bilinear")
 
-        try:
-            # Determine if grid is regular
-            unique_lats = np.unique(grid_lats)
-            unique_lons = np.unique(grid_lons)
+        return bilinear_interpolation(
+            grid_lats, grid_lons, intensities, variances,
+            target_lats, target_lons, period
+        )
 
-            # Check if we have a regular grid
-            if len(unique_lats) * len(unique_lons) != len(grid_lats):
-                # Irregular grid - use nearest neighbor
-                logger.warning(f"Period {period}: Irregular grid detected, using nearest neighbor")
-                return nearest_neighbor_interpolation(
-                    grid_lats, grid_lons, intensities, variances,
-                    target_lats, target_lons, period
-                )
 
-            # Reshape to 2D grid
-            grid_2d = np.zeros((len(unique_lats), len(unique_lons)))
-            var_2d = np.zeros((len(unique_lats), len(unique_lons)))
+def bilinear_interpolation(grid_lats, grid_lons, intensities, variances,
+                           target_lats, target_lons, period):
+    """
+    Perform bilinear interpolation on regular grid.
+    """
+    try:
+        # Determine if grid is regular
+        unique_lats = np.unique(grid_lats)
+        unique_lons = np.unique(grid_lons)
 
-            for i, lat in enumerate(grid_lats):
-                for j, lon in enumerate(grid_lons):
-                    if lat in unique_lats and lon in unique_lons:
-                        lat_idx = np.where(unique_lats == lat)[0][0]
-                        lon_idx = np.where(unique_lons == lon)[0][0]
-                        grid_2d[lat_idx, lon_idx] = intensities[i]
-                        var_2d[lat_idx, lon_idx] = variances[i]
-
-            # Create interpolators
-            interp = RegularGridInterpolator(
-                (unique_lats, unique_lons),
-                grid_2d,
-                method='linear',
-                bounds_error=False,
-                fill_value=None
+        # Check if we have a regular grid
+        if len(unique_lats) * len(unique_lons) != len(grid_lats):
+            # Irregular grid - use nearest neighbor
+            logger.warning(f"Period {period}: Irregular grid detected, using nearest neighbor")
+            return nearest_neighbor_interpolation(
+                grid_lats, grid_lons, intensities, variances,
+                target_lats, target_lons, period
             )
 
-            var_interp = RegularGridInterpolator(
-                (unique_lats, unique_lons),
-                var_2d,
-                method='linear',
-                bounds_error=False,
-                fill_value=None
-            )
+        # Reshape to 2D grid using vectorization
+        # Assume data is already in row-major order (all lons for each lat)
+        grid_2d = intensities.reshape(len(unique_lats), len(unique_lons))
+        var_2d = variances.reshape(len(unique_lats), len(unique_lons))
 
-            # Interpolate target points
-            points = np.column_stack((target_lats, target_lons))
-            z = interp(points)
-            ss = var_interp(points)
+        # Create interpolators
+        interp = RegularGridInterpolator(
+            (unique_lats, unique_lons),
+            grid_2d,
+            method='linear',
+            bounds_error=False,
+            fill_value=None
+        )
 
-            # Handle any NaN values (points outside grid)
-            if np.any(np.isnan(z)):
-                logger.warning(f"Period {period}: Some target points outside grid, using nearest neighbor")
-                z = np.nan_to_num(z, nan=0.0)
-                ss = np.nan_to_num(ss, nan=0.0)
+        var_interp = RegularGridInterpolator(
+            (unique_lats, unique_lons),
+            var_2d,
+            method='linear',
+            bounds_error=False,
+            fill_value=None
+        )
 
-            logger.info(f"Period {period}: Bilinear interpolation successful")
+        # Interpolate target points
+        points = np.column_stack((target_lats, target_lons))
+        z = interp(points)
+        ss = var_interp(points)
 
-            return {
-                'period': period,
-                'intensities': z.tolist(),
-                'variances': ss.tolist(),
-                'method': 'bilinear'
-            }
+        # Handle any NaN values (points outside grid)
+        if np.any(np.isnan(z)):
+            logger.warning(f"Period {period}: Some target points outside grid, using nearest neighbor")
+            z = np.nan_to_num(z, nan=0.0)
+            ss = np.nan_to_num(ss, nan=0.0)
 
-        except Exception as bilinear_error:
-            logger.error(f"Period {period}: Bilinear interpolation failed ({str(bilinear_error)})")
-            raise Exception(f"Both Kriging and bilinear interpolation failed for period {period}")
+        logger.info(f"Period {period}: Bilinear interpolation successful")
+
+        return {
+            'period': period,
+            'intensities': z.tolist(),
+            'variances': ss.tolist(),
+            'method': 'bilinear'
+        }
+
+    except Exception as bilinear_error:
+        logger.error(f"Period {period}: Bilinear interpolation failed ({str(bilinear_error)})")
+        raise Exception(f"Both Kriging and bilinear interpolation failed for period {period}")
 
 
 def nearest_neighbor_interpolation(grid_lats, grid_lons, intensities, variances,

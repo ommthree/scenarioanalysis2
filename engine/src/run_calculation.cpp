@@ -307,6 +307,24 @@ bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
 }
 
 /**
+ * @brief Escape string for JSON
+ */
+std::string json_escape(const std::string& str) {
+    std::ostringstream escaped;
+    for (char c : str) {
+        switch (c) {
+            case '\\': escaped << "\\\\"; break;
+            case '"': escaped << "\\\""; break;
+            case '\n': escaped << "\\n"; break;
+            case '\r': escaped << "\\r"; break;
+            case '\t': escaped << "\\t"; break;
+            default: escaped << c; break;
+        }
+    }
+    return escaped.str();
+}
+
+/**
  * @brief Call physical risk API to calculate damages before financial calc
  */
 bool call_physical_risk_api(int scenario_id, const std::string& db_path) {
@@ -318,10 +336,10 @@ bool call_physical_risk_api(int scenario_id, const std::string& db_path) {
         return false;
     }
 
-    // Build JSON payload
+    // Build JSON payload with escaped path
     std::ostringstream payload;
     payload << "{\"scenario_id\":" << scenario_id
-            << ",\"dbPath\":\"" << db_path << "\"}";
+            << ",\"dbPath\":\"" << json_escape(db_path) << "\"}";
 
     std::string response_str;
     struct curl_slist* headers = NULL;

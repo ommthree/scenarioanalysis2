@@ -6536,9 +6536,9 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
 
     // Get hazard map IDs linked to this scenario
     const hazardMapLinks = await dbAll(`
-      SELECT DISTINCT hms.hazard_map_id, hm.hazard_type as peril_type
+      SELECT DISTINCT hms.mapping_id as hazard_map_id, hm.hazard_type as peril_type
       FROM hazard_map_scenario hms
-      JOIN staging_hazard_map hm ON hms.hazard_map_id = hm.staging_id
+      JOIN staging_hazard_map hm ON hms.mapping_id = hm.staging_id
       WHERE hms.scenario_id = ?
     `, [scenario_id])
 
@@ -6579,16 +6579,30 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
     for (const hazardMapLink of hazardMapLinks) {
       console.log(`[Physical Risk] Processing hazard map ${hazardMapLink.hazard_map_id} (peril: ${hazardMapLink.peril_type})`)
 
-      // Get all grid points for this hazard map
-      const hazardMapGrid = await dbAll(`
-        SELECT * FROM staging_hazard_map
-        WHERE staging_id = ? OR file_id = ?
-      `, [hazardMapLink.hazard_map_id, hazardMapLink.hazard_map_id])
+      // Get file_id for this hazard map
+      const mapInfo = await dbAll(`
+        SELECT file_id FROM staging_hazard_map WHERE staging_id = ? LIMIT 1
+      `, [hazardMapLink.hazard_map_id])
 
-      if (hazardMapGrid.length === 0) {
-        console.log(`[Physical Risk] No grid points found for hazard map ${hazardMapLink.hazard_map_id}`)
+      if (mapInfo.length === 0) {
+        console.log(`[Physical Risk] No hazard map found for mapping_id ${hazardMapLink.hazard_map_id}`)
         continue
       }
+
+      const fileId = mapInfo[0].file_id
+      console.log(`[Physical Risk] Loading grid data for file_id ${fileId}...`)
+
+      // Get all grid points for this file_id
+      const hazardMapGrid = await dbAll(`
+        SELECT * FROM staging_hazard_map WHERE file_id = ?
+      `, [fileId])
+
+      if (hazardMapGrid.length === 0) {
+        console.log(`[Physical Risk] No grid points found for file_id ${fileId}`)
+        continue
+      }
+
+      console.log(`[Physical Risk] Loaded ${hazardMapGrid.length} grid points`)
 
       // Build grid data from all grid points
       const gridData = buildGridFromHazardMap(hazardMapGrid)
