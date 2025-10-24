@@ -106,6 +106,10 @@ int main(int argc, char* argv[]) {
         for (int scenario_id : scenario_ids) {
             std::cout << "\n=== Running Scenario " << scenario_id << " ===" << std::endl;
 
+            // Clear engine state before starting new scenario
+            // This ensures no state leaks between scenarios
+            engine.clear_driver_contributions();
+
             // Get periods for this scenario
             auto period_query = db->execute_query(
                 "SELECT DISTINCT period_id FROM scenario_drivers WHERE scenario_id = :sid ORDER BY period_id",

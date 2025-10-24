@@ -616,6 +616,17 @@ std::vector<DriverContribution> UnifiedEngine::get_last_driver_contributions() c
 
 void UnifiedEngine::clear_driver_contributions() {
     last_driver_contributions_.clear();
+
+    // Clear current_values_ member variable to ensure scenario isolation
+    // This is critical: current_values_ accumulates during calculation and gets copied
+    // into statement_provider_ at line 600. Must clear both!
+    current_values_.clear();
+
+    // Clear statement provider cache to ensure scenario isolation
+    // Without this, values from scenario 1 leak into scenario 2
+    std::map<std::string, double> empty_map;
+    statement_provider_->set_current_values(empty_map);
+    statement_provider_->set_opening_values(empty_map);
 }
 
 } // namespace unified

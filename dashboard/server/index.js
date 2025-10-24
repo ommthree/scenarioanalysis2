@@ -5355,15 +5355,35 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                 // Insert driver values for each period
                 logVerbose(`Processing ${variableMappings.length} variable mapping(s) for ${periodColumns.length} period(s)`)
                 for (const varMapping of variableMappings) {
-                  const csvRow = csvData[varMapping.csv_row_index]
-                  if (!csvRow) {
-                    logDebug(`Skipping missing CSV row at index ${varMapping.csv_row_index}`)
-                    continue
-                  }
+                  // Find the CSV row that matches BOTH this driver AND this scenario
+                  // (Don't rely on csv_row_index which may only reference scenario 1's rows)
+                  let csvRow = null
+                  if (mapping.scenario_column) {
+                    // Multi-scenario CSV: need to find the driver name first, then search
+                    // Get the driver name from the originally mapped row
+                    const originalRow = csvData[varMapping.csv_row_index]
+                    if (!originalRow) {
+                      logDebug(`Skipping driver ${varMapping.driver_code}: original row ${varMapping.csv_row_index} not found`)
+                      continue
+                    }
+                    const driverNameInCsv = originalRow[mapping.driver_column]
 
-                  // Skip if this row doesn't match the current scenario
-                  if (mapping.scenario_column && csvRow[mapping.scenario_column] !== scenarioName) {
-                    continue
+                    // Now search for the row with this driver name AND the current scenario
+                    csvRow = csvData.find(row =>
+                      row[mapping.driver_column] === driverNameInCsv &&
+                      row[mapping.scenario_column] === scenarioName
+                    )
+                    if (!csvRow) {
+                      logDebug(`Skipping driver ${varMapping.driver_code} (${driverNameInCsv}): no CSV row found for scenario ${scenarioName}`)
+                      continue
+                    }
+                  } else {
+                    // Single-scenario CSV: use the original row index
+                    csvRow = csvData[varMapping.csv_row_index]
+                    if (!csvRow) {
+                      logDebug(`Skipping missing CSV row at index ${varMapping.csv_row_index}`)
+                      continue
+                    }
                   }
 
                   const unitCode = csvRow[mapping.units_column] || 'USD'
