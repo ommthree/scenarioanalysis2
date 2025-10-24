@@ -50,10 +50,20 @@ std::unique_ptr<StatementTemplate> StatementTemplate::load_from_database(
     }
 
     std::string json_structure = result->get_string("json_structure");
+    std::string code = result->get_string("code");
+    std::string statement_type = result->get_string("statement_type");
+    std::string industry = result->get_string("industry");
+    std::string version = result->get_string("version");
 
     // Create and parse template
     std::unique_ptr<StatementTemplate> tmpl(new StatementTemplate());
     tmpl->parse_json(json_structure);
+
+    // Override with database values (json might not have these)
+    tmpl->template_code_ = code;
+    tmpl->statement_type_ = statement_type;
+    tmpl->industry_ = industry;
+    tmpl->version_ = version;
 
     return tmpl;
 }

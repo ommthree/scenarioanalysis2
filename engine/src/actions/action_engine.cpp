@@ -24,88 +24,101 @@ ActionEngine::ActionEngine(std::shared_ptr<database::IDatabase> db)
 std::vector<ManagementAction> ActionEngine::load_actions(int scenario_id) {
     std::vector<ManagementAction> actions;
 
+    // Load all active management actions (not scenario-specific)
     std::string sql = R"(
         SELECT
-            sa.scenario_action_id,
-            sa.scenario_id,
-            sa.action_code,
-            sa.start_period,
-            sa.end_period,
-            sa.capex,
-            sa.opex_annual,
-            sa.emission_reduction_annual,
-            sa.financial_transformations,
-            sa.carbon_transformations,
-            sa.notes,
-            sa.trigger_type,
-            sa.trigger_condition,
-            sa.trigger_period,
+            ma.action_code,
             ma.action_name,
-            ma.action_category
-        FROM scenario_action sa
-        JOIN management_action ma ON sa.action_code = ma.action_code
-        WHERE sa.scenario_id = :scenario_id
-        ORDER BY sa.start_period, sa.action_code
+            ma.action_category,
+            ma.description,
+            ma.is_active
+        FROM management_action ma
+        WHERE ma.is_active = 1
+        ORDER BY ma.action_code
     )";
 
-    auto result = db_->execute_query(sql, {{"scenario_id", scenario_id}});
+    auto result = db_->execute_query(sql, {});
 
     while (result->next()) {
         ManagementAction action;
 
-        action.scenario_action_id = result->get_int("scenario_action_id");
-        action.scenario_id = result->get_int("scenario_id");
+        action.scenario_id = scenario_id;
         action.action_code = result->get_string("action_code");
         action.action_name = result->get_string("action_name");
         action.action_category = result->get_string("action_category");
+        action.notes = result->get_string("description");
 
-        // Parse trigger type
-        std::string trigger_type_str = result->get_string("trigger_type");
-        if (trigger_type_str == "CONDITIONAL") {
-            action.trigger_type = TriggerType::CONDITIONAL;
-        } else if (trigger_type_str == "TIMED") {
-            action.trigger_type = TriggerType::TIMED;
-        } else {
-            action.trigger_type = TriggerType::UNCONDITIONAL;
-        }
+        // Load trigger configuration from action_trigger table
+        std::string trigger_sql = R"(
+            SELECT trigger_type, condition_formula, start_period, end_period
+            FROM action_trigger
+            WHERE action_code = :action_code
+            LIMIT 1
+        )";
 
-        // Trigger configuration
-        if (!result->is_null("trigger_condition")) {
-            action.trigger_condition = result->get_string("trigger_condition");
-        }
+        auto trigger_result = db_->execute_query(trigger_sql, {{"action_code", action.action_code}});
 
-        if (!result->is_null("trigger_period")) {
-            action.trigger_period = result->get_int("trigger_period");
-        } else {
-            action.trigger_period = -1;
-        }
-
-        action.start_period = result->get_int("start_period");
-
-        // end_period can be NULL (permanent action)
-        if (result->is_null("end_period")) {
-            action.end_period = -1;  // Use -1 to indicate permanent
-        } else {
-            action.end_period = result->get_int("end_period");
-        }
-
-        action.capex = result->get_double("capex");
-        action.opex_annual = result->get_double("opex_annual");
-        action.emission_reduction_annual = result->get_double("emission_reduction_annual");
-        action.notes = result->get_string("notes");
-
-        // Parse transformation JSONs
-        if (!result->is_null("financial_transformations")) {
-            std::string fin_json = result->get_string("financial_transformations");
-            if (!fin_json.empty()) {
-                action.financial_transformations = parse_transformations(fin_json);
+        if (trigger_result->next()) {
+            // Parse trigger type
+            std::string trigger_type_str = trigger_result->get_string("trigger_type");
+            if (trigger_type_str == "CONDITIONAL") {
+                action.trigger_type = TriggerType::CONDITIONAL;
+            } else if (trigger_type_str == "TIMED") {
+                action.trigger_type = TriggerType::TIMED;
+            } else {
+                action.trigger_type = TriggerType::UNCONDITIONAL;
             }
+
+            // Trigger configuration
+            if (!trigger_result->is_null("condition_formula")) {
+                action.trigger_condition = trigger_result->get_string("condition_formula");
+            }
+
+            if (!trigger_result->is_null("start_period")) {
+                action.start_period = trigger_result->get_int("start_period");
+            } else {
+                action.start_period = 1;  // Default to period 1
+            }
+
+            if (!trigger_result->is_null("end_period")) {
+                action.end_period = trigger_result->get_int("end_period");
+            } else {
+                action.end_period = -1;  // Permanent
+            }
+        } else {
+            // No trigger defined - default to UNCONDITIONAL from period 1
+            action.trigger_type = TriggerType::UNCONDITIONAL;
+            action.start_period = 1;
+            action.end_period = -1;
         }
 
-        if (!result->is_null("carbon_transformations")) {
-            std::string carbon_json = result->get_string("carbon_transformations");
-            if (!carbon_json.empty()) {
-                action.carbon_transformations = parse_transformations(carbon_json);
+        // Default values for cost/emissions (not used in transformations)
+        action.capex = 0.0;
+        action.opex_annual = 0.0;
+        action.emission_reduction_annual = 0.0;
+        action.trigger_period = -1;
+
+        // Load transformations from action_transformation table
+        std::string trans_sql = R"(
+            SELECT line_item, type, new_formula, comment
+            FROM action_transformation
+            WHERE action_code = :action_code
+        )";
+
+        auto trans_result = db_->execute_query(trans_sql, {{"action_code", action.action_code}});
+
+        while (trans_result->next()) {
+            Transformation t;
+            t.line_item_code = trans_result->get_string("line_item");
+            t.transformation_type = trans_result->get_string("type");
+            t.new_formula = trans_result->get_string("new_formula");
+            t.comment = trans_result->is_null("comment") ? "" : trans_result->get_string("comment");
+
+            // Separate into financial vs carbon based on type
+            if (t.transformation_type == "carbon_formula_override") {
+                action.carbon_transformations.push_back(t);
+            } else {
+                action.financial_transformations.push_back(t);
             }
         }
 

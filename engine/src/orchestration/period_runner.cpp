@@ -8,6 +8,7 @@
 #include "database/result_set.h"
 #include <algorithm>
 #include <set>
+#include <iostream>
 
 namespace finmodel {
 namespace orchestration {
@@ -123,25 +124,34 @@ std::string PeriodRunner::get_template_for_period(
     const std::string& base_template_code,
     const std::map<std::string, double>& prior_values
 ) {
-    // Query scenario_action for this scenario
+    std::cout << "[TEMPLATE] get_template_for_period called: scenario=" << scenario_id
+              << " period=" << period_id << " base=" << base_template_code << std::endl;
+    std::cout << "[TEMPLATE] prior_values has " << prior_values.size() << " entries" << std::endl;
+
+    // Query all active management actions (not scenario-specific)
     std::string sql = R"(
-        SELECT action_code, trigger_type, trigger_condition, trigger_period,
-               start_period, end_period, trigger_sticky
-        FROM scenario_action
-        WHERE scenario_id = :scenario_id
-        ORDER BY action_code
+        SELECT ma.action_code, at.trigger_type, at.condition_formula as trigger_condition,
+               at.start_period, at.end_period
+        FROM management_action ma
+        LEFT JOIN action_trigger at ON ma.action_code = at.action_code
+        WHERE ma.is_active = 1
+        ORDER BY ma.action_code
     )";
 
-    auto result = db_->execute_query(sql, {{"scenario_id", scenario_id}});
+    auto result = db_->execute_query(sql, {});
 
     std::vector<std::string> active_actions;
 
     while (result->next()) {
         std::string action_code = result->get_string("action_code");
-        std::string trigger_type = result->get_string("trigger_type");
-        int start_period = result->get_int("start_period");
+        std::string trigger_type = result->is_null("trigger_type") ? "UNCONDITIONAL" : result->get_string("trigger_type");
+        int start_period = result->is_null("start_period") ? 1 : result->get_int("start_period");
         int end_period = result->is_null("end_period") ? -1 : result->get_int("end_period");
-        bool trigger_sticky = result->is_null("trigger_sticky") ? true : (result->get_int("trigger_sticky") != 0);
+        bool trigger_sticky = true;  // Default to sticky behavior
+
+        std::cout << "[ACTION] Evaluating action: " << action_code
+                  << " type=" << trigger_type
+                  << " period=" << period_id << std::endl;
 
         bool is_active = false;
 

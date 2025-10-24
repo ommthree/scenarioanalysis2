@@ -4674,6 +4674,57 @@ app.get('/api/action-transformations', (req, res) => {
 })
 
 /**
+ * Save transformations for a management action
+ * POST /api/action-transformations/save
+ */
+app.post('/api/action-transformations/save', (req, res) => {
+  const { dbPath, action_code, transformations } = req.body
+
+  if (!dbPath || !action_code) {
+    return res.status(400).json({ error: 'dbPath and action_code are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.serialize(() => {
+    // Delete existing transformations
+    db.run('DELETE FROM action_transformation WHERE action_code = ?', [action_code], (err) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to delete old transformations: ' + err.message })
+      }
+
+      // Insert new transformations
+      if (transformations && transformations.length > 0) {
+        const stmt = db.prepare(`
+          INSERT INTO action_transformation (action_code, line_item, type, new_formula, comment)
+          VALUES (?, ?, ?, ?, ?)
+        `)
+
+        for (const t of transformations) {
+          stmt.run([action_code, t.line_item, t.type, t.new_formula, t.comment || null])
+        }
+
+        stmt.finalize((err) => {
+          db.close()
+          if (err) {
+            return res.status(500).json({ error: 'Failed to save transformations: ' + err.message })
+          }
+          res.json({ success: true })
+        })
+      } else {
+        db.close()
+        res.json({ success: true })
+      }
+    })
+  })
+})
+
+/**
  * Get triggers for a management action
  * GET /api/action-triggers?action_code=xxx&db_path=xxx
  */
@@ -4704,6 +4755,48 @@ app.get('/api/action-triggers', (req, res) => {
       res.json(rows)
     }
   )
+})
+
+/**
+ * Save trigger for a management action
+ * POST /api/action-triggers/save
+ */
+app.post('/api/action-triggers/save', (req, res) => {
+  const { dbPath, action_code, trigger_type, condition_formula, trigger_sticky, start_period, end_period } = req.body
+
+  if (!dbPath || !action_code || !trigger_type) {
+    return res.status(400).json({ error: 'dbPath, action_code, and trigger_type are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.serialize(() => {
+    // Delete existing trigger
+    db.run('DELETE FROM action_trigger WHERE action_code = ?', [action_code], (err) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to delete old trigger: ' + err.message })
+      }
+
+      // Insert new trigger
+      db.run(
+        `INSERT INTO action_trigger (action_code, trigger_type, condition_formula, trigger_sticky, start_period, end_period)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [action_code, trigger_type, condition_formula, trigger_sticky, start_period, end_period],
+        function(err) {
+          db.close()
+          if (err) {
+            return res.status(500).json({ error: 'Failed to save trigger: ' + err.message })
+          }
+          res.json({ success: true })
+        }
+      )
+    })
+  })
 })
 
 /**

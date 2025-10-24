@@ -90,6 +90,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   const [carbonTransformations, setCarbonTransformations] = useState<Transformation[]>([])
   const [triggerType, setTriggerType] = useState<'UNCONDITIONAL' | 'TIMED' | 'CONDITIONAL'>('UNCONDITIONAL')
   const [triggerCondition, setTriggerCondition] = useState('')
+  const [triggerSticky, setTriggerSticky] = useState<boolean>(true)
   const [triggerStartPeriod, setTriggerStartPeriod] = useState<number>(1)
   const [triggerEndPeriod, setTriggerEndPeriod] = useState<number>(10)
 
@@ -288,8 +289,8 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     // Match line item codes (uppercase words, excluding operators and keywords)
     const matches = formula.match(/\b[A-Z_][A-Z0-9_]*\b/g) || []
 
-    // Filter out common operators and keywords
-    const keywords = new Set(['AND', 'OR', 'NOT', 'IF', 'THEN', 'ELSE', 'TRUE', 'FALSE'])
+    // Filter out common operators, keywords, and formula prefixes
+    const keywords = new Set(['AND', 'OR', 'NOT', 'IF', 'THEN', 'ELSE', 'TRUE', 'FALSE', 'BASE', 'driver'])
 
     return matches
       .filter(m => !keywords.has(m))
@@ -326,12 +327,24 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
         conditionItems.forEach(item => referencedLineItems.add(item))
       }
 
-      // If no line items referenced, HIDE the action (it's incomplete or irrelevant)
-      if (referencedLineItems.size === 0) return false
+      // Debug logging
+      if (action.action_code === 'EMERG' || transformations.length > 0) {
+        console.log(`[Filter] Action ${action.action_code}:`, {
+          transformations: transformations.length,
+          referencedLineItems: Array.from(referencedLineItems),
+          templateLineItems: Array.from(templateLineItemCodes),
+          triggerCondition
+        })
+      }
+
+      // If no line items referenced, still show the action (it might be new/incomplete)
+      // Only hide if we have transformations but they reference items not in the template
+      if (referencedLineItems.size === 0) return true
 
       // Check if ALL referenced line items are in the template
       for (const lineItem of referencedLineItems) {
         if (!templateLineItemCodes.has(lineItem)) {
+          console.log(`[Filter] Action ${action.action_code} HIDDEN: missing line item ${lineItem}`)
           return false // Missing a required line item
         }
       }
@@ -381,17 +394,20 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
           const trigger = triggers[0]
           setTriggerType(trigger.trigger_type)
           setTriggerCondition(trigger.condition_formula || '')
+          setTriggerSticky(trigger.trigger_sticky === 1 || trigger.trigger_sticky === true)
           setTriggerStartPeriod(trigger.start_period || 1)
           setTriggerEndPeriod(trigger.end_period || 10)
         } else {
           setTriggerType('UNCONDITIONAL')
           setTriggerCondition('')
+          setTriggerSticky(true)
           setTriggerStartPeriod(1)
           setTriggerEndPeriod(10)
         }
       } else {
         setTriggerType('UNCONDITIONAL')
         setTriggerCondition('')
+        setTriggerSticky(true)
         setTriggerStartPeriod(1)
         setTriggerEndPeriod(10)
       }
@@ -399,6 +415,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       console.error('Error loading triggers:', err)
       setTriggerType('UNCONDITIONAL')
       setTriggerCondition('')
+      setTriggerSticky(true)
       setTriggerStartPeriod(1)
       setTriggerEndPeriod(10)
     }
@@ -418,6 +435,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     setCarbonTransformations([])
     setTriggerType('UNCONDITIONAL')
     setTriggerCondition('')
+    setTriggerSticky(true)
     setTriggerStartPeriod(1)
     setTriggerEndPeriod(10)
     setValidationError(null)
@@ -447,6 +465,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     try {
       const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
 
+      // Save action metadata
       const method = isCreatingNew ? 'POST' : 'PUT'
       const url = isCreatingNew
         ? 'http://localhost:3001/api/management-actions'
@@ -467,6 +486,36 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       })
 
       if (!response.ok) throw new Error('Failed to save action')
+
+      // Save transformations
+      const saveTransformationsResponse = await fetch('http://localhost:3001/api/action-transformations/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          action_code: actionCode,
+          transformations: [...financialTransformations, ...carbonTransformations]
+        })
+      })
+
+      if (!saveTransformationsResponse.ok) throw new Error('Failed to save transformations')
+
+      // Save trigger
+      const saveTriggerResponse = await fetch('http://localhost:3001/api/action-triggers/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          action_code: actionCode,
+          trigger_type: triggerType,
+          condition_formula: triggerType === 'CONDITIONAL' ? triggerCondition : null,
+          trigger_sticky: triggerType === 'CONDITIONAL' ? (triggerSticky ? 1 : 0) : null,
+          start_period: triggerType === 'TIMED' ? triggerStartPeriod : null,
+          end_period: triggerType === 'TIMED' ? triggerEndPeriod : null
+        })
+      })
+
+      if (!saveTriggerResponse.ok) throw new Error('Failed to save trigger')
 
       await fetchActions()
 
@@ -1331,31 +1380,51 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   </div>
 
                   {triggerType === 'CONDITIONAL' && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
-                        Condition Formula
-                      </label>
-                      <textarea
-                        value={triggerCondition}
-                        onChange={(e) => setTriggerCondition(e.target.value)}
-                        onDrop={(e) => handleDrop(e, 'condition')}
-                        onDragOver={handleDragOver}
-                        disabled={!isEditing && !isCreatingNew}
-                        rows={3}
-                        placeholder="e.g., NET_INCOME < 200000"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                          border: '1px solid rgba(59, 130, 246, 0.3)',
-                          borderRadius: '6px',
-                          color: '#fff',
-                          fontSize: '14px',
-                          fontFamily: 'monospace',
-                          resize: 'vertical'
-                        }}
-                      />
-                    </div>
+                    <>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '6px' }}>
+                          Condition Formula
+                        </label>
+                        <textarea
+                          value={triggerCondition}
+                          onChange={(e) => setTriggerCondition(e.target.value)}
+                          onDrop={(e) => handleDrop(e, 'condition')}
+                          onDragOver={handleDragOver}
+                          disabled={!isEditing && !isCreatingNew}
+                          rows={3}
+                          placeholder="e.g., NET_INCOME < 200000"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: '6px',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontFamily: 'monospace',
+                            resize: 'vertical'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Switch
+                          checked={triggerSticky}
+                          onCheckedChange={setTriggerSticky}
+                          disabled={!isEditing && !isCreatingNew}
+                        />
+                        <div>
+                          <label style={{ fontSize: '14px', fontWeight: '500', color: '#fff', display: 'block' }}>
+                            Sticky Trigger
+                          </label>
+                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                            {triggerSticky
+                              ? 'Once triggered, action stays active until end_period'
+                              : 'Re-evaluate condition every period'}
+                          </span>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </CardContent>
               </Card>
