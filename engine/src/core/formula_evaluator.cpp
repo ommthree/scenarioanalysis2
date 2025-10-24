@@ -130,10 +130,16 @@ std::vector<std::string> FormulaEvaluator::extract_dependencies(const std::strin
             }
 
             // Add to dependencies
-            // Skip "driver:" references - they fetch from scenario_drivers table,
-            // not from calculated line item values, so they're not true dependencies
+            // Skip "driver:" references from dependency graph - they fetch from scenario_drivers table,
+            // not from calculated line item values, so they're not true dependencies for calc order.
+            // However, we still need to track them for driver decomposition, so we include them
+            // in the returned dependencies list but mark them specially so they're skipped during
+            // dependency checking in the calculation engine.
             if (identifier.length() > 7 && identifier.substr(0, 7) == "driver:") {
-                continue;  // Skip driver references in dependency graph
+                // Include driver refs in dependencies list (for tracking), but they won't be
+                // checked against current_values_ during dependency resolution
+                deps_set.insert(identifier);
+                continue;
             }
 
             // For time-shifted references, we mark them specially with "[t-1]" suffix

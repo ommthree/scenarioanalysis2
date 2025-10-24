@@ -301,17 +301,44 @@ double UnifiedEngine::calculate_line_item(
         double value = evaluator_.evaluate(formula.value(), providers_, ctx);
 
         // Track driver contributions (from formula dependencies)
+        // Driver contribution = delta from base (impact caused by the driver)
         auto dependencies = evaluator_.extract_dependencies(formula.value());
+
+        bool has_base_ref = false;
+        double base_value = 0.0;
+
+        // Check if formula references BASE: (for delta calculation)
+        for (const auto& dep : dependencies) {
+            if (dep.length() > 5 && dep.substr(0, 5) == "BASE:") {
+                has_base_ref = true;
+                try {
+                    base_value = base_provider_->get_value(dep, ctx);
+                } catch (...) {
+                    base_value = 0.0;
+                }
+                break;
+            }
+        }
+
         for (const auto& dep : dependencies) {
             // Check if dependency is a driver reference (starts with "driver:")
             if (dep.length() > 7 && dep.substr(0, 7) == "driver:") {
                 std::string driver_code = dep.substr(7);
                 try {
-                    double driver_val = driver_provider_->get_value(dep, ctx);
+                    // Driver contribution = delta from base
+                    // If formula is "driver:X * BASE:X", then delta = (result - base)
+                    double delta = has_base_ref ? (value - base_value) : value;
+
+                    // Apply sign convention: if line item has negative sign convention (like EXPENSES),
+                    // the driver impact should also be negative when the delta is positive
+                    if (line_item && line_item->sign_convention == SignConvention::NEGATIVE) {
+                        delta = -delta;
+                    }
+
                     DriverContribution contrib;
                     contrib.line_item_code = code;
                     contrib.driver_code = driver_code;
-                    contrib.value = driver_val;
+                    contrib.value = delta;
                     last_driver_contributions_.push_back(contrib);
                 } catch (...) {
                     // Driver not found, skip

@@ -654,7 +654,7 @@ export default function ViewResults() {
                                     fontFamily: 'monospace',
                                     fontStyle: 'italic'
                                   }}>
-                                    {driver.driver_code}
+                                    Impact of {driver.driver_code.toLowerCase()}
                                   </span>
                                   <span style={{
                                     fontSize: '14px',
