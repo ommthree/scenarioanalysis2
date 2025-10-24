@@ -12,6 +12,8 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <sstream>
+#include <curl/curl.h>
 #include "database/database_factory.h"
 #include "database/result_set.h"
 #include "unified/unified_engine.h"
@@ -281,6 +283,81 @@ std::string apply_action_transformations(
     return modified_template;
 }
 
+/**
+ * @brief Callback for curl to capture response
+ */
+static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+/**
+ * @brief Check if physical risk is enabled for this scenario
+ */
+bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
+    auto result = db->execute_query(
+        "SELECT COUNT(*) as count FROM hazard_map_scenario WHERE scenario_id = :sid",
+        {{"sid", scenario_id}}
+    );
+
+    if (result->next()) {
+        return result->get_int("count") > 0;
+    }
+    return false;
+}
+
+/**
+ * @brief Call physical risk API to calculate damages before financial calc
+ */
+bool call_physical_risk_api(int scenario_id, const std::string& db_path) {
+    std::cout << "[Physical Risk] Calling API for scenario " << scenario_id << "..." << std::endl;
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        std::cerr << "[Physical Risk] ERROR: Failed to initialize curl" << std::endl;
+        return false;
+    }
+
+    // Build JSON payload
+    std::ostringstream payload;
+    payload << "{\"scenario_id\":" << scenario_id
+            << ",\"dbPath\":\"" << db_path << "\"}";
+
+    std::string response_str;
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3001/api/physical-risk/calculate");
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.str().c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_str);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minute timeout
+
+    CURLcode res = curl_easy_perform(curl);
+
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        std::cerr << "[Physical Risk] ERROR: " << curl_easy_strerror(res) << std::endl;
+        return false;
+    }
+
+    if (http_code != 200) {
+        std::cerr << "[Physical Risk] ERROR: HTTP " << http_code << std::endl;
+        std::cerr << "[Physical Risk] Response: " << response_str << std::endl;
+        return false;
+    }
+
+    std::cout << "[Physical Risk] ✓ Calculation completed successfully" << std::endl;
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <database_path>" << std::endl;
@@ -363,6 +440,16 @@ int main(int argc, char* argv[]) {
 
         for (int scenario_id : scenario_ids) {
             std::cout << "\n=== Running Scenario " << scenario_id << " ===" << std::endl;
+
+            // Check if physical risk calculation is needed
+            if (has_physical_risk(db, scenario_id)) {
+                std::cout << "Physical risk enabled for this scenario" << std::endl;
+                bool risk_success = call_physical_risk_api(scenario_id, db_path);
+
+                if (!risk_success) {
+                    std::cerr << "WARNING: Physical risk calculation failed, continuing with financial calc..." << std::endl;
+                }
+            }
 
             // Clear engine state before starting new scenario
             // This ensures no state leaks between scenarios

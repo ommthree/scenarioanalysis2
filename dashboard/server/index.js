@@ -6481,8 +6481,8 @@ app.post('/api/database/restore', express.json(), (req, res) => {
     fs.copyFileSync(backupPath, dbPath)
 
     console.log(`[Restore] Restored from backup: ${backupPath}`)
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Database restored successfully',
       safetyBackupPath
     })
@@ -6491,4 +6491,395 @@ app.post('/api/database/restore', express.json(), (req, res) => {
     res.status(500).json({ error: 'Failed to restore backup: ' + err.message })
   }
 })
+
+/**
+ * Physical Risk Calculation Endpoint
+ * POST /api/physical-risk/calculate
+ * Body: { scenario_id, dbPath }
+ */
+app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
+  const { scenario_id, dbPath } = req.body
+
+  if (!scenario_id || !dbPath) {
+    return res.status(400).json({ error: 'Missing scenario_id or dbPath' })
+  }
+
+  console.log(`[Physical Risk] Starting calculation for scenario ${scenario_id}`)
+
+  try {
+    // Open database
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        console.error('[Physical Risk] Database connection error:', err)
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Promisify database methods
+    const dbAll = (query, params = []) => {
+      return new Promise((resolve, reject) => {
+        db.all(query, params, (err, rows) => {
+          if (err) reject(err)
+          else resolve(rows)
+        })
+      })
+    }
+
+    const dbRun = (query, params = []) => {
+      return new Promise((resolve, reject) => {
+        db.run(query, params, function(err) {
+          if (err) reject(err)
+          else resolve(this)
+        })
+      })
+    }
+
+    // Get hazard map IDs linked to this scenario
+    const hazardMapLinks = await dbAll(`
+      SELECT DISTINCT hms.hazard_map_id, hm.hazard_type as peril_type
+      FROM hazard_map_scenario hms
+      JOIN staging_hazard_map hm ON hms.hazard_map_id = hm.staging_id
+      WHERE hms.scenario_id = ?
+    `, [scenario_id])
+
+    if (hazardMapLinks.length === 0) {
+      console.log(`[Physical Risk] No hazard maps linked to scenario ${scenario_id}`)
+      db.close()
+      return res.json({ success: true, message: 'No hazard maps found for scenario', calculated: false })
+    }
+
+    console.log(`[Physical Risk] Found ${hazardMapLinks.length} hazard map(s)`)
+
+    // Get all locations
+    const locations = await dbAll(`SELECT * FROM location`)
+
+    if (locations.length === 0) {
+      console.log(`[Physical Risk] No locations found`)
+      db.close()
+      return res.json({ success: true, message: 'No locations found', calculated: false })
+    }
+
+    console.log(`[Physical Risk] Found ${locations.length} location(s)`)
+
+    // Get all damage curves
+    const damageCurves = await dbAll(`SELECT * FROM damage_curve`)
+
+    if (damageCurves.length === 0) {
+      console.log(`[Physical Risk] No damage curves found`)
+      db.close()
+      return res.json({ success: true, message: 'No damage curves found', calculated: false })
+    }
+
+    console.log(`[Physical Risk] Found ${damageCurves.length} damage curve(s)`)
+
+    // Clear previous results for this scenario
+    await dbRun(`DELETE FROM physical_risk_result WHERE scenario_id = ?`, [scenario_id])
+
+    // Process each hazard map
+    for (const hazardMapLink of hazardMapLinks) {
+      console.log(`[Physical Risk] Processing hazard map ${hazardMapLink.hazard_map_id} (peril: ${hazardMapLink.peril_type})`)
+
+      // Get all grid points for this hazard map
+      const hazardMapGrid = await dbAll(`
+        SELECT * FROM staging_hazard_map
+        WHERE staging_id = ? OR file_id = ?
+      `, [hazardMapLink.hazard_map_id, hazardMapLink.hazard_map_id])
+
+      if (hazardMapGrid.length === 0) {
+        console.log(`[Physical Risk] No grid points found for hazard map ${hazardMapLink.hazard_map_id}`)
+        continue
+      }
+
+      // Build grid data from all grid points
+      const gridData = buildGridFromHazardMap(hazardMapGrid)
+
+      // Call Python interpolation service
+      const interpolatedResults = await callPythonInterpolation(
+        locations,
+        gridData,
+        hazardMapLink.peril_type
+      )
+
+      // Calculate damages and save results
+      await calculateAndSaveDamages(
+        db,
+        dbRun,
+        scenario_id,
+        locations,
+        interpolatedResults,
+        damageCurves,
+        hazardMapLink.peril_type
+      )
+    }
+
+    // Aggregate to entity level and populate scenario_drivers
+    await aggregateToDrivers(db, dbAll, dbRun, scenario_id)
+
+    db.close()
+
+    console.log(`[Physical Risk] Calculation completed successfully`)
+    res.json({ success: true, message: 'Physical risk calculated successfully', calculated: true })
+
+  } catch (err) {
+    console.error('[Physical Risk] Error:', err)
+    res.status(500).json({ error: 'Physical risk calculation failed: ' + err.message })
+  }
+})
+
+/**
+ * Build grid data structure from staging_hazard_map rows
+ * @param {Array} hazardMapGrid - Array of grid point rows from staging_hazard_map
+ */
+function buildGridFromHazardMap(hazardMapGrid) {
+  const gridLats = []
+  const gridLons = []
+  const gridValues = []
+  const gridVariances = []
+
+  if (hazardMapGrid.length === 0) {
+    return {
+      grid_lats: [],
+      grid_lons: [],
+      grid_values: [],
+      grid_variances: [],
+      n_periods: 0
+    }
+  }
+
+  // Parse dynamic period columns from first row
+  // Columns are like: period_1_intensity_m, period_2_intensity_m, ..., period_1_variance, period_2_variance, ...
+  const firstRow = hazardMapGrid[0]
+  const periodCols = []
+  const varianceCols = []
+
+  for (const key in firstRow) {
+    if (key.match(/^period_\d+_intensity/) || key.match(/^period_\d+$/) && !key.includes('var')) {
+      periodCols.push(key)
+    } else if (key.match(/^period_\d+_var/)) {
+      varianceCols.push(key)
+    }
+  }
+
+  // Sort columns numerically
+  periodCols.sort((a, b) => {
+    const numA = parseInt(a.match(/\d+/)[0])
+    const numB = parseInt(b.match(/\d+/)[0])
+    return numA - numB
+  })
+
+  varianceCols.sort((a, b) => {
+    const numA = parseInt(a.match(/\d+/)[0])
+    const numB = parseInt(b.match(/\d+/)[0])
+    return numA - numB
+  })
+
+  // Process each grid point
+  for (const row of hazardMapGrid) {
+    gridLats.push(parseFloat(row.latitude))
+    gridLons.push(parseFloat(row.longitude))
+
+    const values = []
+    const variances = []
+
+    for (const col of periodCols) {
+      values.push(parseFloat(row[col]) || 0)
+    }
+
+    for (const col of varianceCols) {
+      variances.push(parseFloat(row[col]) || 0)
+    }
+
+    gridValues.push(values)
+    gridVariances.push(variances)
+  }
+
+  return {
+    grid_lats: gridLats,
+    grid_lons: gridLons,
+    grid_values: gridValues,
+    grid_variances: gridVariances,
+    n_periods: periodCols.length
+  }
+}
+
+/**
+ * Call Python interpolation microservice
+ */
+async function callPythonInterpolation(locations, gridData, perilType) {
+  const targetLats = locations.map(l => l.latitude)
+  const targetLons = locations.map(l => l.longitude)
+
+  // Transpose grid_values to get (n_points, n_periods) shape
+  const nPoints = gridData.grid_lats.length
+  const nPeriods = gridData.n_periods
+
+  const gridValuesTransposed = []
+  const gridVariancesTransposed = []
+
+  for (let i = 0; i < nPoints; i++) {
+    gridValuesTransposed.push(gridData.grid_values[i])
+    gridVariancesTransposed.push(gridData.grid_variances[i])
+  }
+
+  const payload = {
+    grid_lats: gridData.grid_lats,
+    grid_lons: gridData.grid_lons,
+    grid_values: gridValuesTransposed,
+    grid_variances: gridVariancesTransposed,
+    target_lats: targetLats,
+    target_lons: targetLons
+  }
+
+  console.log(`[Physical Risk] Calling Python interpolation service for ${perilType}`)
+  console.log(`[Physical Risk] Grid: ${nPoints} points, ${nPeriods} periods`)
+  console.log(`[Physical Risk] Targets: ${targetLats.length} locations`)
+
+  const response = await fetch('http://localhost:5001/interpolate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(`Interpolation service error: ${error.error}`)
+  }
+
+  const results = await response.json()
+  console.log(`[Physical Risk] Interpolation completed using ${results[0]?.method}`)
+
+  return results
+}
+
+/**
+ * Calculate damages and save to physical_risk_result table
+ */
+async function calculateAndSaveDamages(db, dbRun, scenario_id, locations, interpolatedResults, damageCurves, perilType) {
+  console.log(`[Physical Risk] Calculating damages for ${locations.length} locations`)
+
+  for (let locIdx = 0; locIdx < locations.length; locIdx++) {
+    const location = locations[locIdx]
+    const assetValues = JSON.parse(location.json_values || '{}')
+
+    for (const periodResult of interpolatedResults) {
+      const period = periodResult.period
+      const intensity = periodResult.intensities[locIdx]
+      const spatialVariance = periodResult.variances[locIdx]
+
+      // Find matching damage curves for this location's archetype and peril
+      const curves = damageCurves.filter(c =>
+        c.peril_type === perilType &&
+        c.archetype === location.archetype
+      )
+
+      for (const curve of curves) {
+        const valueType = curve.value_type
+        const assetValue = assetValues[valueType] || 0
+
+        if (assetValue === 0) continue
+
+        // Interpolate damage percentage from curve
+        const curvePoints = JSON.parse(curve.curve_points)
+        const curveVariances = JSON.parse(curve.curve_variance || '[]')
+
+        const damagePct = interpolateCurve(curvePoints, intensity)
+        const curveVar = interpolateCurve(curveVariances, intensity)
+
+        // Calculate damage amount
+        const damageAmount = damagePct * assetValue
+
+        // Propagate variance: σ²_total = σ²_spatial + σ²_curve
+        const totalVariance = spatialVariance + curveVar
+
+        // Save result
+        await dbRun(`
+          INSERT INTO physical_risk_result
+          (scenario_id, location_id, peril_type, value_type, period,
+           intensity, damage_pct, damage_amount, variance)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          scenario_id, location.location_id, perilType,
+          valueType, period, intensity, damagePct, damageAmount, totalVariance
+        ])
+      }
+    }
+  }
+
+  console.log(`[Physical Risk] Damage calculation completed`)
+}
+
+/**
+ * Interpolate curve value at given x
+ */
+function interpolateCurve(points, x) {
+  if (points.length === 0) return 0
+
+  // Sort points by x
+  points.sort((a, b) => a[0] - b[0])
+
+  // Clamp below minimum
+  if (x <= points[0][0]) return points[0][1]
+
+  // Clamp above maximum
+  if (x >= points[points.length - 1][0]) return points[points.length - 1][1]
+
+  // Find bracketing points and interpolate
+  for (let i = 0; i < points.length - 1; i++) {
+    if (x >= points[i][0] && x <= points[i + 1][0]) {
+      const x0 = points[i][0], y0 = points[i][1]
+      const x1 = points[i + 1][0], y1 = points[i + 1][1]
+      return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    }
+  }
+
+  return 0
+}
+
+/**
+ * Aggregate location-level results to entity drivers
+ */
+async function aggregateToDrivers(db, dbAll, dbRun, scenario_id) {
+  console.log(`[Physical Risk] Aggregating to entity-level drivers`)
+
+  // Group by entity, driver_code, period and sum damage amounts
+  const aggregated = await dbAll(`
+    SELECT
+      l.entity_id,
+      dc.driver_code,
+      prr.period,
+      SUM(prr.damage_amount) as total_damage
+    FROM physical_risk_result prr
+    JOIN location l ON prr.location_id = l.location_id
+    JOIN damage_curve dc ON
+      prr.peril_type = dc.peril_type AND
+      prr.value_type = dc.value_type AND
+      l.archetype = dc.archetype
+    WHERE prr.scenario_id = ?
+    GROUP BY l.entity_id, dc.driver_code, prr.period
+  `, [scenario_id])
+
+  if (aggregated.length === 0) {
+    console.log(`[Physical Risk] No results to aggregate`)
+    return
+  }
+
+  // Delete existing physical risk drivers for this scenario
+  const driverCodes = [...new Set(aggregated.map(a => a.driver_code))]
+  const placeholders = driverCodes.map(() => '?').join(',')
+
+  await dbRun(`
+    DELETE FROM scenario_drivers
+    WHERE scenario_id = ? AND driver_code IN (${placeholders})
+  `, [scenario_id, ...driverCodes])
+
+  // Insert new driver values
+  for (const row of aggregated) {
+    await dbRun(`
+      INSERT INTO scenario_drivers (scenario_id, entity_id, driver_code, period, driver_value)
+      VALUES (?, ?, ?, ?, ?)
+    `, [scenario_id, row.entity_id, row.driver_code, row.period, row.total_damage])
+  }
+
+  console.log(`[Physical Risk] Populated ${aggregated.length} driver values`)
+}
 
