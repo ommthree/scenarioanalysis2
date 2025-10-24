@@ -624,13 +624,13 @@ export default function ViewResults() {
                             </div>
                             <span style={{
                               fontSize: '16px',
-                              color: item.sign_convention === 'negative' ? '#ef4444' : '#22c55e',
+                              color: (item.sign_convention === 'negative' || item.value < 0) ? '#ef4444' : '#22c55e',
                               fontWeight: '600',
                               fontFamily: 'monospace',
                               minWidth: '150px',
                               textAlign: 'right'
                             }}>
-                              {item.sign_convention === 'negative' ? '(' : ''}{formatValue(item.value)}{item.sign_convention === 'negative' ? ')' : ''}
+                              {(item.sign_convention === 'negative' || item.value < 0) ? '(' : ''}{formatValue(Math.abs(item.value))}{(item.sign_convention === 'negative' || item.value < 0) ? ')' : ''}
                             </span>
                           </div>
 
