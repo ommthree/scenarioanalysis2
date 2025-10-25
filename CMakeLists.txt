@@ -94,10 +94,7 @@ add_executable(insert_templates engine/src/utils/insert_templates.cpp)
 target_link_libraries(insert_templates PRIVATE engine_lib)
 target_include_directories(insert_templates PRIVATE ${CMAKE_SOURCE_DIR}/engine/include)
 
-# Install targets
-install(TARGETS scenario_engine
-    RUNTIME DESTINATION bin
-)
+# Install targets (scenario_engine removed - use run_calculation instead)
 
 # Install configuration
 install(DIRECTORY data/config/
