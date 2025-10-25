@@ -3682,6 +3682,7 @@ app.get('/api/damage-curves/get-damage-curve-mapping', (req, res) => {
             archetypeColumn: columnMapping.archetypeColumn,
             perilColumn: columnMapping.perilColumn,
             unitColumn: columnMapping.unitColumn,
+            valueTypeColumn: columnMapping.valueTypeColumn,
             perilMappings: perilMappings
           }
         })
