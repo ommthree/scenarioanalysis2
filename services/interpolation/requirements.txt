@@ -1,5 +1,0 @@
-flask==3.0.0
-pykrige==1.7.2
-numpy>=1.26.0
-scipy>=1.11.4
-werkzeug==3.0.1
