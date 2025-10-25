@@ -14,6 +14,7 @@
 #include <map>
 #include <sstream>
 #include <curl/curl.h>
+#include <filesystem>
 #include "database/database_factory.h"
 #include "database/result_set.h"
 #include "unified/unified_engine.h"
@@ -295,9 +296,22 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
  * @brief Check if physical risk is enabled for this scenario
  */
 bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
-    auto result = db->execute_query(
-        "SELECT COUNT(*) as count FROM hazard_map_scenario WHERE scenario_id = :sid",
+    // First get the scenario code
+    auto scenario_result = db->execute_query(
+        "SELECT code FROM scenario WHERE scenario_id = :sid",
         {{"sid", scenario_id}}
+    );
+
+    if (!scenario_result->next()) {
+        return false;  // Scenario not found
+    }
+
+    std::string scenario_code = scenario_result->get_string("code");
+
+    // Check if this scenario code has hazard map linkages
+    auto result = db->execute_query(
+        "SELECT COUNT(*) as count FROM hazard_map_scenario WHERE scenario_code = :scode",
+        {{"scode", scenario_code}}
     );
 
     if (result->next()) {
@@ -336,10 +350,14 @@ bool call_physical_risk_api(int scenario_id, const std::string& db_path) {
         return false;
     }
 
+    // Convert to absolute path for API server (which may have different working directory)
+    std::string absolute_path = std::filesystem::absolute(db_path).string();
+
     // Build JSON payload with escaped path
-    std::ostringstream payload;
-    payload << "{\"scenario_id\":" << scenario_id
-            << ",\"dbPath\":\"" << json_escape(db_path) << "\"}";
+    std::ostringstream payload_stream;
+    payload_stream << "{\"scenario_id\":" << scenario_id
+                   << ",\"dbPath\":\"" << json_escape(absolute_path) << "\"}";
+    std::string payload = payload_stream.str();  // Store as string so it doesn't get destroyed
 
     std::string response_str;
     struct curl_slist* headers = NULL;
@@ -347,7 +365,7 @@ bool call_physical_risk_api(int scenario_id, const std::string& db_path) {
 
     curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3001/api/physical-risk/calculate");
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.str().c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_str);

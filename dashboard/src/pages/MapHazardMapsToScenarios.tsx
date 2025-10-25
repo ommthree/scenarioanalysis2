@@ -19,7 +19,7 @@ interface Scenario {
 export default function MapHazardMapsToScenarios() {
   const [hazardMaps, setHazardMaps] = useState<HazardMap[]>([])
   const [scenarios, setScenarios] = useState<Scenario[]>([])
-  const [selectedMappings, setSelectedMappings] = useState<Map<number, Set<number>>>(new Map())
+  const [selectedMappings, setSelectedMappings] = useState<Map<number, Set<string>>>(new Map())
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
@@ -37,14 +37,14 @@ export default function MapHazardMapsToScenarios() {
         setHazardMaps(data.mappings || [])
 
         // Load existing scenario mappings
-        const mappingsMap = new Map<number, Set<number>>()
+        const mappingsMap = new Map<number, Set<string>>()
         for (const map of data.mappings || []) {
           const scenarioResponse = await fetch(
             `http://localhost:3001/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${map.mapping_id}`
           )
           const scenarioData = await scenarioResponse.json()
           if (scenarioData.success && scenarioData.scenarios) {
-            mappingsMap.set(map.mapping_id, new Set(scenarioData.scenarios.map((s: any) => s.scenario_id)))
+            mappingsMap.set(map.mapping_id, new Set(scenarioData.scenarios.map((s: any) => s.code)))
           }
         }
         setSelectedMappings(mappingsMap)
@@ -66,14 +66,14 @@ export default function MapHazardMapsToScenarios() {
     }
   }
 
-  const toggleScenarioForMap = (mappingId: number, scenarioId: number) => {
+  const toggleScenarioForMap = (mappingId: number, scenarioCode: string) => {
     const newMappings = new Map(selectedMappings)
     const scenarios = newMappings.get(mappingId) || new Set()
 
-    if (scenarios.has(scenarioId)) {
-      scenarios.delete(scenarioId)
+    if (scenarios.has(scenarioCode)) {
+      scenarios.delete(scenarioCode)
     } else {
-      scenarios.add(scenarioId)
+      scenarios.add(scenarioCode)
     }
 
     newMappings.set(mappingId, scenarios)
@@ -85,14 +85,14 @@ export default function MapHazardMapsToScenarios() {
 
     try {
       // Save all mappings
-      for (const [mappingId, scenarioIds] of selectedMappings.entries()) {
+      for (const [mappingId, scenarioCodes] of selectedMappings.entries()) {
         const response = await fetch('http://localhost:3001/api/hazard-maps/save-scenario-mappings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             dbPath,
             mappingId,
-            scenarioIds: Array.from(scenarioIds)
+            scenarioCodes: Array.from(scenarioCodes)
           })
         })
 
@@ -177,12 +177,12 @@ export default function MapHazardMapsToScenarios() {
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
                     {scenarios.map((scenario) => {
-                      const isSelected = selectedMappings.get(map.mapping_id)?.has(scenario.scenario_id) || false
+                      const isSelected = selectedMappings.get(map.mapping_id)?.has(scenario.code) || false
 
                       return (
                         <button
-                          key={scenario.scenario_id}
-                          onClick={() => toggleScenarioForMap(map.mapping_id, scenario.scenario_id)}
+                          key={scenario.code}
+                          onClick={() => toggleScenarioForMap(map.mapping_id, scenario.code)}
                           style={{
                             padding: '16px',
                             backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',

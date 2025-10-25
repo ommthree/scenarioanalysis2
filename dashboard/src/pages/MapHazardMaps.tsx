@@ -43,7 +43,7 @@ export default function MapHazardMaps() {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string>('')
-  const [selectedPerilId, setSelectedPerilId] = useState<number | null>(null)
+  const [selectedPerilCode, setSelectedPerilCode] = useState<string | null>(null)
 
   // CSV Preview State
   const [csvData, setCsvData] = useState<CsvRow[]>([])
@@ -69,7 +69,7 @@ export default function MapHazardMaps() {
   // Scenario Linking State
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [currentMappingId, setCurrentMappingId] = useState<number | null>(null)
-  const [selectedScenarios, setSelectedScenarios] = useState<Set<number>>(new Set())
+  const [selectedScenarios, setSelectedScenarios] = useState<Set<string>>(new Set())
   const [scenarioSaveStatus, setScenarioSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
@@ -112,7 +112,7 @@ export default function MapHazardMaps() {
 
   // Auto-save mappings when they change
   useEffect(() => {
-    if (!selectedFileId || !selectedPerilId || !latitudeColumn || !longitudeColumn || isLoadingMapping) return
+    if (!selectedFileId || !selectedPerilCode || !latitudeColumn || !longitudeColumn || isLoadingMapping) return
 
     const timeoutId = setTimeout(async () => {
       try {
@@ -122,7 +122,7 @@ export default function MapHazardMaps() {
         const payload = {
           dbPath,
           fileId: selectedFileId,
-          perilId: selectedPerilId,
+          perilType: selectedPerilCode,
           latitudeColumn,
           longitudeColumn,
           unitsColumn,
@@ -150,7 +150,7 @@ export default function MapHazardMaps() {
     }, 1000) // Debounce for 1 second
 
     return () => clearTimeout(timeoutId)
-  }, [selectedFileId, selectedPerilId, latitudeColumn, longitudeColumn, unitsColumn, intensityStartColumn, intensityEndColumn, varianceStartColumn, varianceEndColumn])
+  }, [selectedFileId, selectedPerilCode, latitudeColumn, longitudeColumn, unitsColumn, intensityStartColumn, intensityEndColumn, varianceStartColumn, varianceEndColumn])
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
@@ -185,7 +185,7 @@ export default function MapHazardMaps() {
           const mapping = mappingResult.mapping
           console.log('Loading mapping:', mapping)
 
-          if (mapping.perilId) setSelectedPerilId(mapping.perilId)
+          if (mapping.perilType) setSelectedPerilCode(mapping.perilType)
           if (mapping.latitudeColumn) setLatitudeColumn(mapping.latitudeColumn)
           if (mapping.longitudeColumn) setLongitudeColumn(mapping.longitudeColumn)
           if (mapping.unitsColumn) setUnitsColumn(mapping.unitsColumn)
@@ -211,7 +211,7 @@ export default function MapHazardMaps() {
               )
               const scenarioData = await scenarioResponse.json()
               if (scenarioData.success && scenarioData.scenarios) {
-                setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.scenario_id)))
+                setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.code)))
               }
             } catch (err) {
               console.error('Error loading scenario mappings:', err)
@@ -385,7 +385,7 @@ Rules:
   }
 
   const handleSave = async () => {
-    if (!selectedFileId || !selectedPerilId || !latitudeColumn || !longitudeColumn) return
+    if (!selectedFileId || !selectedPerilCode || !latitudeColumn || !longitudeColumn) return
 
     setSaveStatus('saving')
 
@@ -399,7 +399,7 @@ Rules:
         body: JSON.stringify({
           dbPath,
           fileId: selectedFileId,
-          perilId: selectedPerilId,
+          perilType: selectedPerilCode,
           latitudeColumn,
           longitudeColumn,
           unitsColumn,
@@ -425,7 +425,7 @@ Rules:
           )
           const scenarioData = await scenarioResponse.json()
           if (scenarioData.success && scenarioData.scenarios) {
-            setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.scenario_id)))
+            setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.code)))
           }
         } catch (err) {
           console.error('Error loading scenario mappings:', err)
@@ -463,12 +463,12 @@ Rules:
     return csvColumns.slice(startIdx, endIdx + 1)
   }
 
-  const toggleScenario = async (scenarioId: number) => {
+  const toggleScenario = async (scenarioCode: string) => {
     const newSelected = new Set(selectedScenarios)
-    if (newSelected.has(scenarioId)) {
-      newSelected.delete(scenarioId)
+    if (newSelected.has(scenarioCode)) {
+      newSelected.delete(scenarioCode)
     } else {
-      newSelected.add(scenarioId)
+      newSelected.add(scenarioCode)
     }
     setSelectedScenarios(newSelected)
 
@@ -481,7 +481,7 @@ Rules:
           body: JSON.stringify({
             dbPath,
             mappingId: currentMappingId,
-            scenarioIds: Array.from(newSelected)
+            scenarioCodes: Array.from(newSelected)
           })
         })
       } catch (err) {
@@ -502,7 +502,7 @@ Rules:
         body: JSON.stringify({
           dbPath,
           mappingId: currentMappingId,
-          scenarioIds: Array.from(selectedScenarios)
+          scenarioCodes: Array.from(selectedScenarios)
         })
       })
 
@@ -520,7 +520,7 @@ Rules:
     }
   }
 
-  const selectedPeril = physicalPerils.find(p => p.peril_id === selectedPerilId)
+  const selectedPeril = physicalPerils.find(p => p.peril_code === selectedPerilCode)
 
   return (
     <div className="p-12 max-w-7xl mx-auto">
@@ -652,11 +652,11 @@ Rules:
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' }}>
                   {physicalPerils.map(peril => {
-                    const isSelected = selectedPerilId === peril.peril_id
+                    const isSelected = selectedPerilCode === peril.peril_code
                     return (
                       <button
                         key={peril.peril_id}
-                        onClick={() => setSelectedPerilId(peril.peril_id)}
+                        onClick={() => setSelectedPerilCode(peril.peril_code)}
                         style={{
                           padding: '16px',
                           backgroundColor: isSelected ? 'rgba(139, 92, 246, 0.2)' : 'rgba(51, 65, 85, 0.5)',
@@ -700,7 +700,7 @@ Rules:
         )}
 
         {/* Step 3: Configure Column Mapping */}
-        {selectedFileId && selectedPerilId && csvData.length > 0 && (
+        {selectedFileId && selectedPerilCode && csvData.length > 0 && (
           <Card className="border-2" style={{
             backgroundColor: 'rgba(30, 41, 59, 0.6)',
             backdropFilter: 'blur(10px)',
@@ -1107,12 +1107,12 @@ Rules:
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginBottom: '16px' }}>
                 {scenarios.map((scenario) => {
-                  const isSelected = selectedScenarios.has(scenario.scenario_id)
+                  const isSelected = selectedScenarios.has(scenario.code)
 
                   return (
                     <button
-                      key={scenario.scenario_id}
-                      onClick={() => toggleScenario(scenario.scenario_id)}
+                      key={scenario.code}
+                      onClick={() => toggleScenario(scenario.code)}
                       style={{
                         padding: '16px',
                         backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
@@ -1166,7 +1166,7 @@ Rules:
         )}
 
         {/* Save Configuration Button */}
-        {selectedFileId && selectedPerilId && latitudeColumn && longitudeColumn && (
+        {selectedFileId && selectedPerilCode && latitudeColumn && longitudeColumn && (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Button
               onClick={handleSave}

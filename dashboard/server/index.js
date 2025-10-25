@@ -4845,11 +4845,11 @@ app.get('/api/physical-perils', (req, res) => {
  * Body: { dbPath, fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns }
  */
 app.post('/api/hazard-maps/save-hazard-map-mapping', (req, res) => {
-  const { dbPath, fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns } = req.body
+  const { dbPath, fileId, perilType, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns } = req.body
 
-  console.log('Saving hazard map mapping:', { fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns })
+  console.log('Saving hazard map mapping:', { fileId, perilType, latitudeColumn, longitudeColumn, unitsColumn, intensityColumns, varianceColumns })
 
-  if (!dbPath || !fileId || !perilId || !latitudeColumn || !longitudeColumn) {
+  if (!dbPath || !fileId || !perilType || !latitudeColumn || !longitudeColumn) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
@@ -4861,7 +4861,7 @@ app.post('/api/hazard-maps/save-hazard-map-mapping', (req, res) => {
 
   const mapping = {
     fileId,
-    perilId,
+    perilType,
     latitudeColumn,
     longitudeColumn,
     unitsColumn: unitsColumn || null,
@@ -4871,17 +4871,17 @@ app.post('/api/hazard-maps/save-hazard-map-mapping', (req, res) => {
 
   // Use UPSERT to preserve mapping_id and prevent CASCADE DELETE
   db.run(
-    `INSERT INTO hazard_map_mapping (file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns, updated_at)
+    `INSERT INTO hazard_map_mapping (file_id, peril_type, latitude_column, longitude_column, units_column, intensity_columns, variance_columns, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(file_id) DO UPDATE SET
-       peril_id = excluded.peril_id,
+       peril_type = excluded.peril_type,
        latitude_column = excluded.latitude_column,
        longitude_column = excluded.longitude_column,
        units_column = excluded.units_column,
        intensity_columns = excluded.intensity_columns,
        variance_columns = excluded.variance_columns,
        updated_at = datetime('now')`,
-    [fileId, perilId, latitudeColumn, longitudeColumn, unitsColumn || null, JSON.stringify(intensityColumns || []), JSON.stringify(varianceColumns || [])],
+    [fileId, perilType, latitudeColumn, longitudeColumn, unitsColumn || null, JSON.stringify(intensityColumns || []), JSON.stringify(varianceColumns || [])],
     function(err) {
       if (err) {
         db.close()
@@ -4922,7 +4922,7 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
   })
 
   db.get(
-    `SELECT mapping_id, file_id, peril_id, latitude_column, longitude_column, units_column, intensity_columns, variance_columns
+    `SELECT mapping_id, file_id, peril_type, latitude_column, longitude_column, units_column, intensity_columns, variance_columns
      FROM hazard_map_mapping
      WHERE file_id = ?`,
     [fileId],
@@ -4938,7 +4938,7 @@ app.get('/api/hazard-maps/get-hazard-map-mapping', (req, res) => {
 
       const mapping = {
         mappingId: row.mapping_id,
-        perilId: row.peril_id,
+        perilType: row.peril_type,
         latitudeColumn: row.latitude_column,
         longitudeColumn: row.longitude_column,
         unitsColumn: row.units_column,
@@ -4969,10 +4969,9 @@ app.get('/api/hazard-maps/list-mappings', (req, res) => {
   })
 
   db.all(
-    `SELECT hm.mapping_id, sf.file_name, pp.peril_type, pp.peril_code
+    `SELECT hm.mapping_id, sf.file_name, hm.peril_type, hm.peril_type as peril_code
      FROM hazard_map_mapping hm
      JOIN staged_file sf ON sf.file_id = hm.file_id
-     JOIN physical_peril pp ON pp.peril_id = hm.peril_id
      ORDER BY sf.file_name`,
     [],
     (err, rows) => {
@@ -5005,7 +5004,7 @@ app.get('/api/hazard-maps/get-scenarios', (req, res) => {
   db.all(
     `SELECT s.scenario_id, s.code, s.name
      FROM hazard_map_scenario hms
-     JOIN scenario s ON s.scenario_id = hms.scenario_id
+     JOIN scenario s ON s.code = hms.scenario_code
      WHERE hms.mapping_id = ?
      ORDER BY s.code`,
     [mappingId],
@@ -5022,13 +5021,15 @@ app.get('/api/hazard-maps/get-scenarios', (req, res) => {
 /**
  * Save hazard map to scenario mappings
  * POST /api/hazard-maps/save-scenario-mappings
- * Body: { dbPath, mappingId, scenarioIds: [] }
+ * Body: { dbPath, mappingId, scenarioCodes: [] }
  */
 app.post('/api/hazard-maps/save-scenario-mappings', (req, res) => {
-  const { dbPath, mappingId, scenarioIds } = req.body
+  const { dbPath, mappingId, scenarioCodes } = req.body
 
-  if (!dbPath || !mappingId || !Array.isArray(scenarioIds)) {
-    return res.status(400).json({ error: 'dbPath, mappingId, and scenarioIds array are required' })
+  console.log('[Hazard Map Scenario Save]', { mappingId, scenarioCodes, count: scenarioCodes?.length })
+
+  if (!dbPath || !mappingId || !Array.isArray(scenarioCodes)) {
+    return res.status(400).json({ error: 'dbPath, mappingId, and scenarioCodes array are required' })
   }
 
   const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
@@ -5049,16 +5050,16 @@ app.post('/api/hazard-maps/save-scenario-mappings', (req, res) => {
         }
 
         // Insert new mappings
-        if (scenarioIds.length === 0) {
+        if (scenarioCodes.length === 0) {
           db.close()
           return res.json({ success: true, message: 'Mappings cleared' })
         }
 
-        const stmt = db.prepare('INSERT INTO hazard_map_scenario (mapping_id, scenario_id) VALUES (?, ?)')
+        const stmt = db.prepare('INSERT INTO hazard_map_scenario (mapping_id, scenario_code) VALUES (?, ?)')
         let errors = []
 
-        scenarioIds.forEach((scenarioId) => {
-          stmt.run([mappingId, scenarioId], (err) => {
+        scenarioCodes.forEach((scenarioCode) => {
+          stmt.run([mappingId, scenarioCode], (err) => {
             if (err) errors.push(err.message)
           })
         })
@@ -5071,7 +5072,7 @@ app.post('/api/hazard-maps/save-scenario-mappings', (req, res) => {
               details: errors
             })
           }
-          res.json({ success: true, message: `Saved ${scenarioIds.length} mapping(s)` })
+          res.json({ success: true, message: `Saved ${scenarioCodes.length} mapping(s)` })
         })
       }
     )
@@ -6508,13 +6509,30 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
 
   console.log(`[Physical Risk] Starting calculation for scenario ${scenario_id}`)
 
+  let db = null
+
   try {
     // Open database
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         console.error('[Physical Risk] Database connection error:', err)
         return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
       }
+    })
+
+    // Set short timeout and disable WAL mode to avoid persistent locks
+    await new Promise((resolve, reject) => {
+      db.run('PRAGMA busy_timeout = 5000', (err) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
+
+    await new Promise((resolve, reject) => {
+      db.run('PRAGMA journal_mode = DELETE', (err) => {
+        if (err) reject(err)
+        else resolve()
+      })
     })
 
     // Promisify database methods
@@ -6537,12 +6555,24 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
     }
 
     // Get hazard map IDs linked to this scenario
+    // First get the scenario code for this scenario_id
+    const scenarioInfo = await dbAll(`SELECT code FROM scenario WHERE scenario_id = ?`, [scenario_id])
+    if (scenarioInfo.length === 0) {
+      console.log(`[Physical Risk] Scenario ${scenario_id} not found`)
+      db.close()
+      return res.json({ success: true, message: 'Scenario not found', calculated: false })
+    }
+    const scenarioCode = scenarioInfo[0].code
+
+    // Get hazard map links with peril type from the mapping table
     const hazardMapLinks = await dbAll(`
-      SELECT DISTINCT hms.mapping_id as hazard_map_id, hm.hazard_type as peril_type
+      SELECT DISTINCT
+        hms.mapping_id as hazard_map_id,
+        hmm.peril_type as peril_type
       FROM hazard_map_scenario hms
-      JOIN staging_hazard_map hm ON hms.mapping_id = hm.staging_id
-      WHERE hms.scenario_id = ?
-    `, [scenario_id])
+      JOIN hazard_map_mapping hmm ON hms.mapping_id = hmm.mapping_id
+      WHERE hms.scenario_code = ?
+    `, [scenarioCode])
 
     if (hazardMapLinks.length === 0) {
       console.log(`[Physical Risk] No hazard maps linked to scenario ${scenario_id}`)
@@ -6631,13 +6661,28 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
     // Aggregate to entity level and populate scenario_drivers
     await aggregateToDrivers(db, dbAll, dbRun, scenario_id)
 
-    db.close()
+    // Close database connection BEFORE sending response to avoid lock issues
+    await new Promise((resolve) => {
+      db.close((err) => {
+        if (err) console.error('[Physical Risk] Error closing database:', err)
+        resolve()
+      })
+    })
 
     console.log(`[Physical Risk] Calculation completed successfully`)
     res.json({ success: true, message: 'Physical risk calculated successfully', calculated: true })
 
   } catch (err) {
     console.error('[Physical Risk] Error:', err)
+    // Close database on error too
+    if (db) {
+      await new Promise((resolve) => {
+        db.close((err) => {
+          if (err) console.error('[Physical Risk] Error closing database:', err)
+          resolve()
+        })
+      })
+    }
     res.status(500).json({ error: 'Physical risk calculation failed: ' + err.message })
   }
 })
@@ -6719,51 +6764,81 @@ function buildGridFromHazardMap(hazardMapGrid) {
 }
 
 /**
- * Call Python interpolation microservice
+ * Simple bilinear interpolation (replaces Python service)
  */
 async function callPythonInterpolation(locations, gridData, perilType) {
-  const targetLats = locations.map(l => l.latitude)
-  const targetLons = locations.map(l => l.longitude)
-
-  // Transpose grid_values to get (n_points, n_periods) shape
   const nPoints = gridData.grid_lats.length
   const nPeriods = gridData.n_periods
 
-  const gridValuesTransposed = []
-  const gridVariancesTransposed = []
-
-  for (let i = 0; i < nPoints; i++) {
-    gridValuesTransposed.push(gridData.grid_values[i])
-    gridVariancesTransposed.push(gridData.grid_variances[i])
-  }
-
-  const payload = {
-    grid_lats: gridData.grid_lats,
-    grid_lons: gridData.grid_lons,
-    grid_values: gridValuesTransposed,
-    grid_variances: gridVariancesTransposed,
-    target_lats: targetLats,
-    target_lons: targetLons
-  }
-
-  console.log(`[Physical Risk] Calling Python interpolation service for ${perilType}`)
+  console.log(`[Physical Risk] Performing bilinear interpolation for ${perilType}`)
   console.log(`[Physical Risk] Grid: ${nPoints} points, ${nPeriods} periods`)
-  console.log(`[Physical Risk] Targets: ${targetLats.length} locations`)
+  console.log(`[Physical Risk] Targets: ${locations.length} locations`)
 
-  const response = await fetch('http://localhost:5001/interpolate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
+  const results = []
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(`Interpolation service error: ${error.error}`)
+  for (const location of locations) {
+    const targetLat = location.latitude
+    const targetLon = location.longitude
+
+    // Find the 4 nearest grid points for bilinear interpolation
+    let closestPoints = []
+
+    for (let i = 0; i < nPoints; i++) {
+      const gridLat = gridData.grid_lats[i]
+      const gridLon = gridData.grid_lons[i]
+
+      // Calculate simple distance (not haversine for speed)
+      const dist = Math.sqrt(
+        Math.pow(targetLat - gridLat, 2) +
+        Math.pow(targetLon - gridLon, 2)
+      )
+
+      closestPoints.push({ index: i, dist, lat: gridLat, lon: gridLon })
+    }
+
+    // Sort by distance and take 4 closest
+    closestPoints.sort((a, b) => a.dist - b.dist)
+    closestPoints = closestPoints.slice(0, 4)
+
+    // Interpolate values for each period
+    const interpolatedValues = []
+    const interpolatedVariances = []
+
+    for (let period = 0; period < nPeriods; period++) {
+      if (closestPoints[0].dist < 0.01) {
+        // Very close to a grid point, use it directly
+        const idx = closestPoints[0].index
+        interpolatedValues.push(gridData.grid_values[idx][period])
+        interpolatedVariances.push(gridData.grid_variances[idx][period])
+      } else {
+        // Inverse distance weighted average
+        let totalWeight = 0
+        let weightedValue = 0
+        let weightedVariance = 0
+
+        for (const point of closestPoints) {
+          const weight = 1.0 / (point.dist + 0.0001) // Avoid division by zero
+          weightedValue += gridData.grid_values[point.index][period] * weight
+          weightedVariance += gridData.grid_variances[point.index][period] * weight
+          totalWeight += weight
+        }
+
+        interpolatedValues.push(weightedValue / totalWeight)
+        interpolatedVariances.push(weightedVariance / totalWeight)
+      }
+    }
+
+    results.push({
+      location_id: location.location_id,
+      latitude: targetLat,
+      longitude: targetLon,
+      values: interpolatedValues,
+      variances: interpolatedVariances,
+      method: 'bilinear'
+    })
   }
 
-  const results = await response.json()
-  console.log(`[Physical Risk] Interpolation completed using ${results[0]?.method}`)
-
+  console.log(`[Physical Risk] Interpolation completed using bilinear method`)
   return results
 }
 
@@ -6773,20 +6848,24 @@ async function callPythonInterpolation(locations, gridData, perilType) {
 async function calculateAndSaveDamages(db, dbRun, scenario_id, locations, interpolatedResults, damageCurves, perilType) {
   console.log(`[Physical Risk] Calculating damages for ${locations.length} locations`)
 
+  let insertCount = 0
+
   for (let locIdx = 0; locIdx < locations.length; locIdx++) {
     const location = locations[locIdx]
     const assetValues = JSON.parse(location.json_values || '{}')
+    const interpResult = interpolatedResults[locIdx]
 
-    for (const periodResult of interpolatedResults) {
-      const period = periodResult.period
-      const intensity = periodResult.intensities[locIdx]
-      const spatialVariance = periodResult.variances[locIdx]
+    for (let period = 0; period < interpResult.values.length; period++) {
+      const intensity = interpResult.values[period]
+      const spatialVariance = interpResult.variances[period]
 
-      // Find matching damage curves for this location's archetype and peril
+      // Find matching damage curves for this location's archetype and peril (case-insensitive)
       const curves = damageCurves.filter(c =>
-        c.peril_type === perilType &&
+        c.peril_type.toUpperCase() === perilType.toUpperCase() &&
         c.archetype === location.archetype
       )
+
+      console.log(`[Physical Risk] Loc ${locIdx}, Period ${period}: intensity=${intensity}, peril=${perilType}, curves found=${curves.length}`)
 
       for (const curve of curves) {
         const valueType = curve.value_type
@@ -6808,20 +6887,25 @@ async function calculateAndSaveDamages(db, dbRun, scenario_id, locations, interp
         const totalVariance = spatialVariance + curveVar
 
         // Save result
-        await dbRun(`
-          INSERT INTO physical_risk_result
-          (scenario_id, location_id, peril_type, value_type, period,
-           intensity, damage_pct, damage_amount, variance)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          scenario_id, location.location_id, perilType,
-          valueType, period, intensity, damagePct, damageAmount, totalVariance
-        ])
+        try {
+          await dbRun(`
+            INSERT INTO physical_risk_result
+            (scenario_id, location_id, peril_type, value_type, period_id,
+             intensity_value, damage_pct, damage_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            scenario_id, location.location_id, perilType,
+            valueType, period, intensity, damagePct, damageAmount
+          ])
+          insertCount++
+        } catch (err) {
+          console.error(`[Physical Risk] Insert error:`, err.message)
+        }
       }
     }
   }
 
-  console.log(`[Physical Risk] Damage calculation completed`)
+  console.log(`[Physical Risk] Damage calculation completed, inserted ${insertCount} result(s)`)
 }
 
 /**
@@ -6857,45 +6941,79 @@ function interpolateCurve(points, x) {
 async function aggregateToDrivers(db, dbAll, dbRun, scenario_id) {
   console.log(`[Physical Risk] Aggregating to entity-level drivers`)
 
-  // Group by entity, driver_code, period and sum damage amounts
-  const aggregated = await dbAll(`
+  // Load peril-driver mapping from damage_curve_mapping table
+  // Use the most recent mapping that has proper structure: {"DRIVER_CODE": [{"peril_type": "X", "value_type": "Y"}]}
+  const mappingRows = await dbAll(`
+    SELECT peril_driver_mapping
+    FROM damage_curve_mapping
+    WHERE peril_driver_mapping IS NOT NULL
+    AND peril_driver_mapping != '[]'
+    AND peril_driver_mapping LIKE '%{%'
+    AND peril_driver_mapping LIKE '%"peril_type"%'
+    AND peril_driver_mapping LIKE '%"value_type"%'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `)
+
+  if (mappingRows.length === 0) {
+    console.log(`[Physical Risk] No driver mapping configured`)
+    return
+  }
+
+  const perilDriverMapping = JSON.parse(mappingRows[0].peril_driver_mapping)
+  console.log(`[Physical Risk] Using driver mapping:`, perilDriverMapping)
+
+  // Get all physical risk results for this scenario
+  const results = await dbAll(`
     SELECT
-      l.entity_id,
-      dc.driver_code,
-      prr.period,
-      SUM(prr.damage_amount) as total_damage
+      prr.peril_type,
+      prr.value_type,
+      prr.period_id,
+      prr.damage_amount
     FROM physical_risk_result prr
-    JOIN location l ON prr.location_id = l.location_id
-    JOIN damage_curve dc ON
-      prr.peril_type = dc.peril_type AND
-      prr.value_type = dc.value_type AND
-      l.archetype = dc.archetype
     WHERE prr.scenario_id = ?
-    GROUP BY l.entity_id, dc.driver_code, prr.period
   `, [scenario_id])
 
-  if (aggregated.length === 0) {
+  if (results.length === 0) {
     console.log(`[Physical Risk] No results to aggregate`)
     return
   }
 
-  // Delete existing physical risk drivers for this scenario
-  const driverCodes = [...new Set(aggregated.map(a => a.driver_code))]
-  const placeholders = driverCodes.map(() => '?').join(',')
+  // Aggregate by (driver_code, period) - drivers are scenario-level, not entity-level
+  const aggregated = {}
 
-  await dbRun(`
-    DELETE FROM scenario_drivers
-    WHERE scenario_id = ? AND driver_code IN (${placeholders})
-  `, [scenario_id, ...driverCodes])
-
-  // Insert new driver values
-  for (const row of aggregated) {
-    await dbRun(`
-      INSERT INTO scenario_drivers (scenario_id, entity_id, driver_code, period, driver_value)
-      VALUES (?, ?, ?, ?, ?)
-    `, [scenario_id, row.entity_id, row.driver_code, row.period, row.total_damage])
+  for (const result of results) {
+    // Find which driver(s) this peril/value_type maps to
+    for (const [driverCode, mappings] of Object.entries(perilDriverMapping)) {
+      for (const mapping of mappings) {
+        if (mapping.peril_type === result.peril_type && mapping.value_type === result.value_type) {
+          const key = `${driverCode}|${result.period_id}`
+          aggregated[key] = (aggregated[key] || 0) + result.damage_amount
+        }
+      }
+    }
   }
 
-  console.log(`[Physical Risk] Populated ${aggregated.length} driver values`)
+  const driverCodes = [...new Set(Object.keys(perilDriverMapping))]
+  if (driverCodes.length > 0) {
+    const placeholders = driverCodes.map(() => '?').join(',')
+    await dbRun(`
+      DELETE FROM scenario_drivers
+      WHERE scenario_id = ? AND driver_code IN (${placeholders})
+    `, [scenario_id, ...driverCodes])
+  }
+
+  // Insert new driver values
+  let insertCount = 0
+  for (const [key, totalDamage] of Object.entries(aggregated)) {
+    const [driverCode, period] = key.split('|')
+    await dbRun(`
+      INSERT INTO scenario_drivers (scenario_id, driver_code, period_id, value, unit_code)
+      VALUES (?, ?, ?, ?, 'CHF')
+    `, [scenario_id, driverCode, parseInt(period), -totalDamage]) // Negative = loss
+    insertCount++
+  }
+
+  console.log(`[Physical Risk] Populated ${insertCount} driver values for ${driverCodes.length} driver code(s)`)
 }
 

@@ -121,11 +121,12 @@ bool DriverValueProvider::has_value(const std::string& key) const {
         load_drivers();
     }
 
-    // Case 1: Explicit driver: prefix (e.g., "driver:REVENUE" or "driver:FLOOD_BI_FACTORY_ZRH")
+    // Case 1: Explicit driver: prefix (e.g., "driver:REVENUE" or "driver:FLOOD")
     // This is used in formulas to explicitly fetch from drivers
+    // Return true for ANY driver: prefixed variable, even if not in cache
+    // get_value() will return 0.0 for missing drivers (correct for physical risk)
     if (key.length() > 7 && key.substr(0, 7) == "driver:") {
-        std::string driver_code = key.substr(7);
-        return driver_cache_.find(driver_code) != driver_cache_.end();
+        return true;  // Always accept driver: prefixed variables
     }
 
     // Case 2: Bare line item code (e.g., "REVENUE")
@@ -133,9 +134,8 @@ bool DriverValueProvider::has_value(const std::string& key) const {
     // Check if we have a mapping for this line item
     auto it = line_item_to_driver_map_.find(key);
     if (it != line_item_to_driver_map_.end()) {
-        // We have a mapping, check if the mapped driver exists
-        std::string driver_code = it->second;
-        return driver_cache_.find(driver_code) != driver_cache_.end();
+        // We have a mapping, always return true (get_value will return 0.0 if missing)
+        return true;
     }
 
     // No explicit mapping, try direct driver code match (driver_code == line_item_code)

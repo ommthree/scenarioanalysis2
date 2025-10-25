@@ -16,6 +16,27 @@
 namespace finmodel {
 namespace unified {
 
+// Helper class for overriding driver values during marginal contribution calculation
+class OverrideDriverProvider : public core::IValueProvider {
+    core::IValueProvider* base_;
+    std::string override_driver_;
+    double override_value_;
+public:
+    OverrideDriverProvider(core::IValueProvider* base, const std::string& driver, double value)
+        : base_(base), override_driver_(driver), override_value_(value) {}
+
+    bool has_value(const std::string& key) const override {
+        return base_->has_value(key);
+    }
+
+    double get_value(const std::string& key, const core::Context& ctx) const override {
+        if (key == override_driver_) {
+            return override_value_;
+        }
+        return base_->get_value(key, ctx);
+    }
+};
+
 UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
     : db_(db) {
 
@@ -301,7 +322,7 @@ double UnifiedEngine::calculate_line_item(
         double value = evaluator_.evaluate(formula.value(), providers_, ctx);
 
         // Track driver contributions (from formula dependencies)
-        // Driver contribution = delta from base (impact caused by the driver)
+        // Calculate actual marginal contribution of each driver
         auto dependencies = evaluator_.extract_dependencies(formula.value());
 
         bool has_base_ref = false;
@@ -320,29 +341,65 @@ double UnifiedEngine::calculate_line_item(
             }
         }
 
+        // Collect driver codes from formula
+        std::vector<std::string> driver_codes;
         for (const auto& dep : dependencies) {
-            // Check if dependency is a driver reference (starts with "driver:")
             if (dep.length() > 7 && dep.substr(0, 7) == "driver:") {
-                std::string driver_code = dep.substr(7);
-                try {
-                    // Driver contribution = delta from base
-                    // If formula is "driver:X * BASE:X", then delta = (result - base)
-                    double delta = has_base_ref ? (value - base_value) : value;
+                driver_codes.push_back(dep.substr(7));
+            }
+        }
 
-                    // Apply sign convention: if line item has negative sign convention (like EXPENSES),
-                    // the driver impact should also be negative when the delta is positive
-                    if (line_item && line_item->sign_convention == SignConvention::NEGATIVE) {
-                        delta = -delta;
-                    }
+        // Calculate each driver's marginal contribution
+        // by comparing result with current driver value vs. period 1 driver value
+        for (const auto& driver_code : driver_codes) {
+            try {
+                // Get period 1 value for this driver
+                // Query scenario_drivers for period_id = 1
+                double period1_value;
+                std::ostringstream query;
+                query << "SELECT value FROM scenario_drivers "
+                      << "WHERE scenario_id = " << ctx.scenario_id
+                      << " AND period_id = 1 "
+                      << " AND driver_code = '" << driver_code << "'";
 
-                    DriverContribution contrib;
-                    contrib.line_item_code = code;
-                    contrib.driver_code = driver_code;
-                    contrib.value = delta;
-                    last_driver_contributions_.push_back(contrib);
-                } catch (...) {
-                    // Driver not found, skip
+                auto result_set = db_->execute_query(query.str(), {});
+                if (result_set && result_set->next()) {
+                    period1_value = result_set->get_double(0);
+                } else {
+                    // No period 1 value found, use current value (no contribution)
+                    period1_value = driver_provider_->get_value("driver:" + driver_code, ctx);
                 }
+
+                OverrideDriverProvider override_provider(driver_provider_.get(), "driver:" + driver_code, period1_value);
+
+                // Create temporary provider list with override
+                std::vector<core::IValueProvider*> temp_providers;
+                for (auto* p : providers_) {
+                    if (p == driver_provider_.get()) {
+                        temp_providers.push_back(&override_provider);
+                    } else {
+                        temp_providers.push_back(p);
+                    }
+                }
+
+                // Evaluate formula with this driver at period 1 value
+                double value_with_period1_driver = evaluator_.evaluate(formula.value(), temp_providers, ctx);
+
+                // Driver contribution = (full result) - (result with driver at period 1)
+                double contrib_value = value - value_with_period1_driver;
+
+                // Apply sign convention
+                if (line_item && line_item->sign_convention == SignConvention::NEGATIVE) {
+                    contrib_value = -contrib_value;
+                }
+
+                DriverContribution contrib;
+                contrib.line_item_code = code;
+                contrib.driver_code = driver_code;
+                contrib.value = contrib_value;
+                last_driver_contributions_.push_back(contrib);
+            } catch (...) {
+                // Driver evaluation failed, skip
             }
         }
 
