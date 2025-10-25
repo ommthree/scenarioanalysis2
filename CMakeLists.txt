@@ -85,12 +85,12 @@ add_subdirectory(engine)
 enable_testing()
 add_subdirectory(engine/tests)
 
-# Build utility scripts
-add_executable(init_database scripts/init_database.cpp)
+# Build utility programs
+add_executable(init_database engine/src/utils/init_database.cpp)
 target_link_libraries(init_database PRIVATE engine_lib)
 target_include_directories(init_database PRIVATE ${CMAKE_SOURCE_DIR}/engine/include)
 
-add_executable(insert_templates scripts/insert_templates.cpp)
+add_executable(insert_templates engine/src/utils/insert_templates.cpp)
 target_link_libraries(insert_templates PRIVATE engine_lib)
 target_include_directories(insert_templates PRIVATE ${CMAKE_SOURCE_DIR}/engine/include)
 
