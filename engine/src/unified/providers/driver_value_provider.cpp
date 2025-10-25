@@ -176,15 +176,24 @@ double DriverValueProvider::get_value(const std::string& key, const core::Contex
 void DriverValueProvider::load_drivers() const {
     driver_cache_.clear();
 
-    // Query drivers - drivers are global and apply to all entities
+    // Query drivers - filter by entity_id if present, otherwise load all
     std::ostringstream query;
     query << "SELECT driver_code, value, unit_code FROM scenario_drivers "
           << "WHERE scenario_id = :scenario_id "
           << "AND period_id = :period_id";
 
+    // If entity_id is set, filter by it (allows entity-specific drivers)
+    // If entity_id is NULL in the table, those are global drivers that apply to all entities
+    if (!entity_id_.empty()) {
+        query << " AND (entity_id = :entity_id OR entity_id IS NULL)";
+    }
+
     ParamMap params;
     params["scenario_id"] = scenario_id_;
     params["period_id"] = period_id_;
+    if (!entity_id_.empty()) {
+        params["entity_id"] = entity_id_;
+    }
 
     auto result_set = db_->execute_query(query.str(), params);
 

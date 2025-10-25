@@ -13,7 +13,6 @@
 #include <string>
 #include <map>
 #include <sstream>
-#include <curl/curl.h>
 #include <filesystem>
 #include "database/database_factory.h"
 #include "database/result_set.h"
@@ -22,6 +21,7 @@
 #include "actions/action_engine.h"
 #include "core/entity_hierarchy_manager.h"
 #include "core/statement_template.h"
+#include "physical_risk/hazard_map_risk_engine.h"
 
 using namespace finmodel;
 using namespace finmodel::database;
@@ -285,14 +285,6 @@ std::string apply_action_transformations(
 }
 
 /**
- * @brief Callback for curl to capture response
- */
-static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
-    ((std::string*)userp)->append((char*)contents, size * nmemb);
-    return size * nmemb;
-}
-
-/**
  * @brief Check if physical risk is enabled for this scenario
  */
 bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
@@ -318,80 +310,6 @@ bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
         return result->get_int("count") > 0;
     }
     return false;
-}
-
-/**
- * @brief Escape string for JSON
- */
-std::string json_escape(const std::string& str) {
-    std::ostringstream escaped;
-    for (char c : str) {
-        switch (c) {
-            case '\\': escaped << "\\\\"; break;
-            case '"': escaped << "\\\""; break;
-            case '\n': escaped << "\\n"; break;
-            case '\r': escaped << "\\r"; break;
-            case '\t': escaped << "\\t"; break;
-            default: escaped << c; break;
-        }
-    }
-    return escaped.str();
-}
-
-/**
- * @brief Call physical risk API to calculate damages before financial calc
- */
-bool call_physical_risk_api(int scenario_id, const std::string& db_path) {
-    std::cout << "[Physical Risk] Calling API for scenario " << scenario_id << "..." << std::endl;
-
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        std::cerr << "[Physical Risk] ERROR: Failed to initialize curl" << std::endl;
-        return false;
-    }
-
-    // Convert to absolute path for API server (which may have different working directory)
-    std::string absolute_path = std::filesystem::absolute(db_path).string();
-
-    // Build JSON payload with escaped path
-    std::ostringstream payload_stream;
-    payload_stream << "{\"scenario_id\":" << scenario_id
-                   << ",\"dbPath\":\"" << json_escape(absolute_path) << "\"}";
-    std::string payload = payload_stream.str();  // Store as string so it doesn't get destroyed
-
-    std::string response_str;
-    struct curl_slist* headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-
-    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3001/api/physical-risk/calculate");
-    curl_easy_setopt(curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_str);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minute timeout
-
-    CURLcode res = curl_easy_perform(curl);
-
-    long http_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        std::cerr << "[Physical Risk] ERROR: " << curl_easy_strerror(res) << std::endl;
-        return false;
-    }
-
-    if (http_code != 200) {
-        std::cerr << "[Physical Risk] ERROR: HTTP " << http_code << std::endl;
-        std::cerr << "[Physical Risk] Response: " << response_str << std::endl;
-        return false;
-    }
-
-    std::cout << "[Physical Risk] ✓ Calculation completed successfully" << std::endl;
-    return true;
 }
 
 int main(int argc, char* argv[]) {
@@ -480,10 +398,13 @@ int main(int argc, char* argv[]) {
             // Check if physical risk calculation is needed
             if (has_physical_risk(db, scenario_id)) {
                 std::cout << "Physical risk enabled for this scenario" << std::endl;
-                bool risk_success = call_physical_risk_api(scenario_id, db_path);
-
-                if (!risk_success) {
-                    std::cerr << "WARNING: Physical risk calculation failed, continuing with financial calc..." << std::endl;
+                try {
+                    physical_risk::HazardMapRiskEngine hazard_engine(db.get());
+                    int driver_count = hazard_engine.process_scenario(scenario_id);
+                    std::cout << "Physical risk calculation completed: " << driver_count << " drivers generated" << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "WARNING: Physical risk calculation failed: " << e.what() << std::endl;
+                    std::cerr << "Continuing with financial calc..." << std::endl;
                 }
             }
 
@@ -789,6 +710,27 @@ int main(int argc, char* argv[]) {
 
                                             if (any_child_populated) {
                                                 period_results[parent_id][line_item.code] = {sum, true};
+
+                                                // Roll up driver contributions from children to parent
+                                                // Sum contributions by (line_item_code, driver_code)
+                                                std::map<std::pair<std::string, std::string>, double> parent_driver_sums;
+
+                                                for (const auto& child_id : parent_node->children) {
+                                                    // Find all driver contributions for this child and line item
+                                                    for (const auto& [contrib_entity, contrib_line_item, contrib_driver, contrib_value] : all_driver_contributions) {
+                                                        if (contrib_entity == child_id && contrib_line_item == line_item.code) {
+                                                            auto key = std::make_pair(contrib_line_item, contrib_driver);
+                                                            parent_driver_sums[key] += contrib_value;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Add parent's aggregated driver contributions
+                                                for (const auto& [key, sum_value] : parent_driver_sums) {
+                                                    all_driver_contributions.push_back(
+                                                        std::make_tuple(parent_id, key.first, key.second, sum_value)
+                                                    );
+                                                }
                                             }
                                         }
                                     }

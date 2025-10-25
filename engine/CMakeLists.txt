@@ -66,13 +66,9 @@ target_link_libraries(scenario_engine
 # Calculation runner executable
 add_executable(run_calculation src/run_calculation.cpp)
 
-# Find curl library
-find_package(CURL REQUIRED)
-
 target_link_libraries(run_calculation
     PRIVATE
         engine_lib
-        CURL::libcurl
 )
 
 # Install

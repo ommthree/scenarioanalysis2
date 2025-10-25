@@ -355,19 +355,22 @@ double UnifiedEngine::calculate_line_item(
             try {
                 // Get period 1 value for this driver
                 // Query scenario_drivers for period_id = 1
+                // Must filter by entity_id to avoid picking up other entities' drivers
                 double period1_value;
                 std::ostringstream query;
                 query << "SELECT value FROM scenario_drivers "
                       << "WHERE scenario_id = " << ctx.scenario_id
                       << " AND period_id = 1 "
-                      << " AND driver_code = '" << driver_code << "'";
+                      << " AND driver_code = '" << driver_code << "' "
+                      << " AND (entity_id = '" << ctx.entity_id << "' OR entity_id IS NULL)";
 
                 auto result_set = db_->execute_query(query.str(), {});
                 if (result_set && result_set->next()) {
                     period1_value = result_set->get_double(0);
                 } else {
-                    // No period 1 value found, use current value (no contribution)
-                    period1_value = driver_provider_->get_value("driver:" + driver_code, ctx);
+                    // No period 1 value found for this driver - use 0.0 as baseline
+                    // This means the full current value is the contribution
+                    period1_value = 0.0;
                 }
 
                 OverrideDriverProvider override_provider(driver_provider_.get(), "driver:" + driver_code, period1_value);
