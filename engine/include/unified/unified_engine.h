@@ -41,9 +41,7 @@
 #include "core/ivalue_provider.h"
 #include "core/entity_hierarchy_manager.h"
 #include "types/common_types.h"
-#include "pl/providers/pl_value_provider.h"
 #include "bs/providers/statement_value_provider.h"
-#include "cf/providers/cf_value_provider.h"
 #include "unified/providers/driver_value_provider.h"
 #include "unified/providers/base_value_provider.h"
 #include "unified/validation_rule_engine.h"
@@ -259,9 +257,6 @@ private:
     // Validation rule engine (data-driven validation)
     std::unique_ptr<ValidationRuleEngine> validation_engine_;
 
-    // Legacy providers (not used in unified engine, kept for backward compatibility)
-    std::unique_ptr<pl::PLValueProvider> pl_provider_;
-    std::unique_ptr<cf::CFValueProvider> cf_provider_;
 
     // Provider list for evaluator
     std::vector<core::IValueProvider*> providers_;

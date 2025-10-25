@@ -58,10 +58,6 @@ UnifiedEngine::UnifiedEngine(std::shared_ptr<database::IDatabase> db)
     // Initialize validation rule engine
     validation_engine_ = std::make_unique<ValidationRuleEngine>(db_);
 
-    // Legacy providers (not used but kept for backward compatibility)
-    pl_provider_ = std::make_unique<pl::PLValueProvider>();
-    cf_provider_ = std::make_unique<cf::CFValueProvider>();
-
     // Register providers with evaluator
     // Order matters: try more specific providers first
     // Register providers with evaluator
