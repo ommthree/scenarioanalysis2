@@ -43,7 +43,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Database type: " << db->database_type() << std::endl;
 
         // Read and execute migration
-        std::string migration_file = migration_dir + "/001_initial_schema.sql";
+        std::string migration_file = migration_dir + "/schema.sql";
         std::cout << "\nExecuting migration: " << migration_file << std::endl;
 
         std::string sql = read_file(migration_file);
