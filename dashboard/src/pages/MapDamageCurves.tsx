@@ -247,7 +247,7 @@ const MapDamageCurves: React.FC = () => {
     }
   }
 
-  const handleRoleDragStart = (role: 'input' | 'output' | 'archetype' | 'peril' | 'unit') => {
+  const handleRoleDragStart = (role: 'input' | 'output' | 'archetype' | 'peril' | 'unit' | 'valueType') => {
     setDraggedRole(role)
   }
 
