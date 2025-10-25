@@ -99,12 +99,6 @@ install(TARGETS scenario_engine
     RUNTIME DESTINATION bin
 )
 
-# Install web assets
-install(DIRECTORY web/
-    DESTINATION share/finmodel/web
-    PATTERN "*.md" EXCLUDE
-)
-
 # Install configuration
 install(DIRECTORY data/config/
     DESTINATION etc/finmodel

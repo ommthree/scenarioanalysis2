@@ -94,8 +94,8 @@ ScenarioAnalysis2/
 │   │   │   ├── simple_tax_strategy.cpp         # Flat rate tax
 │   │   │   ├── progressive_tax_strategy.cpp    # Bracket-based tax
 │   │   │   └── loss_carryforward_tax_strategy.cpp  # NOL handling
-│   │   ├── web/
-│   │   │   └── server.cpp          # Crow HTTP/WebSocket server
+│   │   ├── physical_risk/
+│   │   │   └── hazard_map_risk_engine.cpp  # Physical risk calculation engine
 │   │   └── main.cpp                # Application entry point
 │   │
 │   └── tests/                      # 🧪 Unit & Integration Tests
@@ -106,26 +106,11 @@ ScenarioAnalysis2/
 │       ├── test_tax_strategies.cpp
 │       └── test_integration.cpp
 │
-├── web/                            # 🌐 Frontend (HTML/JS/CSS)
-│   ├── index.html                  # Main dashboard entry point
-│   ├── css/
-│   │   ├── main.css                # Global styles
-│   │   └── dashboard.css           # Dashboard-specific styles
-│   ├── js/
-│   │   ├── app.js                  # Main application logic
-│   │   ├── api-client.js           # REST API client wrapper
-│   │   ├── charts/
-│   │   │   ├── pl-chart.js         # P&L waterfall charts
-│   │   │   ├── bs-chart.js         # Balance sheet charts
-│   │   │   └── waterfall-chart.js  # Generic waterfall component
-│   │   └── components/
-│   │       ├── kpi-card.js         # KPI summary cards
-│   │       └── data-table.js       # AG Grid wrappers
-│   ├── lib/                        # External JS libraries (downloaded in M4)
-│   │   ├── echarts.min.js          # Apache ECharts 5.4+
-│   │   └── ag-grid-community.min.js    # AG Grid Community 30+
-│   └── assets/
-│       └── logo.svg                # Application logo
+├── dashboard/                      # 🌐 Frontend (React + Vite)
+│   ├── src/                        # React components and pages
+│   ├── server/                     # Node.js API server
+│   ├── public/                     # Static assets
+│   └── package.json                # Node dependencies
 │
 ├── data/                           # 📊 Data & Configuration
 │   ├── database/
