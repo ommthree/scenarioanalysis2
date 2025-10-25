@@ -1,6 +1,0 @@
-Scenario,Option,DriverName,Region,DataType,Units,y1,y2,y3,y4,y5
-2,Optimistic,REVENUE_GROWTH,TEST_L2,Level,CHF,1.00,1.08,1.18,1.28,1.40
-2,Optimistic,EXPENSE_GROWTH,TEST_L2,Level,CHF,1.00,1.05,1.10,1.15,1.20
-2,Optimistic,USD,TEST_L2,Level,CHF,0.91,0.90,0.89,0.88,0.87
-2,Optimistic,EUR,TEST_L2,Level,CHF,1.05,1.05,1.05,1.05,1.05
-2,Optimistic,GBP,TEST_L2,Level,CHF,1.18,1.18,1.18,1.18,1.18
