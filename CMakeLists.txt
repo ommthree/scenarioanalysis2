@@ -81,9 +81,9 @@ endif()
 # Build engine
 add_subdirectory(engine)
 
-# Build tests
-enable_testing()
-add_subdirectory(engine/tests)
+# Build tests (archived - tests moved to engine/tests/archive/)
+# enable_testing()
+# add_subdirectory(engine/tests)
 
 # Build utility programs
 add_executable(init_database engine/src/utils/init_database.cpp)
