@@ -49,18 +49,21 @@ const MapDamageCurves: React.FC = () => {
   // Drag state
   const [draggedRole, setDraggedRole] = useState<'input' | 'output' | 'archetype' | 'peril' | 'unit' | 'valueType' | null>(null)
   const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
+  const [draggedPerilValueType, setDraggedPerilValueType] = useState<{peril_type: string, value_type: string} | null>(null)
 
-  // Peril mappings: maps csv_row_index to peril_type
-  const [perilMappings, setPerilMappings] = useState<Array<{csv_row_index: number, peril_type: string}>>([])
+  // Driver mappings: maps driver_code to array of {peril_type, value_type} combinations
+  // Example: { "FLOOD": [{peril_type: "FLOOD", value_type: "PPE"}, {peril_type: "FLOOD", value_type: "BI"}] }
+  const [driverMappings, setDriverMappings] = useState<{[driverCode: string]: Array<{peril_type: string, value_type: string}>}>({})
 
-  // CSV Perils: unique peril values from full CSV
+  // CSV Perils: unique peril values from CSV (for hierarchical display)
   const [csvPerils, setCsvPerils] = useState<string[]>([])
+
+  // CSV Value Types: unique value type values from CSV
+  const [csvValueTypes, setCsvValueTypes] = useState<string[]>([])
 
   // AI Mapping state
   const [aiMappingInProgress, setAiMappingInProgress] = useState(false)
   const [aiMappingMessage, setAiMappingMessage] = useState('')
-  const [aiRowMappingInProgress, setAiRowMappingInProgress] = useState(false)
-  const [aiRowMappingMessage, setAiRowMappingMessage] = useState('')
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
@@ -113,7 +116,7 @@ const MapDamageCurves: React.FC = () => {
           perilColumn: perilColumn,
           unitColumn: unitColumn,
           valueTypeColumn: valueTypeColumn,
-          perilMappings: perilMappings
+          driverMappings: driverMappings
         }
 
         console.log('Auto-save payload:', payload)
@@ -129,7 +132,7 @@ const MapDamageCurves: React.FC = () => {
     }, 1000) // Debounce for 1 second
 
     return () => clearTimeout(timeoutId)
-  }, [perilMappings, selectedFileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn])
+  }, [driverMappings, selectedFileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn])
 
   // Extract unique perils from full CSV when peril column is assigned
   useEffect(() => {
@@ -173,6 +176,48 @@ const MapDamageCurves: React.FC = () => {
     extractUniquePerils()
   }, [selectedFileId, perilColumn])
 
+  // Extract unique value types from full CSV when value type column is assigned
+  useEffect(() => {
+    if (!selectedFileId || !valueTypeColumn) {
+      setCsvValueTypes([])
+      return
+    }
+
+    const extractUniqueValueTypes = async () => {
+      try {
+        const response = await fetch(`http://localhost:3001/api/staged-files/${selectedFileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+        const result = await response.json()
+
+        if (result.success && result.csvText) {
+          const lines = result.csvText.split('\n').filter(line => line.trim() !== '')
+          if (lines.length > 0) {
+            const headers = lines[0].split(',').map(h => h.trim())
+            const valueTypeColIndex = headers.indexOf(valueTypeColumn)
+
+            if (valueTypeColIndex >= 0) {
+              const uniqueValueTypes = new Set<string>()
+
+              // Parse all rows
+              lines.slice(1).forEach(line => {
+                const values = line.split(',').map(v => v.trim())
+                const valueTypeValue = values[valueTypeColIndex]
+                if (valueTypeValue && valueTypeValue !== '') {
+                  uniqueValueTypes.add(valueTypeValue)
+                }
+              })
+
+              setCsvValueTypes(Array.from(uniqueValueTypes).sort())
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error extracting unique value types:', error)
+      }
+    }
+
+    extractUniqueValueTypes()
+  }, [selectedFileId, valueTypeColumn])
+
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
     console.log('File clicked:', fileId, fileName)
@@ -184,13 +229,14 @@ const MapDamageCurves: React.FC = () => {
     setCsvData([])
     setCsvColumns([])
     setCsvPerils([])
+    setCsvValueTypes([])
     setInputColumn(null)
     setOutputColumn(null)
     setArchetypeColumn(null)
     setPerilColumn(null)
     setUnitColumn(null)
     setValueTypeColumn(null)
-    setPerilMappings([])
+    setDriverMappings({})
 
     try {
       // Load saved mapping if it exists
@@ -207,7 +253,7 @@ const MapDamageCurves: React.FC = () => {
           if (mapping.perilColumn) setPerilColumn(mapping.perilColumn)
           if (mapping.unitColumn) setUnitColumn(mapping.unitColumn)
           if (mapping.valueTypeColumn) setValueTypeColumn(mapping.valueTypeColumn)
-          setPerilMappings(mapping.perilMappings || [])
+          setDriverMappings(mapping.driverMappings || {})
         }
       } catch (mappingError) {
         console.log('No saved mapping found or error loading mapping:', mappingError)
@@ -372,92 +418,6 @@ Rules:
     }
   }
 
-  const handleAIRowMapping = async () => {
-    if (csvData.length === 0 || perils.length === 0 || !perilColumn) {
-      setAiRowMappingMessage('Error: Missing data or peril column not set')
-      setTimeout(() => setAiRowMappingMessage(''), 3000)
-      return
-    }
-
-    setAiRowMappingInProgress(true)
-    setAiRowMappingMessage('AI analyzing rows...')
-
-    try {
-      // Prepare peril information
-      const perilInfo = perils.map(p => ({
-        peril_type: p.peril_type,
-        description: p.description
-      }))
-
-      // Prepare CSV row information
-      const csvRowInfo = csvData.map((row, index) => ({
-        index: index,
-        identifier: getRowIdentifier(row)
-      })).filter(r => r.identifier) // Only include rows with identifiers
-
-      const prompt = `You are a damage curve mapping assistant. Map CSV rows to physical climate perils.
-
-Available Perils:
-${JSON.stringify(perilInfo, null, 2)}
-
-CSV Rows (from "${perilColumn}" column):
-${JSON.stringify(csvRowInfo, null, 2)}
-
-Instructions:
-Match each CSV row to the most appropriate peril based on:
-1. The peril type and description
-2. The CSV row identifier text
-3. Keywords related to climate hazards (flood, hurricane, wildfire, earthquake, etc.)
-
-Return ONLY a JSON array of mappings in this format:
-[
-  {"csv_row_index": 0, "peril_type": "FLOOD"},
-  {"csv_row_index": 1, "peril_type": "HURRICANE"}
-]
-
-Rules:
-- Only include mappings you are confident about
-- A CSV row can only map to one peril
-- Not all rows need to be mapped
-- Use the exact peril_type values from the Available Perils list`
-
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'AI row mapping failed')
-      }
-
-      const result = await response.json()
-      const content = result.content[0].text
-
-      // Extract JSON array from response
-      const jsonMatch = content.match(/\[[\s\S]*\]/)
-      if (!jsonMatch) {
-        throw new Error('Invalid response format from AI')
-      }
-
-      const aiMappings = JSON.parse(jsonMatch[0])
-
-      // Apply the AI mappings
-      setPerilMappings(aiMappings)
-
-      setAiRowMappingMessage(`Mapped ${aiMappings.length} rows`)
-      setTimeout(() => setAiRowMappingMessage(''), 3000)
-
-    } catch (error) {
-      console.error('AI row mapping error:', error)
-      setAiRowMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI row mapping failed'}`)
-      setTimeout(() => setAiRowMappingMessage(''), 5000)
-    } finally {
-      setAiRowMappingInProgress(false)
-    }
-  }
-
   const handleSave = async () => {
     if (!selectedFileId || !perilColumn) return
 
@@ -476,7 +436,7 @@ Rules:
           perilColumn: perilColumn,
           unitColumn: unitColumn,
           valueTypeColumn: valueTypeColumn,
-          perilMappings: perilMappings
+          driverMappings: driverMappings
         })
       })
 
@@ -495,38 +455,55 @@ Rules:
     }
   }
 
-  // Row drag handlers for peril mapping
-  const handleRowDragStart = (rowIndex: number) => {
-    setDraggedRowIndex(rowIndex)
+  // Peril+ValueType drag handlers for driver mapping
+  const handlePerilValueTypeDragStart = (perilType: string, valueType: string) => {
+    setDraggedPerilValueType({ peril_type: perilType, value_type: valueType })
   }
 
-  const handleRowDrop = (perilType: string) => {
-    if (draggedRowIndex === null) return
+  const handlePerilValueTypeDragEnd = () => {
+    setDraggedPerilValueType(null)
+  }
 
-    // Check if this peril already has a mapping
-    const existingMappingIndex = perilMappings.findIndex(m => m.peril_type === perilType)
+  const handlePerilValueTypeDrop = (driverCode: string) => {
+    if (!draggedPerilValueType) return
 
-    if (existingMappingIndex >= 0) {
-      // Replace existing mapping
-      const newMappings = [...perilMappings]
-      newMappings[existingMappingIndex] = { csv_row_index: draggedRowIndex, peril_type: perilType }
-      setPerilMappings(newMappings)
-    } else {
-      // Add new mapping
-      setPerilMappings([...perilMappings, { csv_row_index: draggedRowIndex, peril_type: perilType }])
+    const newMappings = { ...driverMappings }
+
+    // Initialize array for this driver if it doesn't exist
+    if (!newMappings[driverCode]) {
+      newMappings[driverCode] = []
     }
 
-    setDraggedRowIndex(null)
+    // Check if this exact combination already exists for this driver
+    const exists = newMappings[driverCode].some(
+      m => m.peril_type === draggedPerilValueType.peril_type && m.value_type === draggedPerilValueType.value_type
+    )
+
+    if (!exists) {
+      // Add the new mapping
+      newMappings[driverCode] = [...newMappings[driverCode], draggedPerilValueType]
+    }
+
+    setDriverMappings(newMappings)
+    setDraggedPerilValueType(null)
   }
 
-  const getRowIdentifier = (row: CsvRow) => {
-    if (!perilColumn) return ''
-    return row[perilColumn] || ''
+  const handleRemovePerilValueTypeMapping = (driverCode: string, perilType: string, valueType: string) => {
+    const newMappings = { ...driverMappings }
+    if (newMappings[driverCode]) {
+      newMappings[driverCode] = newMappings[driverCode].filter(
+        m => !(m.peril_type === perilType && m.value_type === valueType)
+      )
+      // Remove driver key if empty
+      if (newMappings[driverCode].length === 0) {
+        delete newMappings[driverCode]
+      }
+    }
+    setDriverMappings(newMappings)
   }
 
-  const getMappedRow = (perilType: string): number | null => {
-    const mapping = perilMappings.find(m => m.peril_type === perilType)
-    return mapping ? mapping.csv_row_index : null
+  const getDriverMappings = (driverCode: string): Array<{peril_type: string, value_type: string}> => {
+    return driverMappings[driverCode] || []
   }
 
   return (
@@ -984,8 +961,8 @@ Rules:
           </Card>
         )}
 
-        {/* Row Mapping Section */}
-        {selectedFileId && csvData.length > 0 && perilColumn && (
+        {/* Peril → Value Type → Driver Mapping Section */}
+        {selectedFileId && csvData.length > 0 && perilColumn && valueTypeColumn && (
           <Card className="border-2" style={{
             backgroundColor: 'rgba(30, 41, 59, 0.6)',
             backdropFilter: 'blur(10px)',
@@ -996,179 +973,192 @@ Rules:
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                 <div>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '8px' }}>
-                    Map Rows to Perils
+                    Map Peril & Value Type Combinations to Drivers
                   </h3>
                   <p style={{ fontSize: '13px', color: '#94a3b8' }}>
-                    Drag CSV rows from the left and drop them onto perils on the right to create mappings
+                    Drag peril+value_type tiles from the left and drop them onto physical risk drivers on the right. Multiple tiles can be mapped to the same driver (they will sum).
                   </p>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                  <Button
-                    onClick={handleAIRowMapping}
-                    disabled={aiRowMappingInProgress || !perilColumn}
-                    style={{
-                      backgroundColor: aiRowMappingInProgress ? '#64748b' : '#8b5cf6',
-                      padding: '8px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      border: 'none',
-                      boxShadow: 'none',
-                      fontSize: '13px'
-                    }}
-                  >
-                    {aiRowMappingInProgress ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        AI Mapping...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        AI Map Rows
-                      </>
-                    )}
-                  </Button>
-                  {aiRowMappingMessage && (
-                    <div style={{
-                      padding: '6px 12px',
-                      backgroundColor: aiRowMappingMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(139, 92, 246, 0.1)',
-                      border: `1px solid ${aiRowMappingMessage.includes('Error') ? 'rgba(239, 68, 68, 0.3)' : 'rgba(139, 92, 246, 0.3)'}`,
-                      borderRadius: '4px',
-                      color: aiRowMappingMessage.includes('Error') ? '#ef4444' : '#8b5cf6',
-                      fontSize: '12px',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {aiRowMappingMessage}
-                    </div>
-                  )}
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-                {/* Left Panel - Draggable CSV Rows (Unique Perils Only) */}
+                {/* Left Panel - Hierarchical Peril → Value Type Combinations */}
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                    CSV Perils
+                    Peril & Value Type Combinations
                   </h4>
                   <div style={{
-                    maxHeight: '400px',
+                    maxHeight: '500px',
                     overflowY: 'auto',
                     border: '1px solid rgba(71, 85, 105, 0.3)',
                     borderRadius: '8px',
                     padding: '8px'
                   }}>
-                    {csvPerils.length === 0 ? (
+                    {csvPerils.length === 0 || csvValueTypes.length === 0 ? (
                       <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                        {perilColumn ? 'Loading perils...' : 'Assign peril column above to see CSV perils'}
+                        {!perilColumn || !valueTypeColumn ? 'Assign peril and value type columns above' : 'Loading combinations...'}
                       </div>
                     ) : (
-                      csvPerils.map((perilName, index) => (
-                        <div
-                          key={perilName}
-                          draggable
-                          onDragStart={() => handleRowDragStart(index)}
-                          style={{
-                            padding: '8px 12px',
-                            marginBottom: '4px',
-                            backgroundColor: 'rgba(51, 65, 85, 0.5)',
-                            borderRadius: '6px',
-                            cursor: 'grab',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s ease',
-                            border: '1px solid transparent'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
-                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
-                            e.currentTarget.style.transform = 'translateX(4px)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
-                            e.currentTarget.style.borderColor = 'transparent'
-                            e.currentTarget.style.transform = 'translateX(0)'
-                          }}
-                        >
-                          <GripVertical style={{ width: '14px', height: '14px', color: '#94a3b8', flexShrink: 0 }} />
-                          <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{perilName}</span>
+                      csvPerils.map((perilName) => (
+                        <div key={perilName} style={{ marginBottom: '12px' }}>
+                          {/* Peril header (always expanded) */}
+                          <div style={{
+                            padding: '6px 12px',
+                            backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                            borderRadius: '6px 6px 0 0',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: '#22c55e',
+                            borderBottom: '1px solid rgba(71, 85, 105, 0.3)'
+                          }}>
+                            {perilName}
+                          </div>
+                          {/* Value types under this peril */}
+                          <div style={{
+                            backgroundColor: 'rgba(30, 41, 59, 0.3)',
+                            borderRadius: '0 0 6px 6px',
+                            padding: '4px'
+                          }}>
+                            {csvValueTypes.map((valueType) => (
+                              <div
+                                key={`${perilName}-${valueType}`}
+                                draggable
+                                onDragStart={() => handlePerilValueTypeDragStart(perilName, valueType)}
+                                onDragEnd={handlePerilValueTypeDragEnd}
+                                style={{
+                                  padding: '6px 10px',
+                                  marginBottom: '2px',
+                                  backgroundColor: 'rgba(51, 65, 85, 0.5)',
+                                  borderRadius: '4px',
+                                  cursor: 'grab',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  transition: 'all 0.2s ease',
+                                  border: '1px solid transparent',
+                                  marginLeft: '8px'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+                                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                                  e.currentTarget.style.transform = 'translateX(4px)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                                  e.currentTarget.style.borderColor = 'transparent'
+                                  e.currentTarget.style.transform = 'translateX(0)'
+                                }}
+                              >
+                                <GripVertical style={{ width: '12px', height: '12px', color: '#94a3b8', flexShrink: 0 }} />
+                                <span style={{ fontSize: '12px', color: '#e2e8f0' }}>{valueType}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
                 </div>
 
-                {/* Right Panel - Peril Drop Targets */}
+                {/* Right Panel - Physical Risk Driver Drop Zones */}
                 <div>
                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#cbd5e1', marginBottom: '12px' }}>
-                    Physical Risk Drivers
+                    Physical Risk Drivers (Drop Here)
                   </h4>
                   <div style={{
-                    maxHeight: '400px',
+                    maxHeight: '500px',
                     overflowY: 'auto',
                     border: '1px solid rgba(71, 85, 105, 0.3)',
                     borderRadius: '8px',
                     padding: '8px'
                   }}>
-                    {perils.map((peril) => {
-                      const mappedRowIndex = getMappedRow(peril.peril_type)
-                      const hasMapped = mappedRowIndex !== null
+                    {perils.length === 0 ? (
+                      <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        No physical risk drivers defined. Add drivers with category='physical' on the Define Scenario Drivers tab.
+                      </div>
+                    ) : (
+                      perils.map((driver) => {
+                        const mappings = getDriverMappings(driver.peril_type)
+                        const hasMappings = mappings.length > 0
 
-                      return (
-                        <div
-                          key={peril.peril_id}
-                          onDragOver={(e) => {
-                            e.preventDefault()
-                            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
-                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
-                          }}
-                          onDragLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = hasMapped ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)'
-                            e.currentTarget.style.borderColor = hasMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault()
-                            handleRowDrop(peril.peril_type)
-                            e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
-                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
-                          }}
-                          style={{
-                            padding: '10px 12px',
-                            marginBottom: '4px',
-                            backgroundColor: hasMapped ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)',
-                            borderRadius: '6px',
-                            border: `1px solid ${hasMapped ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'}`,
-                            transition: 'all 0.2s ease'
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                              <div style={{ fontSize: '13px', fontWeight: 600, color: hasMapped ? '#22c55e' : '#cbd5e1' }}>
-                                {peril.peril_type}
+                        return (
+                          <div
+                            key={driver.peril_id}
+                            onDragOver={(e) => {
+                              e.preventDefault()
+                              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+                              e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+                            }}
+                            onDragLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = hasMappings ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)'
+                              e.currentTarget.style.borderColor = hasMappings ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              handlePerilValueTypeDrop(driver.peril_type)
+                              e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+                              e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.5)'
+                            }}
+                            style={{
+                              padding: '10px 12px',
+                              marginBottom: '8px',
+                              backgroundColor: hasMappings ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.4)',
+                              borderRadius: '6px',
+                              border: `1px dashed ${hasMappings ? 'rgba(34, 197, 94, 0.5)' : 'rgba(71, 85, 105, 0.3)'}`,
+                              transition: 'all 0.2s ease',
+                              minHeight: '60px'
+                            }}
+                          >
+                            <div style={{ marginBottom: hasMappings ? '8px' : '0' }}>
+                              <div style={{ fontSize: '14px', fontWeight: 600, color: hasMappings ? '#22c55e' : '#cbd5e1' }}>
+                                driver:{driver.peril_type}
                               </div>
                               <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
-                                {peril.description}
+                                {driver.description}
                               </div>
                             </div>
-                            {hasMapped && mappedRowIndex !== null && (
-                              <div style={{
-                                fontSize: '11px',
-                                color: '#22c55e',
-                                backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}>
-                                → {getRowIdentifier(csvData[mappedRowIndex])}
+                            {hasMappings && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                                {mappings.map((mapping, idx) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      fontSize: '11px',
+                                      color: '#22c55e',
+                                      backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      border: '1px solid rgba(34, 197, 94, 0.3)'
+                                    }}
+                                  >
+                                    <span>{mapping.peril_type}→{mapping.value_type}</span>
+                                    <button
+                                      onClick={() => handleRemovePerilValueTypeMapping(driver.peril_type, mapping.peril_type, mapping.value_type)}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#22c55e',
+                                        cursor: 'pointer',
+                                        padding: '0',
+                                        fontSize: '14px',
+                                        lineHeight: '1'
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                      onMouseLeave={(e) => e.currentTarget.style.color = '#22c55e'}
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })
+                    )}
                   </div>
                 </div>
               </div>

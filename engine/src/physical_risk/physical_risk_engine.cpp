@@ -97,6 +97,7 @@ DamageResult PhysicalRiskEngine::calculate_damage(
     DamageResult result;
     result.asset_id = asset.asset_id;
     result.asset_code = asset.asset_code;
+    result.entity_code = asset.entity_code;
     result.peril_id = peril.peril_id;
     result.peril_code = peril.peril_code;
     result.peril_type = peril.peril_type;
@@ -199,82 +200,170 @@ std::string PhysicalRiskEngine::map_damage_to_driver(
     const std::string& damage_target,
     const std::string& asset_code
 ) {
-    // Generate driver code: PERIL_TARGET_ASSET
+    // Deprecated: This function is no longer used with the new mapping structure
+    // Kept for backward compatibility
     return peril_type + "_" + damage_target + "_" + asset_code;
+}
+
+// Load driver mappings from damage_curve_mapping table
+// Returns: {driver_code: [{peril_type, value_type}, ...]}
+std::map<std::string, std::vector<std::pair<std::string, std::string>>>
+PhysicalRiskEngine::load_driver_mappings() {
+    std::map<std::string, std::vector<std::pair<std::string, std::string>>> mappings;
+
+    // Query damage_curve_mapping to get peril_driver_mapping JSON
+    auto result = db_->execute_query(
+        "SELECT peril_driver_mapping FROM damage_curve_mapping LIMIT 1",
+        {}
+    );
+
+    if (result->next() && !result->is_null("peril_driver_mapping")) {
+        std::string json_str = result->get_string("peril_driver_mapping");
+
+        // Parse JSON manually (simple parser for our specific structure)
+        // Expected format: {"FLOOD": [{"peril_type": "FLOOD", "value_type": "PPE"}, ...], ...}
+
+        // Simple JSON parsing - find each driver_code and its mappings
+        size_t pos = 0;
+        while ((pos = json_str.find("\"", pos)) != std::string::npos) {
+            pos++;  // Skip opening quote
+            size_t end_key = json_str.find("\"", pos);
+            if (end_key == std::string::npos) break;
+
+            std::string driver_code = json_str.substr(pos, end_key - pos);
+            pos = end_key + 1;
+
+            // Find the array of mappings for this driver
+            size_t array_start = json_str.find("[", pos);
+            if (array_start == std::string::npos) break;
+
+            size_t array_end = json_str.find("]", array_start);
+            if (array_end == std::string::npos) break;
+
+            std::string array_content = json_str.substr(array_start + 1, array_end - array_start - 1);
+
+            // Parse each mapping object in the array
+            size_t obj_pos = 0;
+            while ((obj_pos = array_content.find("{", obj_pos)) != std::string::npos) {
+                size_t obj_end = array_content.find("}", obj_pos);
+                if (obj_end == std::string::npos) break;
+
+                std::string obj_content = array_content.substr(obj_pos, obj_end - obj_pos + 1);
+
+                // Extract peril_type
+                size_t peril_start = obj_content.find("\"peril_type\"");
+                std::string peril_type;
+                if (peril_start != std::string::npos) {
+                    size_t peril_val_start = obj_content.find("\"", peril_start + 13);
+                    size_t peril_val_end = obj_content.find("\"", peril_val_start + 1);
+                    peril_type = obj_content.substr(peril_val_start + 1, peril_val_end - peril_val_start - 1);
+                }
+
+                // Extract value_type
+                size_t val_start = obj_content.find("\"value_type\"");
+                std::string value_type;
+                if (val_start != std::string::npos) {
+                    size_t val_val_start = obj_content.find("\"", val_start + 13);
+                    size_t val_val_end = obj_content.find("\"", val_val_start + 1);
+                    value_type = obj_content.substr(val_val_start + 1, val_val_end - val_val_start - 1);
+                }
+
+                if (!peril_type.empty() && !value_type.empty()) {
+                    mappings[driver_code].push_back({peril_type, value_type});
+                }
+
+                obj_pos = obj_end + 1;
+            }
+
+            pos = array_end + 1;
+        }
+    }
+
+    return mappings;
 }
 
 int PhysicalRiskEngine::generate_drivers(
     int scenario_id,
     const std::vector<DamageResult>& damages
 ) {
+    // Load driver mappings from database
+    auto driver_mappings = load_driver_mappings();
+
     // Delete existing physical risk drivers for this scenario
-    // Use pattern matching to identify physical risk drivers
+    // Delete all drivers that are defined in the mapping
+    std::string delete_condition = "WHERE scenario_id = :sid AND (";
+    std::vector<std::string> driver_codes;
+    for (const auto& mapping : driver_mappings) {
+        driver_codes.push_back(mapping.first);
+    }
+
+    if (driver_codes.empty()) {
+        // No mappings defined - skip driver generation
+        return 0;
+    }
+
+    for (size_t i = 0; i < driver_codes.size(); i++) {
+        if (i > 0) delete_condition += " OR ";
+        delete_condition += "driver_code = '" + driver_codes[i] + "'";
+    }
+    delete_condition += ")";
+
     db_->execute_update(
-        "DELETE FROM scenario_drivers "
-        "WHERE scenario_id = :sid AND ("
-        "  driver_code LIKE '%_PPE_%' OR "
-        "  driver_code LIKE '%_INVENTORY_%' OR "
-        "  driver_code LIKE '%_BI_%'"
-        ")",
+        "DELETE FROM scenario_drivers " + delete_condition,
         {{"sid", scenario_id}}
     );
 
-    // Insert new drivers
-    int driver_count = 0;
+    // Aggregate damages by (entity_id, driver_code, period_id)
+    // Structure: {entity_id -> {driver_code -> {period -> total_amount}}}
+    std::map<std::string, std::map<std::string, std::map<int, double>>> aggregated_damages;
+    std::string currency = damages.empty() ? "CHF" : damages[0].currency;
 
     for (const auto& damage : damages) {
-        // PPE driver
-        if (damage.ppe_loss_amount > 0.0) {
-            std::string driver_code = map_damage_to_driver(damage.peril_type, "PPE", damage.asset_code);
-            db_->execute_update(
-                "INSERT INTO scenario_drivers (entity_id, scenario_id, period_id, driver_code, value, unit_code) "
-                "VALUES (:entity_id, :sid, :period_id, :code, :value, :unit_code)",
-                {
-                    {"entity_id", "PHYSICAL_RISK"},
-                    {"sid", scenario_id},
-                    {"period_id", damage.period},
-                    {"code", driver_code},
-                    {"value", -damage.ppe_loss_amount},  // Negative = loss
-                    {"unit_code", damage.currency}
-                }
-            );
-            driver_count++;
-        }
+        std::string entity_id = damage.entity_code.empty() ? "PHYSICAL_RISK" : damage.entity_code;
 
-        // INVENTORY driver
-        if (damage.inventory_loss_amount > 0.0) {
-            std::string driver_code = map_damage_to_driver(damage.peril_type, "INVENTORY", damage.asset_code);
-            db_->execute_update(
-                "INSERT INTO scenario_drivers (entity_id, scenario_id, period_id, driver_code, value, unit_code) "
-                "VALUES (:entity_id, :sid, :period_id, :code, :value, :unit_code)",
-                {
-                    {"entity_id", "PHYSICAL_RISK"},
-                    {"sid", scenario_id},
-                    {"period_id", damage.period},
-                    {"code", driver_code},
-                    {"value", -damage.inventory_loss_amount},
-                    {"unit_code", damage.currency}
-                }
-            );
-            driver_count++;
-        }
+        // For each driver mapping, check if this damage matches
+        for (const auto& [driver_code, peril_value_mappings] : driver_mappings) {
+            for (const auto& [peril_type, value_type] : peril_value_mappings) {
+                // Check if damage matches this peril_type and value_type combination
+                if (damage.peril_type == peril_type) {
+                    double loss_amount = 0.0;
 
-        // BI driver
-        if (damage.bi_loss_amount > 0.0) {
-            std::string driver_code = map_damage_to_driver(damage.peril_type, "BI", damage.asset_code);
-            db_->execute_update(
-                "INSERT INTO scenario_drivers (entity_id, scenario_id, period_id, driver_code, value, unit_code) "
-                "VALUES (:entity_id, :sid, :period_id, :code, :value, :unit_code)",
-                {
-                    {"entity_id", "PHYSICAL_RISK"},
-                    {"sid", scenario_id},
-                    {"period_id", damage.period},
-                    {"code", driver_code},
-                    {"value", -damage.bi_loss_amount},
-                    {"unit_code", damage.currency}
+                    if (value_type == "PPE") {
+                        loss_amount = damage.ppe_loss_amount;
+                    } else if (value_type == "INVENTORY") {
+                        loss_amount = damage.inventory_loss_amount;
+                    } else if (value_type == "BI") {
+                        loss_amount = damage.bi_loss_amount;
+                    }
+
+                    if (loss_amount > 0.0) {
+                        aggregated_damages[entity_id][driver_code][damage.period] += loss_amount;
+                    }
                 }
-            );
-            driver_count++;
+            }
+        }
+    }
+
+    // Insert aggregated drivers
+    int driver_count = 0;
+
+    for (const auto& [entity_id, driver_map] : aggregated_damages) {
+        for (const auto& [driver_code, period_map] : driver_map) {
+            for (const auto& [period, total_amount] : period_map) {
+                db_->execute_update(
+                    "INSERT INTO scenario_drivers (entity_id, scenario_id, period_id, driver_code, value, unit_code) "
+                    "VALUES (:entity_id, :sid, :period_id, :code, :value, :unit_code)",
+                    {
+                        {"entity_id", entity_id},
+                        {"sid", scenario_id},
+                        {"period_id", period},
+                        {"code", driver_code},
+                        {"value", -total_amount},  // Negative = loss
+                        {"unit_code", currency}
+                    }
+                );
+                driver_count++;
+            }
         }
     }
 

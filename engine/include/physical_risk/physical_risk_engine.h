@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <map>
 
 namespace physical_risk {
 
@@ -52,6 +53,7 @@ struct AssetExposure {
 struct DamageResult {
     int asset_id;
     std::string asset_code;
+    std::string entity_code;  // Added for grouping by entity
     int peril_id;
     std::string peril_code;
     std::string peril_type;
@@ -130,7 +132,11 @@ private:
     // Generate scenario drivers from damage results
     int generate_drivers(int scenario_id, const std::vector<DamageResult>& damages);
 
-    // Helper: Map damage target to driver code
+    // Load driver mappings from damage_curve_mapping table
+    // Returns: {driver_code: [{peril_type, value_type}, ...]}
+    std::map<std::string, std::vector<std::pair<std::string, std::string>>> load_driver_mappings();
+
+    // Helper: Map damage target to driver code (deprecated)
     std::string map_damage_to_driver(
         const std::string& peril_type,
         const std::string& damage_target,

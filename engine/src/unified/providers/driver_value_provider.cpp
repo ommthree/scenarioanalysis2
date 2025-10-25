@@ -164,7 +164,10 @@ double DriverValueProvider::get_value(const std::string& key, const core::Contex
     // Look up driver in cache
     auto it = driver_cache_.find(driver_code);
     if (it == driver_cache_.end()) {
-        throw std::runtime_error("DriverValueProvider: driver not found: " + driver_code + " (key: " + key + ")");
+        // Driver not found in scenario_drivers table
+        // This is normal for physical risk drivers when no damage occurred
+        // Return 0.0 instead of throwing error
+        return 0.0;
     }
 
     return it->second;

@@ -3545,7 +3545,7 @@ app.get('/api/perils', (req, res) => {
  */
 app.post('/api/damage-curves/save-damage-curve-mapping', express.json(), (req, res) => {
   try {
-    const { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn, perilMappings } = req.body
+    const { dbPath, fileId, inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn, driverMappings } = req.body
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -3570,7 +3570,8 @@ app.post('/api/damage-curves/save-damage-curve-mapping', express.json(), (req, r
       valueTypeColumn
     })
 
-    const perilDriverMapping = JSON.stringify(perilMappings || [])
+    // New format: { "FLOOD": [{peril_type: "FLOOD", value_type: "PPE"}, ...], "STORM": [...] }
+    const perilDriverMapping = JSON.stringify(driverMappings || {})
 
     // First check if mapping exists for this file_id
     db.get(
@@ -3683,7 +3684,7 @@ app.get('/api/damage-curves/get-damage-curve-mapping', (req, res) => {
             perilColumn: columnMapping.perilColumn,
             unitColumn: columnMapping.unitColumn,
             valueTypeColumn: columnMapping.valueTypeColumn,
-            perilMappings: perilMappings
+            driverMappings: perilMappings
           }
         })
       }
