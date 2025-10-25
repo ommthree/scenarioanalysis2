@@ -2990,6 +2990,12 @@ app.post('/api/locations/save-location-mapping', async (req, res) => {
       entityMappings
     } = req.body
 
+    console.log('=== SAVE LOCATION MAPPING DEBUG ===')
+    console.log('fileId:', fileId)
+    console.log('valueColumns received:', valueColumns)
+    console.log('valueColumns type:', typeof valueColumns)
+    console.log('valueColumns stringified:', JSON.stringify(valueColumns || []))
+
     if (!dbPath || !fileId) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
@@ -3080,6 +3086,143 @@ app.post('/api/locations/save-location-mapping', async (req, res) => {
 })
 
 /**
+ * Ingest locations from staging into production location table
+ * POST /api/locations/ingest
+ * Body: { dbPath, fileId }
+ */
+app.post('/api/locations/ingest', async (req, res) => {
+  try {
+    const { dbPath, fileId } = req.body
+
+    if (!dbPath || !fileId) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get the mapping configuration
+    db.get(
+      `SELECT * FROM location_mapping_config WHERE file_id = ?`,
+      [fileId],
+      (err, mapping) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to fetch mapping: ' + err.message })
+        }
+
+        if (!mapping) {
+          db.close()
+          return res.status(400).json({ error: 'No mapping configuration found for this file' })
+        }
+
+        console.log('[Location Ingestion] Starting ingestion for file_id:', fileId)
+
+        // Parse the entity mappings
+        const entityMappings = JSON.parse(mapping.entity_mappings || '[]')
+        console.log('[Location Ingestion] Entity mappings:', entityMappings)
+
+        // Create a map for quick lookup
+        const entityMap = {}
+        entityMappings.forEach(em => {
+          entityMap[em.csv_entity_value] = em.entity_id
+        })
+
+        // Clear existing locations for this file
+        db.run(
+          `DELETE FROM location WHERE location_code IN (
+            SELECT 'LOC_' || ID FROM staging_location WHERE file_id = ?
+          )`,
+          [fileId],
+          (delErr) => {
+            if (delErr) {
+              console.error('[Location Ingestion] Error deleting old locations:', delErr)
+            }
+
+            // Get all rows from staging_location for this file
+            db.all(
+              `SELECT * FROM staging_location WHERE file_id = ?`,
+              [fileId],
+              (err, rows) => {
+                if (err) {
+                  db.close()
+                  return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+                }
+
+                if (!rows || rows.length === 0) {
+                  db.close()
+                  return res.status(400).json({ error: 'No staging data found' })
+                }
+
+                console.log(`[Location Ingestion] Processing ${rows.length} locations`)
+
+                let inserted = 0
+                let errors = 0
+
+                // Process each row
+                const insertPromises = rows.map((row, index) => {
+                  return new Promise((resolve) => {
+                    // Get entity_id from the entity column
+                    const entityValue = row[mapping.entity_column]
+                    const entity_id = entityMap[entityValue]
+
+                    if (!entity_id) {
+                      console.warn(`[Location Ingestion] No entity mapping for value: ${entityValue}`)
+                    }
+
+                    // Build location_code with LOC_ prefix
+                    const location_code = 'LOC_' + row[mapping.identifier_column]
+                    const latitude = parseFloat(row[mapping.latitude_column])
+                    const longitude = parseFloat(row[mapping.longitude_column])
+                    const archetype = row[mapping.archetype_column] || 'Standard'
+
+                    db.run(
+                      `INSERT INTO location (location_code, latitude, longitude, entity_id, archetype, json_values)
+                       VALUES (?, ?, ?, ?, ?, ?)`,
+                      [location_code, latitude, longitude, entity_id, archetype, '{}'],
+                      function(insertErr) {
+                        if (insertErr) {
+                          console.error(`[Location Ingestion] Error inserting location ${location_code}:`, insertErr.message)
+                          errors++
+                        } else {
+                          inserted++
+                        }
+                        resolve()
+                      }
+                    )
+                  })
+                })
+
+                Promise.all(insertPromises).then(() => {
+                  db.close()
+                  console.log(`[Location Ingestion] Complete: ${inserted} inserted, ${errors} errors`)
+                  res.json({
+                    success: true,
+                    inserted,
+                    errors,
+                    message: `Ingested ${inserted} locations from staging`
+                  })
+                })
+              }
+            )
+          }
+        )
+      }
+    )
+  } catch (error) {
+    console.error('Location ingestion error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Get saved location mapping configuration
  * GET /api/locations/get-location-mapping
  * Query params: dbPath, fileId
@@ -3116,6 +3259,10 @@ app.get('/api/locations/get-location-mapping', (req, res) => {
         }
 
         // Parse JSON fields
+        console.log('=== GET LOCATION MAPPING DEBUG ===')
+        console.log('Raw row from DB:', row)
+        console.log('value_columns field:', row.value_columns)
+
         const mapping = {
           identifierColumn: row.identifier_column,
           latitudeColumn: row.latitude_column,
@@ -3127,6 +3274,7 @@ app.get('/api/locations/get-location-mapping', (req, res) => {
           entityMappings: row.entity_mappings ? JSON.parse(row.entity_mappings) : []
         }
 
+        console.log('Parsed mapping.valueColumns:', mapping.valueColumns)
         res.json({ success: true, mapping })
       }
     )
@@ -3629,6 +3777,162 @@ app.post('/api/damage-curves/save-damage-curve-mapping', express.json(), (req, r
     )
   } catch (error) {
     console.error('Save damage curve mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Ingest damage curves from staged CSV into production damage_curve table
+ * POST /api/damage-curves/ingest
+ * Body: { dbPath, fileId }
+ */
+app.post('/api/damage-curves/ingest', async (req, res) => {
+  try {
+    const { dbPath, fileId } = req.body
+
+    if (!dbPath || !fileId) {
+      return res.status(400).json({ error: 'Missing required fields' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get the mapping configuration and CSV data
+    db.get(
+      `SELECT dcm.*, sf.csv_content
+       FROM damage_curve_mapping dcm
+       JOIN staged_file sf ON sf.file_id = dcm.file_id
+       WHERE dcm.file_id = ?`,
+      [fileId],
+      (err, mapping) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to fetch mapping: ' + err.message })
+        }
+
+        if (!mapping) {
+          db.close()
+          return res.status(400).json({ error: 'No mapping configuration found for this file' })
+        }
+
+        console.log('[Damage Curve Ingestion] Starting ingestion for file_id:', fileId)
+
+        // Parse the column mapping
+        const columnMapping = JSON.parse(mapping.column_mapping || '{}')
+        const { inputColumn, outputColumn, archetypeColumn, perilColumn, unitColumn, valueTypeColumn } = columnMapping
+
+        if (!inputColumn || !outputColumn || !perilColumn) {
+          db.close()
+          return res.status(400).json({ error: 'Missing required column mappings' })
+        }
+
+        // Parse CSV content
+        const lines = mapping.csv_content.trim().split('\n')
+        const headers = lines[0].split(',')
+
+        // Find column indices
+        const inputIdx = headers.indexOf(inputColumn)
+        const outputIdx = headers.indexOf(outputColumn)
+        const archetypeIdx = archetypeColumn ? headers.indexOf(archetypeColumn) : -1
+        const perilIdx = headers.indexOf(perilColumn)
+        const unitIdx = unitColumn ? headers.indexOf(unitColumn) : -1
+        const valueTypeIdx = valueTypeColumn ? headers.indexOf(valueTypeColumn) : -1
+
+        // Group rows by (peril, archetype, value_type)
+        const curves = {}
+
+        for (let i = 1; i < lines.length; i++) {
+          const row = lines[i].split(',')
+
+          const peril = row[perilIdx]
+          const archetype = archetypeIdx >= 0 ? row[archetypeIdx] : 'Standard'
+          const valueType = valueTypeIdx >= 0 ? row[valueTypeIdx] : 'PPE'
+          const intensity = parseFloat(row[inputIdx])
+          const damageFactor = parseFloat(row[outputIdx])
+          const unit = unitIdx >= 0 ? row[unitIdx] : 'meters'
+
+          const key = `${peril}|${archetype}|${valueType}`
+
+          if (!curves[key]) {
+            curves[key] = {
+              peril_type: peril,
+              archetype: archetype,
+              value_type: valueType,
+              intensity_unit: unit,
+              points: []
+            }
+          }
+
+          curves[key].points.push([intensity, damageFactor])
+        }
+
+        console.log(`[Damage Curve Ingestion] Parsed ${Object.keys(curves).length} unique curves`)
+
+        // Delete existing curves for this file
+        db.run(
+          `DELETE FROM damage_curve WHERE curve_code LIKE 'DC_' || ? || '_%'`,
+          [fileId],
+          (delErr) => {
+            if (delErr) {
+              console.error('[Damage Curve Ingestion] Error deleting old curves:', delErr)
+            }
+
+            // Insert each curve
+            let inserted = 0
+            let errors = 0
+            const insertPromises = []
+
+            for (const [key, curve] of Object.entries(curves)) {
+              // Sort points by intensity
+              curve.points.sort((a, b) => a[0] - b[0])
+
+              const curveCode = `DC_${fileId}_${curve.peril_type}_${curve.archetype}_${curve.value_type}`
+              const curvePointsJSON = JSON.stringify(curve.points)
+
+              insertPromises.push(
+                new Promise((resolve) => {
+                  db.run(
+                    `INSERT INTO damage_curve
+                     (curve_code, peril_type, archetype, value_type, curve_points, intensity_unit)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [curveCode, curve.peril_type, curve.archetype, curve.value_type, curvePointsJSON, curve.intensity_unit],
+                    function(insertErr) {
+                      if (insertErr) {
+                        console.error(`[Damage Curve Ingestion] Error inserting curve ${curveCode}:`, insertErr.message)
+                        errors++
+                      } else {
+                        inserted++
+                      }
+                      resolve()
+                    }
+                  )
+                })
+              )
+            }
+
+            Promise.all(insertPromises).then(() => {
+              db.close()
+              console.log(`[Damage Curve Ingestion] Complete: ${inserted} inserted, ${errors} errors`)
+              res.json({
+                success: true,
+                inserted,
+                errors,
+                message: `Ingested ${inserted} damage curves`
+              })
+            })
+          }
+        )
+      }
+    )
+  } catch (error) {
+    console.error('Damage curve ingestion error:', error)
     res.status(500).json({ error: error.message })
   }
 })

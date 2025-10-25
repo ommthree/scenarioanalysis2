@@ -132,9 +132,27 @@ const MapLocations: React.FC = () => {
   useEffect(() => {
     if (!selectedFileId || !identifierColumn || isLoadingMapping) return
 
+    // Don't auto-save until CSV columns are loaded - otherwise getValueColumns() will fail
+    if (csvColumns.length === 0) {
+      console.log('Skipping auto-save: CSV columns not loaded yet')
+      return
+    }
+
     const timeoutId = setTimeout(async () => {
       try {
-        const valueColumns = getValueColumns()
+        console.log('Auto-save triggered. State:', { valueStartColumn, valueEndColumn, csvColumns })
+
+        // Build valueColumns array directly from state instead of using getValueColumns()
+        // which depends on csvColumns being populated
+        let valueColumns = []
+        if (valueStartColumn && valueEndColumn && csvColumns.length > 0) {
+          const startIdx = csvColumns.indexOf(valueStartColumn)
+          const endIdx = csvColumns.indexOf(valueEndColumn)
+          if (startIdx !== -1 && endIdx !== -1) {
+            valueColumns = csvColumns.slice(startIdx, endIdx + 1)
+          }
+        }
+        console.log('valueColumns for save:', valueColumns)
 
         const payload = {
           dbPath,
@@ -191,9 +209,12 @@ const MapLocations: React.FC = () => {
         const mappingResponse = await fetch(`http://localhost:3001/api/locations/get-location-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`)
         const mappingResult = await mappingResponse.json()
 
+        console.log('Mapping fetch result:', mappingResult)
+
         if (mappingResult.success && mappingResult.mapping) {
           const mapping = mappingResult.mapping
           console.log('Loading mapping:', mapping)
+          console.log('Value columns from DB:', mapping.valueColumns)
           if (mapping.identifierColumn) setIdentifierColumn(mapping.identifierColumn)
           if (mapping.latitudeColumn) setLatitudeColumn(mapping.latitudeColumn)
           if (mapping.longitudeColumn) setLongitudeColumn(mapping.longitudeColumn)
@@ -201,8 +222,12 @@ const MapLocations: React.FC = () => {
           if (mapping.archetypeColumn) setArchetypeColumn(mapping.archetypeColumn)
           if (mapping.unitColumn) setUnitColumn(mapping.unitColumn)
           if (mapping.valueColumns && mapping.valueColumns.length > 0) {
+            console.log('Setting valueStartColumn to:', mapping.valueColumns[0])
+            console.log('Setting valueEndColumn to:', mapping.valueColumns[mapping.valueColumns.length - 1])
             setValueStartColumn(mapping.valueColumns[0])
             setValueEndColumn(mapping.valueColumns[mapping.valueColumns.length - 1])
+          } else {
+            console.log('No value columns to load - valueColumns is:', mapping.valueColumns)
           }
           setEntityMappings(mapping.entityMappings || [])
         }
@@ -469,7 +494,9 @@ Rules:
     setSaveStatus('saving')
 
     try {
+      console.log('Manual save. State:', { valueStartColumn, valueEndColumn, csvColumns })
       const valueColumns = getValueColumns()
+      console.log('Manual save valueColumns:', valueColumns)
 
       const response = await fetch('http://localhost:3001/api/locations/save-location-mapping', {
         method: 'POST',
@@ -494,6 +521,25 @@ Rules:
         throw new Error(result.error || 'Failed to save mapping')
       }
 
+      // After saving mapping, ingest locations into production table
+      console.log('Mapping saved, now ingesting locations...')
+      const ingestResponse = await fetch('http://localhost:3001/api/locations/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          fileId: selectedFileId
+        })
+      })
+
+      const ingestResult = await ingestResponse.json()
+
+      if (!ingestResponse.ok) {
+        console.error('Location ingestion failed:', ingestResult.error)
+        throw new Error(ingestResult.error || 'Failed to ingest locations')
+      }
+
+      console.log('Location ingestion complete:', ingestResult)
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
@@ -613,12 +659,16 @@ Rules:
   }
 
   const getValueColumns = () => {
-    if (!valueStartColumn || !valueEndColumn) return []
+    if (!valueStartColumn || !valueEndColumn) {
+      return []
+    }
 
     const startIdx = csvColumns.indexOf(valueStartColumn)
     const endIdx = csvColumns.indexOf(valueEndColumn)
 
-    if (startIdx === -1 || endIdx === -1) return []
+    if (startIdx === -1 || endIdx === -1) {
+      return []
+    }
 
     return csvColumns.slice(startIdx, endIdx + 1)
   }

@@ -424,6 +424,7 @@ Rules:
     setSaveStatus('saving')
 
     try {
+      // Save mapping configuration
       const response = await fetch('http://localhost:3001/api/damage-curves/save-damage-curve-mapping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -446,6 +447,24 @@ Rules:
         throw new Error(result.error || 'Failed to save mapping')
       }
 
+      // After saving mapping, ingest damage curves into production table
+      console.log('Mapping saved, now ingesting damage curves...')
+      const ingestResponse = await fetch('http://localhost:3001/api/damage-curves/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dbPath,
+          fileId: selectedFileId
+        })
+      })
+
+      const ingestResult = await ingestResponse.json()
+      if (!ingestResponse.ok) {
+        console.error('Damage curve ingestion failed:', ingestResult.error)
+        throw new Error(ingestResult.error || 'Failed to ingest damage curves')
+      }
+
+      console.log('Damage curve ingestion complete:', ingestResult)
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
