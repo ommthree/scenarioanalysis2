@@ -6467,37 +6467,114 @@ app.post('/api/validate-scenario', (req, res) => {
 /**
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
-app.post('/api/calculate', (req, res) => {
-  const { dbPath } = req.body
+app.post('/api/calculate', async (req, res) => {
+  const { dbPath, scenarioIds, skipValidation = false } = req.body
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
   }
 
-  // Run the calculation directly (cleanup happens at the start of ingestion now)
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  // Initialize logging service
+  const logger = new LoggingService()
+  logger.start()
+  logger.info('Calculation started', { dbPath, scenarioIds })
+
+  // Validate scenarios before calculation (unless explicitly skipped)
+  if (!skipValidation && scenarioIds && scenarioIds.length > 0) {
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY)
+    const validationService = new ValidationService(db)
+
+    try {
+      logger.info('Running pre-calculation validation', { scenarioCount: scenarioIds.length })
+
+      const validationResults = []
+      for (const scenarioId of scenarioIds) {
+        logger.verbose(`Validating scenario ${scenarioId}`)
+        const result = await validationService.validateScenario(scenarioId)
+        validationResults.push({ scenarioId, ...result })
+
+        // Log validation results
+        if (result.errors.length > 0) {
+          result.errors.forEach(err => logger.error(`Scenario ${scenarioId}: ${err.message}`, { code: err.code }))
+        }
+        if (result.warnings.length > 0) {
+          result.warnings.forEach(warn => logger.warn(`Scenario ${scenarioId}: ${warn.message}`, { code: warn.code }))
+        }
+        result.info.forEach(info => logger.debug(`Scenario ${scenarioId}: ${info.message}`, { code: info.code }))
+      }
+
+      db.close()
+
+      // Check if any validation failed
+      const hasErrors = validationResults.some(r => !r.valid)
+      if (hasErrors) {
+        logger.error('Pre-calculation validation failed', {
+          failedCount: validationResults.filter(r => !r.valid).length,
+          totalCount: validationResults.length
+        })
+        return res.json({
+          success: false,
+          error: 'Pre-calculation validation failed. Fix errors before running calculation.',
+          validationResults,
+          logs: logger.getLogs('info')
+        })
+      }
+
+      logger.info('Pre-calculation validation passed', { scenarioCount: scenarioIds.length })
+    } catch (validationError) {
+      db.close()
+      logger.error('Validation error', { error: validationError.message })
+      return res.status(500).json({
+        success: false,
+        error: 'Validation failed: ' + validationError.message,
+        logs: logger.getLogs('info')
+      })
+    }
+  }
+
+  // Run the calculation
   const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
+  logger.info('Launching C++ calculation engine', { binary: calculationBinary })
 
   exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // Merge C++ logs
+    if (stdout) {
+      logger.mergeCppLogs(stdout)
+    }
+    if (stderr) {
+      logger.mergeCppLogs(stderr)
+    }
+
     if (error) {
-      console.error('Calculation error:', error)
+      logger.error('Calculation engine failed', { error: error.message, exitCode: error.code })
       return res.json({
         success: false,
         error: error.message,
         stdout: stdout,
-        stderr: stderr
+        stderr: stderr,
+        logs: logger.getLogs('info'),
+        errorSummary: logger.getErrorSummary()
       })
     }
+
+    logger.info('Calculation completed successfully')
 
     // Parse calculation output to extract results and write to statement_result table
     // Output format: "✓ Scenario X completed successfully" followed by period data
     const db = new sqlite3.Database(dbPath, (err) => {
       if (err) {
-        console.error('Failed to open database for result writing:', err)
+        logger.error('Failed to open database for result verification', { error: err.message })
         return res.json({
           success: true,
           output: stdout,
           errors: stderr,
-          warning: 'Results calculated but not saved to database'
+          warning: 'Results calculated but not saved to database',
+          logs: logger.getLogs('info'),
+          errorSummary: logger.getErrorSummary()
         })
       }
 
@@ -6508,7 +6585,9 @@ app.post('/api/calculate', (req, res) => {
       res.json({
         success: true,
         output: stdout,
-        errors: stderr
+        errors: stderr,
+        logs: logger.getLogs('info'),
+        errorSummary: logger.getErrorSummary()
       })
     })
   })

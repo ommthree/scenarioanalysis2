@@ -4,11 +4,25 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2, Save } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import ValidationPanel from '@/components/ValidationPanel'
 
 interface LogEntry {
   timestamp: string
   level: 'info' | 'success' | 'warning' | 'error'
   message: string
+}
+
+interface ValidationMessage {
+  code: string
+  message: string
+  severity: 'error' | 'warning' | 'info'
+}
+
+interface ValidationResult {
+  valid: boolean
+  errors: ValidationMessage[]
+  warnings: ValidationMessage[]
+  info: ValidationMessage[]
 }
 
 export default function PerformCalculation() {
@@ -18,6 +32,8 @@ export default function PerformCalculation() {
   const [runName, setRunName] = useState('')
   const [verbosity, setVerbosity] = useState<'quiet' | 'verbose' | 'debug'>('verbose')
   const [isSaving, setIsSaving] = useState(false)
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
+  const [isValidating, setIsValidating] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Load run definition and previous logs on mount
@@ -69,14 +85,90 @@ export default function PerformCalculation() {
     setLogs(prev => [...prev, entry])
   }
 
+  const runValidation = async (): Promise<boolean> => {
+    setIsValidating(true)
+    const dbPath = getDefaultDbPath()
+
+    addLog('info', 'Running pre-calculation validation...')
+
+    try {
+      // Get scenario IDs from run definition
+      const saved = localStorage.getItem('runDefinition')
+      const config = saved ? JSON.parse(saved) : {}
+      const scenarioIds = config.selectedScenarios || []
+
+      if (scenarioIds.length === 0) {
+        addLog('warning', 'No scenarios selected. Validation skipped.')
+        setIsValidating(false)
+        return true
+      }
+
+      // Run validation for each scenario
+      let allValid = true
+      const allResults: ValidationResult = { valid: true, errors: [], warnings: [], info: [] }
+
+      for (const scenarioId of scenarioIds) {
+        const response = await fetch(apiUrl('/api/validate-scenario'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dbPath, scenarioId })
+        })
+
+        if (!response.ok) {
+          addLog('error', `Validation API failed: ${response.statusText}`)
+          setIsValidating(false)
+          return false
+        }
+
+        const result = await response.json()
+
+        // Aggregate results
+        allResults.errors.push(...result.errors)
+        allResults.warnings.push(...result.warnings)
+        allResults.info.push(...result.info)
+
+        if (!result.valid) {
+          allValid = false
+        }
+      }
+
+      allResults.valid = allValid
+      setValidationResult(allResults)
+
+      if (allValid) {
+        addLog('success', '✓ Pre-calculation validation passed')
+      } else {
+        addLog('error', `✗ Pre-calculation validation failed: ${allResults.errors.length} error(s)`)
+      }
+
+      setIsValidating(false)
+      return allValid
+
+    } catch (err) {
+      addLog('error', `Validation error: ${err}`)
+      setIsValidating(false)
+      return false
+    }
+  }
+
   const handleStartCalculation = async () => {
     setIsRunning(true)
     setRunStatus('running')
     setLogs([])
+    setValidationResult(null)
 
     const dbPath = getDefaultDbPath()
 
     addLog('info', `Starting calculation run: ${runName} (${verbosity} mode)`)
+
+    // Run pre-calculation validation first
+    const validationPassed = await runValidation()
+    if (!validationPassed) {
+      addLog('error', 'Cannot proceed with calculation due to validation errors')
+      setRunStatus('error')
+      setIsRunning(false)
+      return
+    }
 
     if (verbosity !== 'quiet') {
       addLog('info', 'Step 1: Ingesting scenario data from staged files...')
@@ -348,6 +440,14 @@ export default function PerformCalculation() {
           Execute the calculation run and monitor progress
         </p>
       </div>
+
+      {/* Validation Panel */}
+      {validationResult && (
+        <ValidationPanel
+          result={validationResult}
+          onDismiss={() => setValidationResult(null)}
+        />
+      )}
 
       {/* Run Info Card */}
       <Card style={{
