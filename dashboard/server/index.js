@@ -164,10 +164,11 @@ app.post('/api/statements/load', upload.single('file'), async (req, res) => {
 })
 
 /**
- * Load CSV scenarios into staging table
+/**
  * POST /api/scenarios/load
  * Body: scenarioName, dbPath
  * File: CSV file
+ * Refactored to use StagingService for unified staging architecture
  */
 app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
   console.log('Received scenario upload request:', {
@@ -176,6 +177,7 @@ app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
     hasFile: !!req.file
   })
 
+  let db
   try {
     const { scenarioName, dbPath } = req.body
     const file = req.file
@@ -194,6 +196,7 @@ app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
     })
 
     if (records.length === 0) {
+      fs.unlinkSync(file.path)
       return res.status(400).json({ error: 'CSV file is empty' })
     }
 
@@ -205,24 +208,6 @@ app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
       })
     }
 
-    // Connect to existing database
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
-      if (err) {
-        console.error('Database connection error:', err)
-        fs.unlinkSync(file.path)
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-      }
-    })
-
-    // Create safe staging table name with validation
-    let stagingTableName
-    try {
-      stagingTableName = security.createScenarioStagingTableName(scenarioName)
-    } catch (err) {
-      fs.unlinkSync(file.path)
-      return res.status(400).json({ error: err.message })
-    }
-
     // Get columns from first record and validate
     const columns = Object.keys(records[0])
     try {
@@ -232,67 +217,76 @@ app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Invalid column names in CSV: ' + err.message })
     }
 
-    const columnDefs = columns.map(col => `"${col.replace(/"/g, '""')}" TEXT`).join(', ')
+    // Connect to database
+    db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
 
-    // Execute database operations
-    db.serialize(() => {
-      // Drop existing staging table for this scenario
-      db.run(`DROP TABLE IF EXISTS ${security.quoteIdentifier(stagingTableName)}`)
+    // 1. Insert into staged_file table
+    const fileResult = await stagingService.dbRun(`
+      INSERT INTO staged_file (file_name, file_type, row_count, csv_content)
+      VALUES (?, ?, ?, ?)
+    `, [file.originalname, 'scenario', records.length, fileContent])
 
-      // Create new staging table
-      db.run(`CREATE TABLE ${security.quoteIdentifier(stagingTableName)} (
-        _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-        ${columnDefs},
-        imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        is_mapped INTEGER DEFAULT 0
-      )`, (err) => {
-        if (err) {
-          console.error('Create table error:', err)
-          db.close()
-          return res.status(500).json({ error: 'Failed to create staging table' })
-        }
+    const fileId = fileResult.lastID
 
-        // Insert records
-        const placeholders = columns.map(() => '?').join(', ')
-        const columnNames = columns.map(c => `"${c}"`).join(', ')
-        const stmt = db.prepare(`INSERT INTO ${security.quoteIdentifier(stagingTableName)} (${columnNames}) VALUES (${placeholders})`)
+    // 2. Create staging table with metadata tracking
+    const { stagingId, tableName } = await stagingService.createStagingTable(
+      'scenario',
+      fileId,
+      file.originalname,
+      columns
+    )
 
-        let inserted = 0
-        for (const record of records) {
-          const values = columns.map(col => record[col])
-          stmt.run(values, (err) => {
-            if (err) {
-              console.error('Insert error:', err)
-            } else {
-              inserted++
-            }
-          })
-        }
+    // 3. Insert data into staging table
+    const placeholders = columns.map(() => '?').join(', ')
+    const columnNames = columns.map(c => security.quoteIdentifier(c)).join(', ')
+    const insertSql = `INSERT INTO ${security.quoteIdentifier(tableName)} (${columnNames}) VALUES (${placeholders})`
 
-        stmt.finalize((err) => {
-          db.close()
-          fs.unlinkSync(file.path)
-
-          if (err) {
-            console.error('Finalize error:', err)
-            return res.status(500).json({ error: 'Failed to insert data' })
-          }
-
-          res.json({
-            success: true,
-            message: `Successfully loaded ${records.length} rows from ${scenarioName} into staging area.`,
-            rowCount: records.length,
-            tableName: stagingTableName
-          })
+    const stmt = db.prepare(insertSql)
+    for (const record of records) {
+      const values = columns.map(col => record[col])
+      await new Promise((resolve, reject) => {
+        stmt.run(values, (err) => {
+          if (err) reject(err)
+          else resolve()
         })
       })
+    }
+
+    await new Promise((resolve, reject) => {
+      stmt.finalize((err) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
+
+    // 4. Update row count and status in staging metadata
+    await stagingService.updateRowCount(stagingId, records.length)
+    await stagingService.updateStatus(stagingId, 'pending')
+
+    // Cleanup
+    db.close()
+    fs.unlinkSync(file.path)
+
+    res.json({
+      success: true,
+      message: `Successfully loaded ${records.length} rows from ${scenarioName} into staging area.`,
+      rowCount: records.length,
+      tableName: tableName,
+      stagingId: stagingId,
+      fileId: fileId
     })
 
   } catch (error) {
     console.error('Import error:', error)
+    if (db) db.close()
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path)
+    }
     res.status(500).json({ error: error.message })
   }
 })
+
 
 /**
  * Load multiple CSV scenarios into numbered staging tables (batch mode)
