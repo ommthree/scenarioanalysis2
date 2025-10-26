@@ -93,10 +93,9 @@ export default function PerformCalculation() {
 
     try {
       // Get all scenarios from database
-      const scenariosResponse = await fetch(apiUrl('/api/scenarios'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath })
+      const scenariosResponse = await fetch(apiUrl(`/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`), {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       })
 
       if (!scenariosResponse.ok) {
@@ -106,7 +105,7 @@ export default function PerformCalculation() {
       }
 
       const scenariosData = await scenariosResponse.json()
-      const scenarioIds = scenariosData.map((s: { scenario_id: number }) => s.scenario_id)
+      const scenarioIds = scenariosData.scenarios?.map((s: { scenario_id: number }) => s.scenario_id) || []
 
       if (scenarioIds.length === 0) {
         addLog('warning', 'No scenarios defined in database. Validation skipped.')
