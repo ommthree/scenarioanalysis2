@@ -4,6 +4,7 @@ import {
   ReactFlow,
   type Node,
   type Edge,
+  type NodeMouseHandler,
   Background,
   Controls,
   useNodesState,
@@ -28,7 +29,18 @@ import {
 } from 'lucide-react'
 
 // Custom node component
-function FlowNode({ data }: { data: any }) {
+interface FlowNodeData {
+  icon: React.ComponentType
+  label: string
+  sublabel: string
+  bgClass: string
+  ringClass: string
+  iconClass: string
+  gradientBg: string
+  onClick: () => void
+}
+
+function FlowNode({ data }: { data: FlowNodeData }) {
   const Icon = data.icon
 
   return (
@@ -81,7 +93,7 @@ export default function FlowchartNav({ onNavigate }: FlowchartNavProps = {}) {
     onNavigate?.()
   }, [navigate, onNavigate])
 
-  const onNodeClickHandler = useCallback((_event: any, node: any) => {
+  const onNodeClickHandler: NodeMouseHandler = useCallback((_event, node) => {
     if (node.data.onClick) {
       node.data.onClick()
     }

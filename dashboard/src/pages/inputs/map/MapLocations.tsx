@@ -1418,7 +1418,7 @@ Rules:
                     {(() => {
                       const entityTree = buildEntityTree()
 
-                      const renderEntityNode = (node: Entity & { children: any[] }, depth: number = 0): React.ReactElement => {
+                      const renderEntityNode = (node: Entity & { children: Entity[] }, depth: number = 0): React.ReactElement => {
                         const mappedValue = getMappedEntityValue(node.entity_id)
                         const hasMapped = mappedValue !== null
                         const isDisabled = isEntityDisabled(node.entity_id)
@@ -1520,7 +1520,7 @@ Rules:
                                 )}
                               </div>
                             </div>
-                            {node.children && node.children.map((child: any) => renderEntityNode(child, depth + 1))}
+                            {node.children && node.children.map((child) => renderEntityNode(child, depth + 1))}
                           </React.Fragment>
                         )
                       }

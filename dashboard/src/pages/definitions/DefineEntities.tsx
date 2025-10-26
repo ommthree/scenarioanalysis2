@@ -66,7 +66,7 @@ export default function DefineEntities() {
     }
   }
 
-  const buildTree = (flatEntities: any[]): Entity[] => {
+  const buildTree = (flatEntities: Entity[]): Entity[] => {
     const entityMap = new Map<number, Entity>()
     const roots: Entity[] = []
 

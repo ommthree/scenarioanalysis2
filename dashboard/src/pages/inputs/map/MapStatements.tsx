@@ -39,6 +39,23 @@ interface HierarchicalMapping {
   csv_row_index: number
 }
 
+interface SavedMapping {
+  companyId: number
+  templateCode: string
+  csvFileName: string
+  hierarchicalMappings: HierarchicalMapping[]
+  columnConfig: {
+    lineItemColumn: string | null
+    valueColumn: string | null
+    currencyColumn: string | null
+  }
+}
+
+interface ColumnMapping {
+  column_type: 'label' | 'data' | 'currency'
+  csv_column_name: string
+}
+
 interface StagedFile {
   file_id: number
   file_name: string
@@ -302,7 +319,7 @@ export default function MapStatements() {
 
         if (result.success && result.mappings && result.mappings.length > 0) {
           // Find mapping for current company
-          const companyMapping = result.mappings.find((m: any) => m.companyId === selectedCompany.entity_id)
+          const companyMapping = result.mappings.find((m: SavedMapping) => m.companyId === selectedCompany.entity_id)
 
           if (companyMapping) {
             // Find the template by code
@@ -357,7 +374,7 @@ export default function MapStatements() {
     }
   }
 
-  const buildEntityTree = (flatEntities: any[]): Entity[] => {
+  const buildEntityTree = (flatEntities: Entity[]): Entity[] => {
     const entityMap = new Map<number, Entity>()
     const roots: Entity[] = []
 
@@ -725,11 +742,11 @@ Respond with ONLY the JSON object, no other text`
       const columnMappings = aiResponse.column_mappings || []
 
       // Find the first data column for value mapping
-      const dataColumns = columnMappings.filter((c: any) => c.column_type === 'data')
+      const dataColumns = columnMappings.filter((c: ColumnMapping) => c.column_type === 'data')
       const valueColumn = dataColumns.length > 0 ? dataColumns[0].csv_column_name : null
 
       // Find label/line item column
-      const labelColumn = columnMappings.find((c: any) => c.column_type === 'label')
+      const labelColumn = columnMappings.find((c: ColumnMapping) => c.column_type === 'label')
       const lineItemColumn = labelColumn ? labelColumn.csv_column_name : null
 
       // Apply the AI-suggested row mappings and column config
@@ -737,7 +754,7 @@ Respond with ONLY the JSON object, no other text`
         ...prev,
         [statementType]: {
           ...prev[statementType],
-          hierarchicalMappings: rowMappings.map((m: any) => ({
+          hierarchicalMappings: rowMappings.map((m: HierarchicalMapping) => ({
             entity_path: [selectedCompany.entity_id],
             line_item_code: m.line_item_code,
             csv_row_index: m.csv_row_index

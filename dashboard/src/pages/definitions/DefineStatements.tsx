@@ -104,7 +104,7 @@ export default function DefineStatements() {
                                data.statement_type === 'cf' ? 'cash_flow' :
                                data.statement_type === 'carbon' ? 'carbon_statement' : 'profit_and_loss'
 
-        const mappedLineItems = (data.lineItems || []).map((item: any) => ({
+        const mappedLineItems = (data.lineItems || []).map((item: Partial<LineItem> & { code: string }) => ({
           ...item,
           // Use item's section if it exists (unified templates), otherwise use default
           section: item.section || defaultSection,
@@ -190,7 +190,7 @@ export default function DefineStatements() {
             statement_type: imported.statement_type || 'unified'
           })
 
-          setLineItems((imported.lineItems || imported.line_items || []).map((item: any) => ({
+          setLineItems((imported.lineItems || imported.line_items || []).map((item: Partial<LineItem> & { code: string }) => ({
             code: item.code || '',
             display_name: item.display_name || '',
             level: typeof item.level === 'number' ? item.level : 1,

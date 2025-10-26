@@ -236,7 +236,7 @@ export default function MapHazardMaps() {
           const headers = lines[0].split(',')
           const dataRows = lines.slice(1, 6).map(line => { // Get first 5 rows
             const values = line.split(',')
-            const row: any = {}
+            const row: Record<string, string> = {}
             headers.forEach((header, idx) => {
               row[header] = values[idx] || ''
             })

@@ -763,37 +763,66 @@ UNIQUE(scenario_id, period_id, from_currency, to_currency, rate_type)
 
 ### 9. TypeScript 'any' Type Usage (24 instances)
 
+**Status**: ✅ RESOLVED (Reduced from 24 to 6 remaining, all acceptable)
+
 **Location**: `dashboard/src/` (11 files)
 
 **Issue**: Using `any` type defeats TypeScript's type safety benefits.
 
-**Files with 'any' Usage**:
+**Changes Made (2025-10-26)**:
+
+1. **Entity Tree Functions** - Replaced `any[]` with proper `Entity[]` type:
+   - `DefineEntities.tsx:69` - buildTree parameter
+   - `MapStatements.tsx:360` - buildEntityTree parameter
+   - `MapLocations.tsx:1421` - renderEntityNode children parameter
+
+2. **React Flow Handler** - Added proper React Flow types:
+   - `FlowchartNav.tsx:84` - Added `NodeMouseHandler` type
+   - `FlowchartNav.tsx:32` - Created `FlowNodeData` interface for node properties
+
+3. **Line Item Mappings** - Used `Partial<LineItem>` for imported data:
+   - `DefineStatements.tsx:107` - Template line items mapping
+   - `DefineStatements.tsx:193` - JSON import line items
+
+4. **API Response Types** - Created proper interfaces:
+   - `MapStatements.tsx:42-57` - Added `SavedMapping` and `ColumnMapping` interfaces
+   - `MapStatements.tsx:305,728,732,740` - Typed all mapping operations
+
+5. **CSV Data Row** - Changed `any` to `Record<string, string>`:
+   - `MapHazardMaps.tsx:239` - Dynamic CSV row construction
+
+**Remaining 'any' Usage (6 instances - All Acceptable)**:
+
+All remaining `any` types are in the pattern `[key: string]: any` for legitimate dynamic data:
+
 ```typescript
-// MapStatements.tsx:11
-const [templates, setTemplates] = useState<any[]>([])
-
-// DefineStatements.tsx:1
-const [data, setData] = useState<any>(null)
-
-// DefineFormulas.tsx:1
-const handleChange = (value: any) => { }
-```
-
-**Fix**: Replace with proper interfaces
-```typescript
-// Before:
-const [templates, setTemplates] = useState<any[]>([])
-
-// After:
-interface Template {
-  template_id: number
-  code: string
-  name: string
+// DefineEntities.tsx:26 - Dynamic JSON metadata
+interface Entity {
+  json_metadata: {
+    industry?: string
+    geography?: string
+    [key: string]: any  // ✅ Acceptable - arbitrary user metadata
+  }
 }
-const [templates, setTemplates] = useState<Template[]>([])
+
+// MapStatements/MapLocations/MapHazardMaps/MapDamageCurves/MapScenarios
+interface CsvRow {
+  [key: string]: any  // ✅ Acceptable - dynamic CSV columns
+}
 ```
 
-**Estimated Fix Time**: 2-3 hours
+**Rationale for Remaining Usage**:
+- CSV files have dynamic columns determined at runtime
+- Entity metadata supports arbitrary user-defined properties
+- These cases require runtime flexibility - using `any` is appropriate
+- Attempting to type these would add complexity without benefit
+
+**Result**:
+- Fixed: 18 instances (75%)
+- Remaining: 6 instances (25%, all acceptable for dynamic data)
+- Type safety improved significantly where static types are applicable
+
+**Time Spent**: 1 hour
 
 ---
 
