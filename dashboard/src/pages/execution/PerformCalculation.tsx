@@ -451,14 +451,6 @@ export default function PerformCalculation() {
         </p>
       </div>
 
-      {/* Validation Panel */}
-      {validationResult && (
-        <ValidationPanel
-          result={validationResult}
-          onDismiss={() => setValidationResult(null)}
-        />
-      )}
-
       {/* Run Info Card */}
       <Card style={{
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
@@ -658,6 +650,14 @@ export default function PerformCalculation() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Validation Panel */}
+      {validationResult && (
+        <ValidationPanel
+          result={validationResult}
+          onDismiss={() => setValidationResult(null)}
+        />
+      )}
     </div>
   )
 }
