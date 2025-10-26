@@ -1,6 +1,6 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-26
+**Last Updated:** 2025-10-26 (Session 4 - Unified Staging Architecture)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
 **Status:** Production-ready with recent security & quality improvements
@@ -200,6 +200,7 @@ After starting both servers:
 - **Centralized Config:** `config.ts` for environment-based settings
 - **Conditional Logging:** `utils/logger.ts` suppresses debug logs in production
 - **Security Layer:** `server/security.js` prevents SQL injection
+- **Unified Staging:** `server/staging_service.js` for consistent CSV import pipeline (Issue #11)
 
 ### Database (data/database/finmodel.db)
 - **47 Active Tables:** Core, scenarios, drivers, physical risk, actions, results

@@ -760,6 +760,66 @@ This database supports a unified financial modeling engine with:
 
 ## Staging Tables
 
+### Unified Staging Architecture (✅ Implemented - Issue #11)
+
+**Purpose:** All CSV uploads use a unified staging architecture with full audit trail and lifecycle management.
+
+**Core Components:**
+1. **`staging_metadata`** - Tracks all staging operations
+2. **`staged_file`** - Stores uploaded CSV files and metadata
+3. **`StagingService`** (dashboard/server/staging_service.js) - Centralized service
+4. **Dynamic staging tables** - Unique timestamped tables (e.g., `staging_scenario_1761494354658`)
+
+**Staging Workflow:**
+```
+User uploads CSV
+  ↓
+1. Insert into staged_file (file_id generated)
+2. Create staging_{type}_{timestamp} table
+3. Insert into staging_metadata (staging_id, file_id, table name)
+4. Insert CSV data into staging table
+5. Update row_count and status in staging_metadata
+  ↓
+User maps columns → Copy to production tables
+  ↓
+6. Update staging_metadata.status to 'ingested'
+  ↓
+Optional: Delete file → DROP staging table
+```
+
+**Benefits:**
+- Full audit trail, no orphaned tables
+- No conflicts between concurrent uploads
+- C++ engine queries staging_metadata for dynamic table names
+
+---
+
+###`staging_metadata`
+**Purpose:** Track all staging table operations with audit trail
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `staging_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `data_type` | TEXT | NOT NULL | scenario, location, statement, damage_curve, hazard_map |
+| `file_id` | INTEGER | FOREIGN KEY → staged_file(file_id) | Reference to uploaded file |
+| `staging_table_name` | TEXT | NOT NULL, UNIQUE | Dynamic table name |
+| `original_filename` | TEXT | | Original CSV filename |
+| `row_count` | INTEGER | DEFAULT 0 | Number of rows imported |
+| `status` | TEXT | DEFAULT 'pending' | pending, mapped, ingested, error, archived |
+| `error_message` | TEXT | | Error details if status='error' |
+| `created_at` | TEXT | DEFAULT CURRENT_TIMESTAMP | When staging table created |
+| `ingested_at` | TEXT | | When data copied to production |
+| `deleted_at` | TEXT | | When staging table dropped (soft delete) |
+
+**Indexes:**
+- `idx_staging_metadata_file` on `file_id`
+- `idx_staging_metadata_type_status` on `data_type, status`
+
+**Used By:**
+- All upload endpoints, C++ engine (hazard_map_risk_engine.cpp), staging REST API
+
+---
+
 ### `staged_file`
 **Purpose:** Tracks uploaded CSV files
 

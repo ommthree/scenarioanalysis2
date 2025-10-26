@@ -135,7 +135,8 @@ ScenarioAnalysis2/
     │
     ├── server/
     │   ├── index.js                  # Node.js API server (40+ endpoints)
-    │   └── security.js               # SQL injection protection module ⭐ NEW
+    │   ├── security.js               # SQL injection protection module ⭐ NEW
+    │   └── staging_service.js        # Unified staging architecture service ⭐ NEW
     │
     └── src/                          # React frontend (48 files)
         ├── App.tsx                   # Main application & routing
@@ -1241,12 +1242,56 @@ All UI components are from shadcn/ui library, customized for this project:
 - `POST /api/saved-runs` — Save run
 - `DELETE /api/saved-runs/:id` — Delete saved run
 
+**Staging Management (Issue #11 - Unified Architecture):**
+- `GET /api/staging/list` — List staging tables with filters
+- `GET /api/staging/orphaned` — Find untracked staging tables
+- `GET /api/staging/:stagingId` — Get staging table details
+- `DELETE /api/staging/:stagingId` — Delete staging table
+- `POST /api/staging/cleanup` — Cleanup old tables (configurable age)
+
 **Dependencies:**
 - `express` for HTTP server
 - `sqlite3` for database access
 - `multer` for file uploads
 - `papaparse` for CSV parsing
 - `child_process` for spawning C++ calculation
+
+---
+
+#### `dashboard/server/staging_service.js`
+**Lines:** ~235
+**Purpose:** Unified staging table architecture service (Issue #11)
+**Status:** ✅ Production
+
+**Classes:**
+- `StagingService` — Centralized staging table management
+
+**Key Methods:**
+- `createStagingTable(dataType, fileId, filename, columns)` → `{stagingId, tableName}`
+  - Creates unique staging table: `staging_{type}_{timestamp}`
+  - Inserts metadata into staging_metadata
+  - Returns staging ID and table name
+- `updateStatus(stagingId, status, errorMessage)` — Update staging metadata status
+- `updateRowCount(stagingId, rowCount)` — Update row count after data insertion
+- `getStagingInfo(stagingId)` → metadata object
+- `getStagingInfoByFileId(fileId, dataType)` → metadata object
+- `listStagingTables(dataType, status)` → array of staging tables
+- `deleteStagingTable(stagingId)` — Drop table and mark as archived
+- `cleanupOldTables(daysOld)` → `{deletedCount, totalFound}` — Cleanup old staging tables
+- `findOrphanedTables()` → array of table names — Find untracked staging tables
+
+**Architecture Benefits:**
+- Full audit trail of all staging operations
+- No conflicts between concurrent uploads (unique timestamped tables)
+- Automatic cleanup capabilities
+- Consistent pattern across all data types (scenario, location, damage_curve, hazard_map)
+- C++ engine integration (queries staging_metadata for dynamic table names)
+
+**Used By:**
+- All upload endpoints (`/api/scenarios/load`, `/api/locations/load`, etc.)
+- C++ engine (`hazard_map_risk_engine.cpp`)
+- Staging management REST API endpoints
+- File deletion cleanup logic
 
 ---
 

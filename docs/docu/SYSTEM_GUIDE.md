@@ -152,13 +152,18 @@ The database contains **47 tables** organized into functional groups. See `schem
 - `scenario_action`: Links actions to scenarios
 - `mac_curve_point`: Marginal abatement cost curve data
 
-#### **Staging Tables** (CSV Import Pipeline)
-- `staged_file`: File metadata
-- `staging_scenario`: Scenario CSV staging
-- `staging_location`: Location CSV staging
-- `staging_damage_curve`: Damage curve CSV staging
-- `staging_hazard_map`: Hazard map grid data staging
-- `staging_statement_*`: Statement CSV staging (dynamic tables)
+#### **Staging Tables** (CSV Import Pipeline - Unified Architecture ✅)
+- `staged_file`: File metadata and CSV content
+- `staging_metadata`: Tracks all staging operations with audit trail
+- `staging_{type}_{timestamp}`: Dynamic timestamped staging tables
+  - e.g., `staging_scenario_1761494354658`, `staging_location_1761494400123`
+  - Each upload creates unique table to prevent conflicts
+  - Tracked in `staging_metadata` for full lifecycle management
+- **StagingService** (dashboard/server/staging_service.js): Centralized service
+  - Creates/deletes staging tables
+  - Updates metadata (row_count, status, timestamps)
+  - Finds orphaned tables, cleanup old tables
+  - Used by all upload endpoints + C++ engine
 
 ### 2.2 Key Relationships
 
@@ -199,8 +204,11 @@ damage_curve (N) ─────> Interpolated at runtime
 
 ```
 1. CSV UPLOAD (Dashboard)
-   ├─> POST /api/upload-csv
-   └─> Stores in staged_file + staging_* tables
+   ├─> POST /api/{type}/load (e.g., /api/scenarios/load)
+   ├─> StagingService.createStagingTable() creates staging_{type}_{timestamp}
+   ├─> Inserts into staged_file (file_id, CSV content)
+   ├─> Inserts into staging_metadata (staging_id, file_id, table_name)
+   └─> Returns stagingId and fileId for frontend tracking
 
 2. COLUMN MAPPING (Dashboard)
    ├─> User maps CSV columns to system fields
