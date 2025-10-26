@@ -653,10 +653,12 @@ export default function PerformCalculation() {
 
       {/* Validation Panel */}
       {validationResult && (
-        <ValidationPanel
-          result={validationResult}
-          onDismiss={() => setValidationResult(null)}
-        />
+        <div style={{ marginTop: '24px' }}>
+          <ValidationPanel
+            result={validationResult}
+            onDismiss={() => setValidationResult(null)}
+          />
+        </div>
       )}
     </div>
   )
