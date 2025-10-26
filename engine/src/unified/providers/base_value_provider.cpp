@@ -25,7 +25,7 @@ BaseValueProvider::BaseValueProvider(
 void BaseValueProvider::load_base_values(
     const EntityID& entity_id,
     ScenarioID scenario_id,
-    const std::string& template_code
+    [[maybe_unused]] const std::string& template_code
 ) {
     base_values_.clear();
 

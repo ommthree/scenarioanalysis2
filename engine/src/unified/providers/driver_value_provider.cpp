@@ -143,7 +143,7 @@ bool DriverValueProvider::has_value(const std::string& key) const {
     return driver_cache_.find(key) != driver_cache_.end();
 }
 
-double DriverValueProvider::get_value(const std::string& key, const core::Context& ctx) const {
+double DriverValueProvider::get_value(const std::string& key, [[maybe_unused]] const core::Context& ctx) const {
     // Load cache if needed
     if (!cache_loaded_) {
         load_drivers();

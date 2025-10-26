@@ -211,7 +211,7 @@ std::string PeriodRunner::get_template_for_period(
                                     return values_.find(key) != values_.end();
                                 }
 
-                                double get_value(const std::string& key, const core::Context& ctx) const override {
+                                double get_value(const std::string& key, [[maybe_unused]] const core::Context& ctx) const override {
                                     auto it = values_.find(key);
                                     if (it != values_.end()) {
                                         return it->second;
@@ -261,7 +261,7 @@ std::string PeriodRunner::get_template_for_period(
                                     return values_.find(key) != values_.end();
                                 }
 
-                                double get_value(const std::string& key, const core::Context& ctx) const override {
+                                double get_value(const std::string& key, [[maybe_unused]] const core::Context& ctx) const override {
                                     auto it = values_.find(key);
                                     if (it != values_.end()) {
                                         return it->second;

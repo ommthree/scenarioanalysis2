@@ -321,8 +321,8 @@ double UnifiedEngine::calculate_line_item(
         // Calculate actual marginal contribution of each driver
         auto dependencies = evaluator_.extract_dependencies(formula.value());
 
-        bool has_base_ref = false;
-        double base_value = 0.0;
+        [[maybe_unused]] bool has_base_ref = false;
+        [[maybe_unused]] double base_value = 0.0;
 
         // Check if formula references BASE: (for delta calculation)
         for (const auto& dep : dependencies) {

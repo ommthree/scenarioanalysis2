@@ -306,7 +306,7 @@ std::pair<std::string, std::string> ActionEngine::load_action_metadata(const std
 bool ActionEngine::should_trigger(
     const ManagementAction& action,
     int period_id,
-    const std::map<std::string, double>& available_values
+    [[maybe_unused]] const std::map<std::string, double>& available_values
 ) {
     switch (action.trigger_type) {
         case TriggerType::UNCONDITIONAL:
