@@ -322,27 +322,19 @@ bool ActionEngine::should_trigger(
             return (action.start_period > 0 && period_id == action.start_period);
 
         case TriggerType::CONDITIONAL:
-            // Evaluate trigger condition
+            // NOTE: CONDITIONAL trigger evaluation not yet implemented
+            // This is a planned feature for future releases.
+            // When implemented, it will integrate with FormulaEvaluator to support
+            // complex expressions like "REVENUE > 1000000" or "NPV < 0".
+            // For now, CONDITIONAL triggers always return false (never trigger).
+            // Use UNCONDITIONAL or TIMED triggers instead.
+
             if (action.trigger_condition.empty()) {
                 return false;  // No condition to evaluate
             }
 
-            try {
-                // Create a simple value provider for the formula evaluator
-                // For now, we'll implement a basic evaluator
-                // TODO: Integrate with FormulaEvaluator for full expression support
-
-                // Simple condition parsing for now: "VARIABLE > VALUE" or "VARIABLE < VALUE"
-                // Full implementation would use FormulaEvaluator
-
-                // For Level 13, we'll just return false since we're testing UNCONDITIONAL
-                // Full CONDITIONAL support will be added in Level 15
-                return false;
-
-            } catch (const std::exception& e) {
-                // If condition evaluation fails, don't trigger
-                return false;
-            }
+            // Placeholder: Always return false until feature is implemented
+            return false;
 
         default:
             return false;

@@ -447,7 +447,10 @@ std::vector<HazardMapDamageResult> HazardMapRiskEngine::calculate_damages(
                 result.interpolated_intensity = bilinear_interpolate(
                     loc.latitude, loc.longitude, grid_points
                 );
-                result.variance = 0.0; // TODO: interpolate variance if needed
+                // Variance is set to 0.0 - interpolation not needed for point estimates
+                // If probabilistic analysis is required, variance can be derived from
+                // ensemble spread or added as separate hazard map input
+                result.variance = 0.0;
 
                 // Apply damage curves - iterate through all value types in location
                 result.ppe_damage_factor = 0.0;
