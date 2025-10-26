@@ -1778,7 +1778,9 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
 
         // Handle different file types
         if (fileType === 'scenario') {
-          // Delete scenario mapping configuration and staged file
+          // Delete scenario mapping configuration, staging table, and staged file
+          const stagingTableName = `staging_scenario_${fileId}`
+
           new Promise((resolve, reject) => {
             db.run(
               `DELETE FROM scenario_mapping WHERE file_id = ?`,
@@ -1790,41 +1792,20 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
             )
           })
             .then(() => {
+              // Drop the staging table if it exists
               return new Promise((resolve, reject) => {
                 db.run(
-                  `DELETE FROM staged_file WHERE file_id = ?`,
-                  [fileId],
-                  function(err) {
-                    if (err) reject(err)
-                    else resolve(this.changes)
+                  `DROP TABLE IF EXISTS ${stagingTableName}`,
+                  (err) => {
+                    if (err) {
+                      console.warn(`Warning: Failed to drop table ${stagingTableName}:`, err.message)
+                      // Don't fail the whole operation if table drop fails
+                    }
+                    resolve()
                   }
                 )
               })
             })
-            .then((changes) => {
-              db.close()
-              res.json({
-                success: true,
-                deleted: changes,
-                message: 'Staged scenario file deleted'
-              })
-            })
-            .catch((err) => {
-              db.close()
-              res.status(500).json({ error: 'Failed to delete: ' + err.message })
-            })
-        } else if (fileType === 'damage_curve') {
-          // Delete damage curve mapping and file
-          new Promise((resolve, reject) => {
-            db.run(
-              `DELETE FROM damage_curve_mapping WHERE file_id = ?`,
-              [fileId],
-              (err) => {
-                if (err) reject(err)
-                else resolve()
-              }
-            )
-          })
             .then(() => {
               return new Promise((resolve, reject) => {
                 db.run(
@@ -1839,10 +1820,167 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
             })
             .then((changes) => {
               db.close()
+              console.log(`[File Deletion] Deleted scenario file_id ${fileId} and dropped table ${stagingTableName}`)
+              res.json({
+                success: true,
+                deleted: changes,
+                message: 'Staged scenario file deleted'
+              })
+            })
+            .catch((err) => {
+              db.close()
+              res.status(500).json({ error: 'Failed to delete: ' + err.message })
+            })
+        } else if (fileType === 'damage_curve') {
+          // Delete damage curve mapping, staging data, and file
+          new Promise((resolve, reject) => {
+            db.run(
+              `DELETE FROM damage_curve_mapping WHERE file_id = ?`,
+              [fileId],
+              (err) => {
+                if (err) reject(err)
+                else resolve()
+              }
+            )
+          })
+            .then(() => {
+              // Delete staging data
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staging_damage_curve WHERE file_id = ?`,
+                  [fileId],
+                  (err) => {
+                    if (err) {
+                      console.warn(`Warning: Failed to delete staging_damage_curve for file_id ${fileId}:`, err.message)
+                    }
+                    resolve()
+                  }
+                )
+              })
+            })
+            .then(() => {
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staged_file WHERE file_id = ?`,
+                  [fileId],
+                  function(err) {
+                    if (err) reject(err)
+                    else resolve(this.changes)
+                  }
+                )
+              })
+            })
+            .then((changes) => {
+              db.close()
+              console.log(`[File Deletion] Deleted damage_curve file_id ${fileId} and staging data`)
               res.json({
                 success: true,
                 deleted: changes,
                 message: 'Damage curve file deleted'
+              })
+            })
+            .catch((err) => {
+              db.close()
+              res.status(500).json({ error: 'Failed to delete: ' + err.message })
+            })
+        } else if (fileType === 'location') {
+          // Delete location mapping config, staging data, and file
+          new Promise((resolve, reject) => {
+            db.run(
+              `DELETE FROM location_mapping_config WHERE file_id = ?`,
+              [fileId],
+              (err) => {
+                if (err) reject(err)
+                else resolve()
+              }
+            )
+          })
+            .then(() => {
+              // Delete staging data
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staging_location WHERE file_id = ?`,
+                  [fileId],
+                  (err) => {
+                    if (err) {
+                      console.warn(`Warning: Failed to delete staging_location for file_id ${fileId}:`, err.message)
+                    }
+                    resolve()
+                  }
+                )
+              })
+            })
+            .then(() => {
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staged_file WHERE file_id = ?`,
+                  [fileId],
+                  function(err) {
+                    if (err) reject(err)
+                    else resolve(this.changes)
+                  }
+                )
+              })
+            })
+            .then((changes) => {
+              db.close()
+              console.log(`[File Deletion] Deleted location file_id ${fileId} and staging data`)
+              res.json({
+                success: true,
+                deleted: changes,
+                message: 'Location file deleted'
+              })
+            })
+            .catch((err) => {
+              db.close()
+              res.status(500).json({ error: 'Failed to delete: ' + err.message })
+            })
+        } else if (fileType === 'hazard_map') {
+          // Delete hazard map mapping, staging data, and file
+          new Promise((resolve, reject) => {
+            db.run(
+              `DELETE FROM hazard_map_mapping WHERE file_id = ?`,
+              [fileId],
+              (err) => {
+                if (err) reject(err)
+                else resolve()
+              }
+            )
+          })
+            .then(() => {
+              // Delete staging data
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staging_hazard_map WHERE file_id = ?`,
+                  [fileId],
+                  (err) => {
+                    if (err) {
+                      console.warn(`Warning: Failed to delete staging_hazard_map for file_id ${fileId}:`, err.message)
+                    }
+                    resolve()
+                  }
+                )
+              })
+            })
+            .then(() => {
+              return new Promise((resolve, reject) => {
+                db.run(
+                  `DELETE FROM staged_file WHERE file_id = ?`,
+                  [fileId],
+                  function(err) {
+                    if (err) reject(err)
+                    else resolve(this.changes)
+                  }
+                )
+              })
+            })
+            .then((changes) => {
+              db.close()
+              console.log(`[File Deletion] Deleted hazard_map file_id ${fileId} and staging data`)
+              res.json({
+                success: true,
+                deleted: changes,
+                message: 'Hazard map file deleted'
               })
             })
             .catch((err) => {
