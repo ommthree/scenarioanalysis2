@@ -1,10 +1,16 @@
 # Code Files Documentation
 
 **Last Updated:** 2025-10-26
-**Total Files:** 76 (27 C++ source, 28 C++ headers, 48 TypeScript/React, 1 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with Security & Configuration Layer
+**Total Files:** 79 (27 C++ source, 28 C++ headers, 49 TypeScript/React, 4 JavaScript server, 2 config/utility files)
+**Status:** Production - Unified Engine Architecture with Validation & Logging System
 
 **Recent Changes (2025-10-26):**
+- ✅ Added `server/validation_service.js` - Pre-flight data completeness checks (Issue #12, #14)
+- ✅ Added `server/logging_service.js` - Structured logging with JSON output (Issue #13)
+- ✅ Added `components/ValidationPanel.tsx` - Red-flagged error display UI
+- ✅ Updated `server/index.js` - Integrated validation + logging into /api/calculate
+- ✅ Updated `pages/execution/PerformCalculation.tsx` - Validation workflow integration
+- ✅ Added `server/staging_service.js` - Unified staging table management (Issue #11)
 - ✅ Added `config.ts` - Centralized environment configuration
 - ✅ Added `utils/logger.ts` - Conditional logging utility
 - ✅ Added `server/security.js` - SQL injection protection module
@@ -1292,6 +1298,81 @@ All UI components are from shadcn/ui library, customized for this project:
 - C++ engine (`hazard_map_risk_engine.cpp`)
 - Staging management REST API endpoints
 - File deletion cleanup logic
+
+#### `dashboard/server/validation_service.js`
+**Lines:** ~240
+**Purpose:** Pre-flight data completeness validation (Issues #12, #14)
+**Status:** ✅ Production
+
+**Classes:**
+- `ValidationService` — Pre-calculation readiness checks
+
+**Key Methods:**
+- `validateScenario(scenarioId)` → `{valid, errors, warnings, info}`
+  - Validates scenario readiness for calculation
+  - 9 comprehensive checks: scenarios, periods, entities, templates, drivers, FX rates, physical risk data, actions, orphaned tables
+  - Returns structured result with error/warning/info arrays
+- `validateIngestion(dataType, fileId)` → `{valid, errors, warnings, info}`
+  - Validates data ingestion readiness
+  - Type-specific checks (e.g., location requires latitude/longitude)
+
+**Validation Checks:**
+1. Scenario exists
+2. Periods defined
+3. Active entities exist
+4. Statement template assigned
+5. Driver data present (warning if missing)
+6. FX rates available for multi-currency
+7. Physical risk data completeness (locations, damage curves, hazard maps)
+8. Management actions configured
+9. No orphaned staging tables
+
+**Used By:**
+- `/api/validate-scenario` endpoint
+- `/api/calculate` (automatic pre-flight validation)
+- Prevents silent calculation failures
+
+#### `dashboard/server/logging_service.js`
+**Lines:** ~190
+**Purpose:** Structured logging with JSON output (Issue #13)
+**Status:** ✅ Production
+
+**Classes:**
+- `LoggingService` — Centralized logging with multiple severity levels
+
+**Key Methods:**
+- `start()` — Initialize logging session
+- `debug(message, metadata)` — Debug logging (verbose mode only)
+- `verbose(message, metadata)` — Verbose logging (verbose mode only)
+- `info(message, metadata)` — Info logging (always logged)
+- `warn(message, metadata)` — Warning logging (always logged)
+- `error(message, metadata)` — Error logging (always logged, flagged in red)
+- `progress(current, total, description)` — Progress tracking
+- `getLogs(minLevel)` → filtered log array
+- `getLogsJSON(minLevel)` → JSON string
+- `getErrorSummary()` → `{errorCount, warningCount, errors, warnings, hasErrors, hasWarnings}`
+- `mergeCppLogs(cppOutput)` — Parse and integrate C++ engine output
+
+**Log Structure:**
+```javascript
+{
+  timestamp: '2025-10-26T10:30:00.000Z',
+  elapsed: 1250,  // milliseconds since start
+  level: 'error',
+  message: 'Validation failed',
+  ...metadata
+}
+```
+
+**Environment Awareness:**
+- Debug/verbose logs suppressed in production
+- All logs include timestamp and elapsed time
+- Real-time console output with color coding
+
+**Used By:**
+- `/api/calculate` endpoint (calculation workflow)
+- C++ engine integration (merged logs)
+- UI display via PerformCalculation.tsx
 
 ---
 

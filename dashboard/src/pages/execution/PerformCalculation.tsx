@@ -92,13 +92,24 @@ export default function PerformCalculation() {
     addLog('info', 'Running pre-calculation validation...')
 
     try {
-      // Get scenario IDs from run definition
-      const saved = localStorage.getItem('runDefinition')
-      const config = saved ? JSON.parse(saved) : {}
-      const scenarioIds = config.selectedScenarios || []
+      // Get all scenarios from database
+      const scenariosResponse = await fetch(apiUrl('/api/scenarios'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath })
+      })
+
+      if (!scenariosResponse.ok) {
+        addLog('error', 'Failed to fetch scenarios')
+        setIsValidating(false)
+        return false
+      }
+
+      const scenariosData = await scenariosResponse.json()
+      const scenarioIds = scenariosData.map((s: { scenario_id: number }) => s.scenario_id)
 
       if (scenarioIds.length === 0) {
-        addLog('warning', 'No scenarios selected. Validation skipped.')
+        addLog('warning', 'No scenarios defined in database. Validation skipped.')
         setIsValidating(false)
         return true
       }
