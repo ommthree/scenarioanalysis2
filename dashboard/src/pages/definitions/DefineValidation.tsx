@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Save, AlertCircle, Plus, Sparkles, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface LineItem {
   code: string
@@ -65,7 +70,7 @@ const DefineValidation: React.FC = () => {
         const unifiedTemplates = mappedTemplates.filter((t: any) => t.statement_type === 'unified')
         setTemplates(unifiedTemplates)
       })
-      .catch(err => console.error('Error fetching templates:', err))
+      .catch(err => logger.error('Error fetching templates:', err))
   }, [])
 
   // Fetch validation rules
@@ -74,7 +79,7 @@ const DefineValidation: React.FC = () => {
     fetch(apiUrl(`/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => setRules(data))
-      .catch(err => console.error('Error fetching validation rules:', err))
+      .catch(err => logger.error('Error fetching validation rules:', err))
   }, [])
 
   const handleTemplateSelect = async (templateCode: string) => {
@@ -100,7 +105,7 @@ const DefineValidation: React.FC = () => {
       // Auto-deactivate rules that are not relevant to this template
       await updateRuleRelevance(mappedTemplate, dbPath)
     } catch (err) {
-      console.error('Error loading template:', err)
+      logger.error('Error loading template:', err)
     }
   }
 
@@ -133,7 +138,7 @@ const DefineValidation: React.FC = () => {
           // Update local state
           rule.is_active = false
         } catch (err) {
-          console.error(`Failed to deactivate rule ${rule.rule_code}:`, err)
+          logger.error(`Failed to deactivate rule ${rule.rule_code}:`, err)
         }
       }
     }
@@ -167,11 +172,11 @@ const DefineValidation: React.FC = () => {
   const relevantRules = getRelevantRules()
 
   // Debug logging
-  console.log('Selected template:', selectedTemplate?.template_code)
-  console.log('Total rules:', rules.length)
-  console.log('Relevant rules:', relevantRules.length)
+  logger.debug('Selected template:', selectedTemplate?.template_code)
+  logger.debug('Total rules:', rules.length)
+  logger.debug('Relevant rules:', relevantRules.length)
   if (selectedTemplate) {
-    console.log('Template line items:', selectedTemplate.line_items.map(li => li.code))
+    logger.debug('Template line items:', selectedTemplate.line_items.map(li => li.code))
   }
 
   const handleRuleSelect = (rule: ValidationRule) => {
@@ -276,7 +281,7 @@ const DefineValidation: React.FC = () => {
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving validation rule:', err)
+      logger.error('Error saving validation rule:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
@@ -365,7 +370,7 @@ Use line item codes directly and [t-1] for prior period references.
       setFormula(data.suggestion.trim())
       setAiStatus('idle')
     } catch (err) {
-      console.error('Error getting AI suggestion:', err)
+      logger.error('Error getting AI suggestion:', err)
       setAiStatus('error')
       setTimeout(() => setAiStatus('idle'), 3000)
     }

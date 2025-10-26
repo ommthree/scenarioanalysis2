@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react'
+import { logger } from '@/utils/logger'
 import { MapContainer, TileLayer, useMap, Marker, Popup } from 'react-leaflet'
+import { logger } from '@/utils/logger'
 import L from 'leaflet'
+import { logger } from '@/utils/logger'
 import 'leaflet/dist/leaflet.css'
+import { logger } from '@/utils/logger'
 
 interface HazardPoint {
   lat: number
@@ -52,10 +56,10 @@ function GridHeatmapLayer({ points }: { points: HazardPoint[] }) {
   const hasInitializedRef = useRef(false)
 
   useEffect(() => {
-    console.log('GridHeatmapLayer: starting with', points.length, 'points')
+    logger.debug('GridHeatmapLayer: starting with', points.length, 'points')
 
     if (points.length === 0) {
-      console.log('GridHeatmapLayer: no points')
+      logger.debug('GridHeatmapLayer: no points')
       return
     }
 
@@ -71,9 +75,9 @@ function GridHeatmapLayer({ points }: { points: HazardPoint[] }) {
     const minIntensity = Math.min(...intensities)
     const maxIntensity = Math.max(...intensities)
 
-    console.log('GridHeatmap: bounds', { minLat, maxLat, minLng, maxLng })
-    console.log('GridHeatmap: intensity', { minIntensity, maxIntensity })
-    console.log('GridHeatmap: first 5 points', points.slice(0, 5))
+    logger.debug('GridHeatmap: bounds', { minLat, maxLat, minLng, maxLng })
+    logger.debug('GridHeatmap: intensity', { minIntensity, maxIntensity })
+    logger.debug('GridHeatmap: first 5 points', points.slice(0, 5))
 
     // Create a grid lookup map - use actual coordinates as keys
     const gridMap = new Map<string, number>()
@@ -84,8 +88,8 @@ function GridHeatmapLayer({ points }: { points: HazardPoint[] }) {
       gridMap.set(key, p.intensity)
     })
 
-    console.log('GridHeatmap: gridMap size', gridMap.size)
-    console.log('GridHeatmap: sample keys', Array.from(gridMap.keys()).slice(0, 10))
+    logger.debug('GridHeatmap: gridMap size', gridMap.size)
+    logger.debug('GridHeatmap: sample keys', Array.from(gridMap.keys()).slice(0, 10))
 
     // Create canvas
     const canvas = document.createElement('canvas')
@@ -100,7 +104,7 @@ function GridHeatmapLayer({ points }: { points: HazardPoint[] }) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    console.log('GridHeatmap: canvas size', canvas.width, canvas.height)
+    logger.debug('GridHeatmap: canvas size', canvas.width, canvas.height)
 
     // Draw grid cells
     let cellsDrawn = 0
@@ -119,33 +123,33 @@ function GridHeatmapLayer({ points }: { points: HazardPoint[] }) {
       }
     }
 
-    console.log('GridHeatmap: cells drawn', cellsDrawn, 'out of', canvas.width * canvas.height)
-    console.log('GridHeatmap: sample lookup attempts:', [
+    logger.debug('GridHeatmap: cells drawn', cellsDrawn, 'out of', canvas.width * canvas.height)
+    logger.debug('GridHeatmap: sample lookup attempts:', [
       `${maxLat.toFixed(2)},${minLng.toFixed(2)}`,
       gridMap.get(`${maxLat.toFixed(2)},${minLng.toFixed(2)}`),
       `${(maxLat - gridSize).toFixed(2)},${minLng.toFixed(2)}`,
       gridMap.get(`${(maxLat - gridSize).toFixed(2)},${minLng.toFixed(2)}`)
     ])
 
-    console.log('GridHeatmap: cells drawn', cellsDrawn, 'out of', canvas.width * canvas.height)
+    logger.debug('GridHeatmap: cells drawn', cellsDrawn, 'out of', canvas.width * canvas.height)
 
     // Create image overlay
     const imageUrl = canvas.toDataURL()
     const bounds: L.LatLngBoundsExpression = [[minLat, minLng], [maxLat, maxLng]]
 
-    console.log('GridHeatmap: creating overlay with bounds', bounds)
-    console.log('GridHeatmap: image URL length', imageUrl.length)
+    logger.debug('GridHeatmap: creating overlay with bounds', bounds)
+    logger.debug('GridHeatmap: image URL length', imageUrl.length)
 
     const overlay = L.imageOverlay(imageUrl, bounds, {
       opacity: 0.7,
       interactive: false
     })
 
-    console.log('GridHeatmap: adding overlay to map')
+    logger.debug('GridHeatmap: adding overlay to map')
     overlay.addTo(map)
     overlayRef.current = overlay
 
-    console.log('GridHeatmap: overlay added successfully')
+    logger.debug('GridHeatmap: overlay added successfully')
 
     // Only fit bounds on initial load, not on subsequent updates
     if (!hasInitializedRef.current) {

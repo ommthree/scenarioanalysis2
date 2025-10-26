@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { FileSpreadsheet, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Input } from '@/components/ui/input'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface CsvData {
   headers: string[]
@@ -56,7 +63,7 @@ export default function LoadStatements() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -73,7 +80,7 @@ export default function LoadStatements() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -170,7 +177,7 @@ export default function LoadStatements() {
           // Refresh staged files list
           fetchStagedFiles()
         } catch (err) {
-          console.error('Failed to record staged file:', err)
+          logger.error('Failed to record staged file:', err)
         }
 
         setTimeout(() => {
@@ -182,7 +189,7 @@ export default function LoadStatements() {
       }
 
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsLoading(false)
@@ -309,7 +316,7 @@ export default function LoadStatements() {
                               setIsValid(true)
                             }
                           } catch (error) {
-                            console.error('Failed to fetch staged file preview:', error)
+                            logger.error('Failed to fetch staged file preview:', error)
                           }
                         }}
                       >

@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles, CheckCircle2, Circle } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface PhysicalPeril {
   peril_id: number
@@ -80,7 +81,7 @@ export default function MapHazardMaps() {
           setStagedFiles(data.files || [])
         }
       })
-      .catch(err => console.error('Error fetching staged files:', err))
+      .catch(err => logger.error('Error fetching staged files:', err))
   }, [])
 
   // Fetch physical perils (hazard types defined in scenarios)
@@ -90,7 +91,7 @@ export default function MapHazardMaps() {
       .then(data => {
         setPhysicalPerils(data || [])
       })
-      .catch(err => console.error('Error fetching physical perils:', err))
+      .catch(err => logger.error('Error fetching physical perils:', err))
   }, [])
 
   // Fetch scenarios for linking
@@ -102,7 +103,7 @@ export default function MapHazardMaps() {
           setScenarios(data.scenarios || [])
         }
       })
-      .catch(err => console.error('Error fetching scenarios:', err))
+      .catch(err => logger.error('Error fetching scenarios:', err))
   }, [])
 
   // Auto-save mappings when they change
@@ -125,7 +126,7 @@ export default function MapHazardMaps() {
           varianceColumns
         }
 
-        console.log('Auto-save payload:', payload)
+        logger.debug('Auto-save payload:', payload)
 
         const response = await fetch(apiUrl('/api/hazard-maps/save-hazard-map-mapping'), {
           method: 'POST',
@@ -133,14 +134,14 @@ export default function MapHazardMaps() {
           body: JSON.stringify(payload)
         })
         const result = await response.json()
-        console.log('Auto-save result:', result)
+        logger.debug('Auto-save result:', result)
 
         // Update mapping ID from response to enable Step 4
         if (result.success && result.mappingId) {
           setCurrentMappingId(result.mappingId)
         }
       } catch (err) {
-        console.error('Auto-save error:', err)
+        logger.error('Auto-save error:', err)
       }
     }, 1000) // Debounce for 1 second
 
@@ -149,7 +150,7 @@ export default function MapHazardMaps() {
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
-    console.log('File clicked:', fileId, fileName)
+    logger.debug('File clicked:', fileId, fileName)
 
     // IMPORTANT: Set loading flag BEFORE changing any state to prevent auto-save race condition
     setIsLoadingMapping(true)
@@ -178,7 +179,7 @@ export default function MapHazardMaps() {
 
         if (mappingResult.success && mappingResult.mapping) {
           const mapping = mappingResult.mapping
-          console.log('Loading mapping:', mapping)
+          logger.debug('Loading mapping:', mapping)
 
           if (mapping.perilType) setSelectedPerilCode(mapping.perilType)
           if (mapping.latitudeColumn) setLatitudeColumn(mapping.latitudeColumn)
@@ -209,12 +210,12 @@ export default function MapHazardMaps() {
                 setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.code)))
               }
             } catch (err) {
-              console.error('Error loading scenario mappings:', err)
+              logger.error('Error loading scenario mappings:', err)
             }
           }
         }
       } catch (mappingError) {
-        console.log('No saved mapping found or error loading mapping:', mappingError)
+        logger.debug('No saved mapping found or error loading mapping:', mappingError)
       }
 
       // Delay clearing the loading flag to ensure all state updates complete
@@ -222,11 +223,11 @@ export default function MapHazardMaps() {
 
       // Load CSV preview from staged file
       const url = apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}&limit=5`)
-      console.log('Fetching:', url)
+      logger.debug('Fetching:', url)
 
       const response = await fetch(url)
       const result = await response.json()
-      console.log('Response:', result)
+      logger.debug('Response:', result)
 
       if (result.success && result.csvText) {
         // Parse CSV text into array of objects
@@ -242,16 +243,16 @@ export default function MapHazardMaps() {
             return row
           })
 
-          console.log('Setting CSV data, rows:', dataRows.length)
-          console.log('Columns:', headers)
+          logger.debug('Setting CSV data, rows:', dataRows.length)
+          logger.debug('Columns:', headers)
           setCsvData(dataRows)
           setCsvColumns(headers)
         }
       } else {
-        console.error('Failed to load data:', result)
+        logger.error('Failed to load data:', result)
       }
     } catch (error) {
-      console.error('Error loading CSV preview:', error)
+      logger.error('Error loading CSV preview:', error)
     }
   }
 
@@ -371,7 +372,7 @@ Rules:
       setTimeout(() => setAiMappingMessage(''), 3000)
 
     } catch (error) {
-      console.error('AI mapping error:', error)
+      logger.error('AI mapping error:', error)
       setAiMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`)
       setTimeout(() => setAiMappingMessage(''), 5000)
     } finally {
@@ -423,14 +424,14 @@ Rules:
             setSelectedScenarios(new Set(scenarioData.scenarios.map((s: any) => s.code)))
           }
         } catch (err) {
-          console.error('Error loading scenario mappings:', err)
+          logger.error('Error loading scenario mappings:', err)
         }
       }
 
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving:', err)
+      logger.error('Error saving:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
@@ -480,7 +481,7 @@ Rules:
           })
         })
       } catch (err) {
-        console.error('Error auto-saving scenario mappings:', err)
+        logger.error('Error auto-saving scenario mappings:', err)
       }
     }
   }
@@ -509,7 +510,7 @@ Rules:
       _setScenarioSaveStatus('success')
       setTimeout(() => _setScenarioSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving scenarios:', err)
+      logger.error('Error saving scenarios:', err)
       _setScenarioSaveStatus('error')
       setTimeout(() => _setScenarioSaveStatus('idle'), 3000)
     }

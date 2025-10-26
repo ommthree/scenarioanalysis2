@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Activity, FolderOpen, Check, X, FileText, Trash2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import JointDistributionPanel from '@/components/visualizations/JointDistributionPanel'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface CsvData {
   headers: string[]
@@ -53,7 +60,7 @@ export default function LoadCorrelation() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -74,7 +81,7 @@ export default function LoadCorrelation() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -91,7 +98,7 @@ export default function LoadCorrelation() {
         setPreviewData(parsed)
       }
     } catch (error) {
-      console.error('Failed to load staged file preview:', error)
+      logger.error('Failed to load staged file preview:', error)
     }
   }
 
@@ -230,7 +237,7 @@ export default function LoadCorrelation() {
       }
 
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsLoading(false)

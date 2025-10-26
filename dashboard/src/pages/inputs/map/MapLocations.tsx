@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileText, Move, Sparkles } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface TableInfo {
   tableName: string
@@ -72,7 +73,7 @@ const MapLocations: React.FC = () => {
           setAvailableTables(data.tables || [])
         }
       })
-      .catch(err => console.error('Error fetching staging tables:', err))
+      .catch(err => logger.error('Error fetching staging tables:', err))
   }, [])
 
   // Fetch entities
@@ -83,7 +84,7 @@ const MapLocations: React.FC = () => {
         setEntities(Array.isArray(data) ? data : [])
       })
       .catch(err => {
-        console.error('Error fetching entities:', err)
+        logger.error('Error fetching entities:', err)
         setEntities([])
       })
   }, [])
@@ -99,11 +100,11 @@ const MapLocations: React.FC = () => {
       try {
         const tableInfo = availableTables.find(t => t.fileId === selectedFileId)
         if (!tableInfo) {
-          console.log('No table info found for fileId:', selectedFileId)
+          logger.debug('No table info found for fileId:', selectedFileId)
           return
         }
 
-        console.log('Extracting unique entities from:', tableInfo.tableName)
+        logger.debug('Extracting unique entities from:', tableInfo.tableName)
         const response = await fetch(apiUrl(`/api/locations/staging-full?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}`))
         const result = await response.json()
 
@@ -118,11 +119,11 @@ const MapLocations: React.FC = () => {
             }
           })
 
-          console.log('Found unique entities:', Array.from(uniqueEntities))
+          logger.debug('Found unique entities:', Array.from(uniqueEntities))
           setCsvEntities(Array.from(uniqueEntities).sort())
         }
       } catch (error) {
-        console.error('Error extracting unique entities:', error)
+        logger.error('Error extracting unique entities:', error)
       }
     }
 
@@ -135,13 +136,13 @@ const MapLocations: React.FC = () => {
 
     // Don't auto-save until CSV columns are loaded - otherwise getValueColumns() will fail
     if (csvColumns.length === 0) {
-      console.log('Skipping auto-save: CSV columns not loaded yet')
+      logger.debug('Skipping auto-save: CSV columns not loaded yet')
       return
     }
 
     const timeoutId = setTimeout(async () => {
       try {
-        console.log('Auto-save triggered. State:', { valueStartColumn, valueEndColumn, csvColumns })
+        logger.debug('Auto-save triggered. State:', { valueStartColumn, valueEndColumn, csvColumns })
 
         // Build valueColumns array directly from state instead of using getValueColumns()
         // which depends on csvColumns being populated
@@ -153,7 +154,7 @@ const MapLocations: React.FC = () => {
             valueColumns = csvColumns.slice(startIdx, endIdx + 1)
           }
         }
-        console.log('valueColumns for save:', valueColumns)
+        logger.debug('valueColumns for save:', valueColumns)
 
         const payload = {
           dbPath,
@@ -168,7 +169,7 @@ const MapLocations: React.FC = () => {
           entityMappings
         }
 
-        console.log('Auto-save payload:', payload)
+        logger.debug('Auto-save payload:', payload)
 
         await fetch(apiUrl('/api/locations/save-location-mapping'), {
           method: 'POST',
@@ -176,7 +177,7 @@ const MapLocations: React.FC = () => {
           body: JSON.stringify(payload)
         })
       } catch (err) {
-        console.error('Auto-save error:', err)
+        logger.error('Auto-save error:', err)
       }
     }, 1000)
 
@@ -185,7 +186,7 @@ const MapLocations: React.FC = () => {
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
-    console.log('File clicked:', fileId, fileName)
+    logger.debug('File clicked:', fileId, fileName)
     setSelectedFileId(fileId)
     setSelectedFileName(fileName)
     setIsLoadingMapping(true)
@@ -210,12 +211,12 @@ const MapLocations: React.FC = () => {
         const mappingResponse = await fetch(apiUrl(`/api/locations/get-location-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`))
         const mappingResult = await mappingResponse.json()
 
-        console.log('Mapping fetch result:', mappingResult)
+        logger.debug('Mapping fetch result:', mappingResult)
 
         if (mappingResult.success && mappingResult.mapping) {
           const mapping = mappingResult.mapping
-          console.log('Loading mapping:', mapping)
-          console.log('Value columns from DB:', mapping.valueColumns)
+          logger.debug('Loading mapping:', mapping)
+          logger.debug('Value columns from DB:', mapping.valueColumns)
           if (mapping.identifierColumn) setIdentifierColumn(mapping.identifierColumn)
           if (mapping.latitudeColumn) setLatitudeColumn(mapping.latitudeColumn)
           if (mapping.longitudeColumn) setLongitudeColumn(mapping.longitudeColumn)
@@ -223,51 +224,51 @@ const MapLocations: React.FC = () => {
           if (mapping.archetypeColumn) setArchetypeColumn(mapping.archetypeColumn)
           if (mapping.unitColumn) setUnitColumn(mapping.unitColumn)
           if (mapping.valueColumns && mapping.valueColumns.length > 0) {
-            console.log('Setting valueStartColumn to:', mapping.valueColumns[0])
-            console.log('Setting valueEndColumn to:', mapping.valueColumns[mapping.valueColumns.length - 1])
+            logger.debug('Setting valueStartColumn to:', mapping.valueColumns[0])
+            logger.debug('Setting valueEndColumn to:', mapping.valueColumns[mapping.valueColumns.length - 1])
             setValueStartColumn(mapping.valueColumns[0])
             setValueEndColumn(mapping.valueColumns[mapping.valueColumns.length - 1])
           } else {
-            console.log('No value columns to load - valueColumns is:', mapping.valueColumns)
+            logger.debug('No value columns to load - valueColumns is:', mapping.valueColumns)
           }
           setEntityMappings(mapping.entityMappings || [])
         }
       } catch (mappingError) {
-        console.log('No saved mapping found or error loading mapping:', mappingError)
+        logger.debug('No saved mapping found or error loading mapping:', mappingError)
       } finally {
         setIsLoadingMapping(false)
       }
 
       // Find the table name for this file
       const tableInfo = availableTables.find(t => t.fileId === fileId)
-      console.log('Table info found:', tableInfo)
+      logger.debug('Table info found:', tableInfo)
       if (!tableInfo) {
-        console.error('No table info found for fileId:', fileId)
+        logger.error('No table info found for fileId:', fileId)
         return
       }
 
       const url = apiUrl(`/api/locations/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`)
-      console.log('Fetching:', url)
+      logger.debug('Fetching:', url)
 
       const response = await fetch(url)
       const result = await response.json()
-      console.log('Response:', result)
+      logger.debug('Response:', result)
 
       if (result.success && result.data) {
-        console.log('Setting CSV data, rows:', result.data.length)
+        logger.debug('Setting CSV data, rows:', result.data.length)
         setCsvData(result.data)
         if (result.data.length > 0) {
           const cols = Object.keys(result.data[0]).filter(col =>
             !['_rowid', 'imported_at', 'is_mapped', 'file_id', 'staging_id'].includes(col)
           )
-          console.log('Columns:', cols)
+          logger.debug('Columns:', cols)
           setCsvColumns(cols)
         }
       } else {
-        console.error('Failed to load data:', result)
+        logger.error('Failed to load data:', result)
       }
     } catch (error) {
-      console.error('Error loading CSV preview:', error)
+      logger.error('Error loading CSV preview:', error)
     }
   }
 
@@ -398,7 +399,7 @@ Rules:
       setTimeout(() => setAiMappingMessage(''), 3000)
 
     } catch (error) {
-      console.error('AI mapping error:', error)
+      logger.error('AI mapping error:', error)
       setAiMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`)
       setTimeout(() => setAiMappingMessage(''), 5000)
     } finally {
@@ -481,7 +482,7 @@ Rules:
       setTimeout(() => setAiRowMappingMessage(''), 3000)
 
     } catch (error) {
-      console.error('AI row mapping error:', error)
+      logger.error('AI row mapping error:', error)
       setAiRowMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI row mapping failed'}`)
       setTimeout(() => setAiRowMappingMessage(''), 5000)
     } finally {
@@ -495,9 +496,9 @@ Rules:
     setSaveStatus('saving')
 
     try {
-      console.log('Manual save. State:', { valueStartColumn, valueEndColumn, csvColumns })
+      logger.debug('Manual save. State:', { valueStartColumn, valueEndColumn, csvColumns })
       const valueColumns = getValueColumns()
-      console.log('Manual save valueColumns:', valueColumns)
+      logger.debug('Manual save valueColumns:', valueColumns)
 
       const response = await fetch(apiUrl('/api/locations/save-location-mapping'), {
         method: 'POST',
@@ -523,7 +524,7 @@ Rules:
       }
 
       // After saving mapping, ingest locations into production table
-      console.log('Mapping saved, now ingesting locations...')
+      logger.debug('Mapping saved, now ingesting locations...')
       const ingestResponse = await fetch(apiUrl('/api/locations/ingest'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -536,15 +537,15 @@ Rules:
       const ingestResult = await ingestResponse.json()
 
       if (!ingestResponse.ok) {
-        console.error('Location ingestion failed:', ingestResult.error)
+        logger.error('Location ingestion failed:', ingestResult.error)
         throw new Error(ingestResult.error || 'Failed to ingest locations')
       }
 
-      console.log('Location ingestion complete:', ingestResult)
+      logger.debug('Location ingestion complete:', ingestResult)
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving:', err)
+      logger.error('Error saving:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
@@ -1323,7 +1324,7 @@ Rules:
                     padding: '8px'
                   }}>
                     {(() => {
-                      console.log('Render check - entityColumn:', entityColumn, 'csvEntities:', csvEntities)
+                      logger.debug('Render check - entityColumn:', entityColumn, 'csvEntities:', csvEntities)
                       if (!entityColumn) {
                         return (
                           <div

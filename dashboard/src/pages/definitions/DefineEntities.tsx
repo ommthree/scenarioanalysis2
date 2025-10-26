@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Building2, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Upload, Download } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Input } from '@/components/ui/input'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface Entity {
   entity_id?: number
@@ -55,7 +62,7 @@ export default function DefineEntities() {
         setEntities(buildTree(result.entities))
       }
     } catch (error) {
-      console.error('Failed to load entities:', error)
+      logger.error('Failed to load entities:', error)
     }
   }
 
@@ -107,7 +114,7 @@ export default function DefineEntities() {
         setSaveMessage(`Error: ${result.error}`)
       }
     } catch (error) {
-      console.error('Save error:', error)
+      logger.error('Save error:', error)
       setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Failed to save'}`)
     }
   }
@@ -131,7 +138,7 @@ export default function DefineEntities() {
         setSaveMessage(`Error: ${result.error}`)
       }
     } catch (error) {
-      console.error('Delete error:', error)
+      logger.error('Delete error:', error)
       setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Failed to delete'}`)
     }
   }

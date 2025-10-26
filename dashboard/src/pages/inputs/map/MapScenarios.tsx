@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface Driver {
   driver_id: number
@@ -67,7 +68,7 @@ const MapScenarios: React.FC = () => {
           setAvailableTables(data.tables || [])
         }
       })
-      .catch(err => console.error('Error fetching staging tables:', err))
+      .catch(err => logger.error('Error fetching staging tables:', err))
   }, [])
 
   // Fetch drivers
@@ -77,18 +78,18 @@ const MapScenarios: React.FC = () => {
       .then(data => {
         setDrivers(data || [])
       })
-      .catch(err => console.error('Error fetching drivers:', err))
+      .catch(err => logger.error('Error fetching drivers:', err))
   }, [])
 
   // Auto-save mappings when they change
   useEffect(() => {
     if (isLoadingMapping) {
-      console.log('Auto-save skipped: still loading mapping')
+      logger.debug('Auto-save skipped: still loading mapping')
       return // Don't save while loading
     }
     if (!selectedFileId || !variableColumn) return
     if (!valueStartColumn || !valueEndColumn) {
-      console.log('Auto-save skipped: value columns not set', { valueStartColumn, valueEndColumn })
+      logger.debug('Auto-save skipped: value columns not set', { valueStartColumn, valueEndColumn })
       return // Don't save until value columns are set
     }
 
@@ -106,7 +107,7 @@ const MapScenarios: React.FC = () => {
           variableMappings: variableMappings
         }
 
-        console.log('Auto-save payload:', payload)
+        logger.debug('Auto-save payload:', payload)
 
         await fetch(apiUrl('/api/scenarios/save-scenario-mapping'), {
           method: 'POST',
@@ -114,7 +115,7 @@ const MapScenarios: React.FC = () => {
           body: JSON.stringify(payload)
         })
       } catch (err) {
-        console.error('Auto-save error:', err)
+        logger.error('Auto-save error:', err)
       }
     }, 1000) // Debounce for 1 second
 
@@ -123,7 +124,7 @@ const MapScenarios: React.FC = () => {
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
-    console.log('File clicked:', fileId, fileName)
+    logger.debug('File clicked:', fileId, fileName)
     setSelectedFileId(fileId)
     setSelectedFileName(fileName)
     setIsLoadingMapping(true)
@@ -141,27 +142,27 @@ const MapScenarios: React.FC = () => {
 
         if (mappingResult.success && mappingResult.mapping) {
           const mapping = mappingResult.mapping
-          console.log('Loading mapping:', mapping)
-          console.log('scenarioColumn from DB:', mapping.scenarioColumn)
+          logger.debug('Loading mapping:', mapping)
+          logger.debug('scenarioColumn from DB:', mapping.scenarioColumn)
           if (mapping.scenarioColumn) {
-            console.log('Setting scenarioColumn to:', mapping.scenarioColumn)
+            logger.debug('Setting scenarioColumn to:', mapping.scenarioColumn)
             setScenarioColumn(mapping.scenarioColumn)
           }
           if (mapping.unitsColumn) setUnitsColumn(mapping.unitsColumn)
           setVariableColumn(mapping.driverColumn)
-          console.log('valueColumns from DB:', mapping.valueColumns, 'type:', typeof mapping.valueColumns, 'length:', mapping.valueColumns?.length)
+          logger.debug('valueColumns from DB:', mapping.valueColumns, 'type:', typeof mapping.valueColumns, 'length:', mapping.valueColumns?.length)
           if (mapping.valueColumns && mapping.valueColumns.length > 0) {
-            console.log('Setting valueStart to:', mapping.valueColumns[0], 'valueEnd to:', mapping.valueColumns[mapping.valueColumns.length - 1])
+            logger.debug('Setting valueStart to:', mapping.valueColumns[0], 'valueEnd to:', mapping.valueColumns[mapping.valueColumns.length - 1])
             setValueStartColumn(mapping.valueColumns[0])
             setValueEndColumn(mapping.valueColumns[mapping.valueColumns.length - 1])
           } else {
-            console.log('NOT setting value columns - failed condition check')
+            logger.debug('NOT setting value columns - failed condition check')
           }
           setVariableMappings(mapping.variableMappings || [])
           mappingLoaded = true
         }
       } catch (mappingError) {
-        console.log('No saved mapping found or error loading mapping:', mappingError)
+        logger.debug('No saved mapping found or error loading mapping:', mappingError)
       }
 
       // Only clear mapping state if no mapping was loaded
@@ -176,34 +177,34 @@ const MapScenarios: React.FC = () => {
 
       // Find the table name for this file
       const tableInfo = availableTables.find(t => t.fileId === fileId)
-      console.log('Table info found:', tableInfo)
+      logger.debug('Table info found:', tableInfo)
       if (!tableInfo) {
-        console.error('No table info found for fileId:', fileId)
+        logger.error('No table info found for fileId:', fileId)
         return
       }
 
       const url = apiUrl(`/api/scenarios/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`)
-      console.log('Fetching:', url)
+      logger.debug('Fetching:', url)
 
       const response = await fetch(url)
       const result = await response.json()
-      console.log('Response:', result)
+      logger.debug('Response:', result)
 
       if (result.success && result.data) {
-        console.log('Setting CSV data, rows:', result.data.length)
+        logger.debug('Setting CSV data, rows:', result.data.length)
         setCsvData(result.data)
         if (result.data.length > 0) {
           const cols = Object.keys(result.data[0]).filter(col =>
             !['_rowid', 'imported_at', 'is_mapped'].includes(col)
           )
-          console.log('Columns:', cols)
+          logger.debug('Columns:', cols)
           setCsvColumns(cols)
         }
       } else {
-        console.error('Failed to load data:', result)
+        logger.error('Failed to load data:', result)
       }
     } catch (error) {
-      console.error('Error loading CSV preview:', error)
+      logger.error('Error loading CSV preview:', error)
     } finally {
       // Only set loading to false at the very end, after all state updates
       setIsLoadingMapping(false)
@@ -316,7 +317,7 @@ Rules:
       setTimeout(() => setAiMappingMessage(''), 3000)
 
     } catch (error) {
-      console.error('AI mapping error:', error)
+      logger.error('AI mapping error:', error)
       setAiMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`)
       setTimeout(() => setAiMappingMessage(''), 5000)
     } finally {
@@ -404,7 +405,7 @@ Rules:
       setTimeout(() => setAiRowMappingMessage(''), 3000)
 
     } catch (error) {
-      console.error('AI row mapping error:', error)
+      logger.error('AI row mapping error:', error)
       setAiRowMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI row mapping failed'}`)
       setTimeout(() => setAiRowMappingMessage(''), 5000)
     } finally {
@@ -420,12 +421,12 @@ Rules:
     try {
       const valueColumns = getValueColumns()
 
-      console.log('=== SAVE MAPPING DEBUG ===')
-      console.log('valueStartColumn:', valueStartColumn)
-      console.log('valueEndColumn:', valueEndColumn)
-      console.log('valueColumns:', valueColumns)
-      console.log('variableMappings:', variableMappings)
-      console.log('========================')
+      logger.debug('=== SAVE MAPPING DEBUG ===')
+      logger.debug('valueStartColumn:', valueStartColumn)
+      logger.debug('valueEndColumn:', valueEndColumn)
+      logger.debug('valueColumns:', valueColumns)
+      logger.debug('variableMappings:', variableMappings)
+      logger.debug('========================')
 
       const response = await fetch(apiUrl('/api/scenarios/save-scenario-mapping'), {
         method: 'POST',
@@ -450,7 +451,7 @@ Rules:
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving:', err)
+      logger.error('Error saving:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }

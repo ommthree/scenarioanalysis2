@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2, Save } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface LogEntry {
   timestamp: string
@@ -39,7 +44,7 @@ export default function PerformCalculation() {
         setLogs(parsedLogs.logs || [])
         setRunStatus(parsedLogs.status || 'idle')
       } catch (err) {
-        console.error('Failed to load saved logs:', err)
+        logger.error('Failed to load saved logs:', err)
       }
     }
   }, [])

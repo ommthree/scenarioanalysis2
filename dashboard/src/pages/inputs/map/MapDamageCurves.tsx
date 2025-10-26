@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface Peril {
   peril_id: number
@@ -73,7 +74,7 @@ const MapDamageCurves: React.FC = () => {
           setAvailableTables(data.tables || [])
         }
       })
-      .catch(err => console.error('Error fetching staging tables:', err))
+      .catch(err => logger.error('Error fetching staging tables:', err))
   }, [])
 
   // Fetch perils (physical risk drivers from driver table)
@@ -90,7 +91,7 @@ const MapDamageCurves: React.FC = () => {
         }
       })
       .catch(err => {
-        console.error('Error fetching perils:', err)
+        logger.error('Error fetching perils:', err)
         // Set empty array on error
         setPerils([])
       })
@@ -114,7 +115,7 @@ const MapDamageCurves: React.FC = () => {
           driverMappings: driverMappings
         }
 
-        console.log('Auto-save payload:', payload)
+        logger.debug('Auto-save payload:', payload)
 
         await fetch(apiUrl('/api/damage-curves/save-damage-curve-mapping'), {
           method: 'POST',
@@ -122,7 +123,7 @@ const MapDamageCurves: React.FC = () => {
           body: JSON.stringify(payload)
         })
       } catch (err) {
-        console.error('Auto-save error:', err)
+        logger.error('Auto-save error:', err)
       }
     }, 1000) // Debounce for 1 second
 
@@ -164,7 +165,7 @@ const MapDamageCurves: React.FC = () => {
           }
         }
       } catch (error) {
-        console.error('Error extracting unique perils:', error)
+        logger.error('Error extracting unique perils:', error)
       }
     }
 
@@ -206,7 +207,7 @@ const MapDamageCurves: React.FC = () => {
           }
         }
       } catch (error) {
-        console.error('Error extracting unique value types:', error)
+        logger.error('Error extracting unique value types:', error)
       }
     }
 
@@ -215,7 +216,7 @@ const MapDamageCurves: React.FC = () => {
 
   // Load CSV data when file is selected
   const handleFileSelect = async (fileId: number, fileName: string) => {
-    console.log('File clicked:', fileId, fileName)
+    logger.debug('File clicked:', fileId, fileName)
     setSelectedFileId(fileId)
     setSelectedFileName(fileName)
     setIsLoadingMapping(true)
@@ -241,7 +242,7 @@ const MapDamageCurves: React.FC = () => {
 
         if (mappingResult.success && mappingResult.mapping) {
           const mapping = mappingResult.mapping
-          console.log('Loading mapping:', mapping)
+          logger.debug('Loading mapping:', mapping)
           if (mapping.inputColumn) setInputColumn(mapping.inputColumn)
           if (mapping.outputColumn) setOutputColumn(mapping.outputColumn)
           if (mapping.archetypeColumn) setArchetypeColumn(mapping.archetypeColumn)
@@ -251,7 +252,7 @@ const MapDamageCurves: React.FC = () => {
           setDriverMappings(mapping.driverMappings || {})
         }
       } catch (mappingError) {
-        console.log('No saved mapping found or error loading mapping:', mappingError)
+        logger.debug('No saved mapping found or error loading mapping:', mappingError)
         // Continue without loading mapping
       } finally {
         setIsLoadingMapping(false)
@@ -260,7 +261,7 @@ const MapDamageCurves: React.FC = () => {
       // Load CSV preview from staged_file.csv_content
       const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
-      console.log('Preview response:', result)
+      logger.debug('Preview response:', result)
 
       if (result.success && result.csvText) {
         // Parse CSV text
@@ -276,15 +277,15 @@ const MapDamageCurves: React.FC = () => {
             return row
           })
 
-          console.log('Setting CSV data, rows:', rows.length)
+          logger.debug('Setting CSV data, rows:', rows.length)
           setCsvData(rows)
           setCsvColumns(headers)
         }
       } else {
-        console.error('Failed to load data:', result)
+        logger.error('Failed to load data:', result)
       }
     } catch (error) {
-      console.error('Error loading CSV preview:', error)
+      logger.error('Error loading CSV preview:', error)
     }
   }
 
@@ -405,7 +406,7 @@ Rules:
       setTimeout(() => setAiMappingMessage(''), 3000)
 
     } catch (error) {
-      console.error('AI mapping error:', error)
+      logger.error('AI mapping error:', error)
       setAiMappingMessage(`Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`)
       setTimeout(() => setAiMappingMessage(''), 5000)
     } finally {
@@ -443,7 +444,7 @@ Rules:
       }
 
       // After saving mapping, ingest damage curves into production table
-      console.log('Mapping saved, now ingesting damage curves...')
+      logger.debug('Mapping saved, now ingesting damage curves...')
       const ingestResponse = await fetch(apiUrl('/api/damage-curves/ingest'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -455,15 +456,15 @@ Rules:
 
       const ingestResult = await ingestResponse.json()
       if (!ingestResponse.ok) {
-        console.error('Damage curve ingestion failed:', ingestResult.error)
+        logger.error('Damage curve ingestion failed:', ingestResult.error)
         throw new Error(ingestResult.error || 'Failed to ingest damage curves')
       }
 
-      console.log('Damage curve ingestion complete:', ingestResult)
+      logger.debug('Damage curve ingestion complete:', ingestResult)
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving:', err)
+      logger.error('Error saving:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }

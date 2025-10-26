@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { TrendingUp, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 import {
+import { logger } from '@/utils/logger'
   LineChart,
   Line,
   XAxis,
@@ -63,7 +70,7 @@ export default function LoadScenarios() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -84,7 +91,7 @@ export default function LoadScenarios() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -118,7 +125,7 @@ export default function LoadScenarios() {
         }
       }
     } catch (error) {
-      console.error('Failed to load staged file preview:', error)
+      logger.error('Failed to load staged file preview:', error)
     }
   }
 
@@ -147,18 +154,18 @@ export default function LoadScenarios() {
   }
 
   const handleBrowse = () => {
-    console.log('handleBrowse called!')
+    logger.debug('handleBrowse called!')
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.csv'
     input.multiple = true
-    console.log('File input created')
+    logger.debug('File input created')
 
     input.onchange = async (e: Event) => {
-      console.log('File input changed!')
+      logger.debug('File input changed!')
       const target = e.target as HTMLInputElement
       const files = Array.from(target.files || [])
-      console.log('Files selected:', files.length)
+      logger.debug('Files selected:', files.length)
 
       const newScenarios: ScenarioFile[] = []
 
@@ -233,14 +240,14 @@ export default function LoadScenarios() {
   }
 
   const handleSelectPendingFile = (index: number) => {
-    console.log('handleSelectPendingFile called with index:', index)
+    logger.debug('handleSelectPendingFile called with index:', index)
     const scenario = scenarioFiles[index]
-    console.log('Selected scenario:', scenario)
+    logger.debug('Selected scenario:', scenario)
     setSelectedPendingFileIndex(index)
     setSelectedFileId(null) // Clear staged file selection
 
     if (scenario && scenario.csvData) {
-      console.log('Setting preview data:', scenario.csvData)
+      logger.debug('Setting preview data:', scenario.csvData)
       setPreviewData(scenario.csvData)
       setSelectedRows([])
 
@@ -259,10 +266,10 @@ export default function LoadScenarios() {
           }
         }
         setSelectedXAxis(xAxisCol)
-        console.log('X-axis set to:', xAxisCol)
+        logger.debug('X-axis set to:', xAxisCol)
       }
     } else {
-      console.log('No CSV data available for this file')
+      logger.debug('No CSV data available for this file')
     }
   }
 
@@ -312,7 +319,7 @@ export default function LoadScenarios() {
       }
 
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsLoading(false)
@@ -337,19 +344,19 @@ export default function LoadScenarios() {
       const firstValue = previewData.rows[0]?.[i]
       const isNumeric = !isNaN(parseFloat(firstValue)) && isFinite(parseFloat(firstValue))
 
-      console.log(`Column ${i} (${col}): value="${firstValue}", isNumeric=${isNumeric}`)
+      logger.debug(`Column ${i} (${col}): value="${firstValue}", isNumeric=${isNumeric}`)
 
       if (isNumeric) {
         numericCols.unshift(col) // Add to beginning to maintain order
         numericColIndices.unshift(i)
       } else {
         // Stop when we hit a non-numeric column
-        console.log(`Stopping at column ${i} (${col}) - non-numeric`)
+        logger.debug(`Stopping at column ${i} (${col}) - non-numeric`)
         break
       }
     }
 
-    console.log('Numeric columns detected:', numericCols)
+    logger.debug('Numeric columns detected:', numericCols)
 
     // Create data points for the chart
     // Each data point represents one numeric column (X-axis point)
@@ -372,8 +379,8 @@ export default function LoadScenarios() {
       return dataPoint
     })
 
-    console.log('Final chartData:', JSON.stringify(chartData, null, 2))
-    console.log('Selected rows:', selectedRows)
+    logger.debug('Final chartData:', JSON.stringify(chartData, null, 2))
+    logger.debug('Selected rows:', selectedRows)
     return chartData
   }
 

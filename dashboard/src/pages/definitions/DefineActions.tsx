@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Switch } from '@/components/ui/switch'
+import { logger } from '@/utils/logger'
 import { Save, AlertCircle, Plus, Sparkles, Download, Upload, Trash2, X, Edit2, FileSpreadsheet } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface ManagementAction {
   action_id?: number
@@ -118,14 +124,14 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
             }
           }
         } catch (err) {
-          console.error(`Error fetching data for ${action.action_code}:`, err)
+          logger.error(`Error fetching data for ${action.action_code}:`, err)
         }
       }
 
       setActionTransformations(transformationsMap)
       setActionTriggers(triggersMap)
     } catch (err) {
-      console.error('Error fetching actions:', err)
+      logger.error('Error fetching actions:', err)
     }
   }
 
@@ -141,7 +147,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
         line_items: []
       })))
     } catch (err) {
-      console.error('Error fetching templates:', err)
+      logger.error('Error fetching templates:', err)
     }
   }
 
@@ -152,7 +158,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       const data = await response.json()
       setDrivers(data)
     } catch (err) {
-      console.error('Error fetching drivers:', err)
+      logger.error('Error fetching drivers:', err)
     }
   }
 
@@ -172,7 +178,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
         line_items: data.lineItems || []
       })
     } catch (err) {
-      console.error('Error loading template:', err)
+      logger.error('Error loading template:', err)
     }
   }
 
@@ -196,7 +202,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       // Auto-deactivate actions that are not relevant to this template
       await updateActionRelevance(template, dbPath)
     } catch (err) {
-      console.error('Error loading filter template:', err)
+      logger.error('Error loading filter template:', err)
     }
   }
 
@@ -255,7 +261,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
           })
           action.is_active = false
         } catch (err) {
-          console.error(`Error deactivating action ${action.action_code}:`, err)
+          logger.error(`Error deactivating action ${action.action_code}:`, err)
         }
       }
     }
@@ -310,7 +316,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
 
       // Debug logging
       if (action.action_code === 'EMERG' || transformations.length > 0) {
-        console.log(`[Filter] Action ${action.action_code}:`, {
+        logger.debug(`[Filter] Action ${action.action_code}:`, {
           transformations: transformations.length,
           referencedLineItems: Array.from(referencedLineItems),
           templateLineItems: Array.from(templateLineItemCodes),
@@ -325,7 +331,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       // Check if ALL referenced line items are in the template
       for (const lineItem of referencedLineItems) {
         if (!templateLineItemCodes.has(lineItem)) {
-          console.log(`[Filter] Action ${action.action_code} HIDDEN: missing line item ${lineItem}`)
+          logger.debug(`[Filter] Action ${action.action_code} HIDDEN: missing line item ${lineItem}`)
           return false // Missing a required line item
         }
       }
@@ -361,7 +367,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
         setCarbonTransformations([])
       }
     } catch (err) {
-      console.error('Error loading transformations:', err)
+      logger.error('Error loading transformations:', err)
       setFinancialTransformations([])
       setCarbonTransformations([])
     }
@@ -393,7 +399,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
         setTriggerEndPeriod(10)
       }
     } catch (err) {
-      console.error('Error loading triggers:', err)
+      logger.error('Error loading triggers:', err)
       setTriggerType('UNCONDITIONAL')
       setTriggerCondition('')
       setTriggerSticky(true)
@@ -512,7 +518,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving action:', err)
+      logger.error('Error saving action:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
@@ -535,7 +541,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       setSelectedAction(null)
       setIsEditing(false)
     } catch (err) {
-      console.error('Error deleting action:', err)
+      logger.error('Error deleting action:', err)
       alert('Failed to delete action')
     }
   }
@@ -559,7 +565,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
     } catch (err) {
-      console.error('Error exporting action:', err)
+      logger.error('Error exporting action:', err)
       alert('Failed to export action')
     }
   }
@@ -584,7 +590,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       await fetchActions()
       alert('Action imported successfully')
     } catch (err) {
-      console.error('Error importing action:', err)
+      logger.error('Error importing action:', err)
       alert('Failed to import action')
     }
 
@@ -709,7 +715,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
       const data = await response.json()
       const suggestion = data.suggestion.trim()
 
-      console.log('AI Suggestion received:', suggestion)
+      logger.debug('AI Suggestion received:', suggestion)
 
       // Parse AI response
       const lines = suggestion.split('\n')
@@ -791,8 +797,8 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
       }
 
       // Add new transformations to existing arrays
-      console.log('Financial transforms to add:', newFinancialTransforms)
-      console.log('Carbon transforms to add:', newCarbonTransforms)
+      logger.debug('Financial transforms to add:', newFinancialTransforms)
+      logger.debug('Carbon transforms to add:', newCarbonTransforms)
 
       if (newFinancialTransforms.length > 0) {
         setFinancialTransformations([...financialTransformations, ...newFinancialTransforms])
@@ -803,7 +809,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
 
       setAiStatus('idle')
     } catch (err) {
-      console.error('Error getting AI suggestion:', err)
+      logger.error('Error getting AI suggestion:', err)
       setAiStatus('error')
       setTimeout(() => setAiStatus('idle'), 3000)
     }

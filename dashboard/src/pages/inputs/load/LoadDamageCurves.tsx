@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { TrendingUp, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 import {
+import { logger } from '@/utils/logger'
   LineChart,
   Line,
   XAxis,
@@ -63,7 +70,7 @@ export default function LoadDamageCurves() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -84,7 +91,7 @@ export default function LoadDamageCurves() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -116,7 +123,7 @@ export default function LoadDamageCurves() {
         }
       }
     } catch (error) {
-      console.error('Failed to load staged file preview:', error)
+      logger.error('Failed to load staged file preview:', error)
     }
   }
 
@@ -172,18 +179,18 @@ export default function LoadDamageCurves() {
   }
 
   const handleBrowse = () => {
-    console.log('handleBrowse called!')
+    logger.debug('handleBrowse called!')
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.csv'
     input.multiple = true
-    console.log('File input created')
+    logger.debug('File input created')
 
     input.onchange = async (e: Event) => {
-      console.log('File input changed!')
+      logger.debug('File input changed!')
       const target = e.target as HTMLInputElement
       const files = Array.from(target.files || [])
-      console.log('Files selected:', files.length)
+      logger.debug('Files selected:', files.length)
 
       const newDamageCurves: DamageCurveFile[] = []
 
@@ -255,14 +262,14 @@ export default function LoadDamageCurves() {
   }
 
   const handleSelectPendingFile = (index: number) => {
-    console.log('handleSelectPendingFile called with index:', index)
+    logger.debug('handleSelectPendingFile called with index:', index)
     const curve = damageCurveFiles[index]
-    console.log('Selected damage curve:', curve)
+    logger.debug('Selected damage curve:', curve)
     setSelectedPendingFileIndex(index)
     setSelectedFileId(null) // Clear staged file selection
 
     if (curve && curve.csvData) {
-      console.log('Setting preview data:', curve.csvData)
+      logger.debug('Setting preview data:', curve.csvData)
       setPreviewData(curve.csvData)
       setSelectedRows([])
 
@@ -278,10 +285,10 @@ export default function LoadDamageCurves() {
           }
         }
         _setSelectedXAxis(xAxisCol)
-        console.log('X-axis set to:', xAxisCol)
+        logger.debug('X-axis set to:', xAxisCol)
       }
     } else {
-      console.log('No CSV data available for this file')
+      logger.debug('No CSV data available for this file')
     }
   }
 
@@ -331,7 +338,7 @@ export default function LoadDamageCurves() {
       }
 
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsLoading(false)
@@ -374,7 +381,7 @@ export default function LoadDamageCurves() {
       const xValue = String(row[xAxisIdx]).trim() // Ensure consistent string format
       const yValue = parseFloat(row[yAxisIdx])
 
-      console.log(`Row ${rowIdx}: series="${seriesName}", x="${xValue}", y=${yValue}`)
+      logger.debug(`Row ${rowIdx}: series="${seriesName}", x="${xValue}", y=${yValue}`)
 
       if (isNaN(yValue)) return
 
@@ -417,8 +424,8 @@ export default function LoadDamageCurves() {
       return dataPoint
     })
 
-    console.log('Chart data generated:', chartData)
-    console.log('Series:', allSeriesNames)
+    logger.debug('Chart data generated:', chartData)
+    logger.debug('Series:', allSeriesNames)
 
     return chartData
   }

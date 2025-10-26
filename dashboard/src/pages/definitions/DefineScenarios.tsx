@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Save, Plus, Trash2, Upload, Download } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface Driver {
   driver_id?: number
@@ -32,7 +37,7 @@ const DefineScenarios: React.FC = () => {
         setPhysicalDrivers(physical)
         setFxDrivers(fx)
       })
-      .catch(err => console.error('Error fetching drivers:', err))
+      .catch(err => logger.error('Error fetching drivers:', err))
   }, [])
 
   const addDriver = (category: 'financial' | 'physical' | 'fx') => {
@@ -80,13 +85,13 @@ const DefineScenarios: React.FC = () => {
 
   const handleSave = async () => {
     setSaveStatus('saving')
-    console.log('Starting save...')
+    logger.debug('Starting save...')
 
     try {
       const dbPath = getDefaultDbPath()
       const allDrivers = [...financialDrivers, ...physicalDrivers, ...fxDrivers]
 
-      console.log('Saving drivers:', allDrivers.length, 'drivers to', dbPath)
+      logger.debug('Saving drivers:', allDrivers.length, 'drivers to', dbPath)
 
       const response = await fetch(apiUrl('/api/drivers'), {
         method: 'POST',
@@ -95,17 +100,17 @@ const DefineScenarios: React.FC = () => {
       })
 
       const data = await response.json()
-      console.log('Save response:', data)
+      logger.debug('Save response:', data)
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to save drivers')
       }
 
-      console.log('Save successful!')
+      logger.debug('Save successful!')
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving drivers:', err)
+      logger.error('Error saving drivers:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
@@ -149,7 +154,7 @@ const DefineScenarios: React.FC = () => {
         setPhysicalDrivers(json.physical_drivers || [])
         setFxDrivers(json.fx_drivers || [])
       } catch (err) {
-        console.error('Error parsing JSON:', err)
+        logger.error('Error parsing JSON:', err)
         alert('Failed to parse JSON file')
       }
     }

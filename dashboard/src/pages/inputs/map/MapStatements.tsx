@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { parse } from 'csv-parse/sync'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface LineItem {
   code: string
@@ -165,7 +166,7 @@ export default function MapStatements() {
         setTemplates(result.templates || [])
       }
     } catch (error) {
-      console.error('Failed to load templates:', error)
+      logger.error('Failed to load templates:', error)
     }
   }
 
@@ -182,7 +183,7 @@ export default function MapStatements() {
         setEntities(buildEntityTree(result.entities))
       }
     } catch (error) {
-      console.error('Failed to load entities:', error)
+      logger.error('Failed to load entities:', error)
     }
   }
 
@@ -213,7 +214,7 @@ export default function MapStatements() {
         }))
       }
     } catch (error) {
-      console.error(`Failed to load staged files for ${statementType}:`, error)
+      logger.error(`Failed to load staged files for ${statementType}:`, error)
     }
   }
 
@@ -233,7 +234,7 @@ export default function MapStatements() {
 
         const columns = records.length > 0 ? Object.keys(records[0]) : []
 
-        console.log(`✅ Loaded CSV for ${statementType}:`, records.length, 'rows')
+        logger.debug(`✅ Loaded CSV for ${statementType}:`, records.length, 'rows')
         setStatementMappings(prev => ({
           ...prev,
           [statementType]: {
@@ -246,7 +247,7 @@ export default function MapStatements() {
         }))
       }
     } catch (error) {
-      console.error(`Failed to load staging data for ${statementType}:`, error)
+      logger.error(`Failed to load staging data for ${statementType}:`, error)
     }
   }
 
@@ -309,7 +310,7 @@ export default function MapStatements() {
 
             if (template) {
               // First, update state with everything including columnConfig
-              console.log(`📝 ${type} - Restoring mappings:`, {
+              logger.debug(`📝 ${type} - Restoring mappings:`, {
                 template: template.template_code,
                 csvFileName: companyMapping.csvFileName,
                 hierarchicalMappingsCount: companyMapping.hierarchicalMappings?.length || 0
@@ -352,7 +353,7 @@ export default function MapStatements() {
         }
       }
     } catch (error) {
-      console.error('Failed to restore saved mappings:', error)
+      logger.error('Failed to restore saved mappings:', error)
     }
   }
 
@@ -757,7 +758,7 @@ Respond with ONLY the JSON object, no other text`
       setTimeout(() => setAiMappingMessage(prev => ({ ...prev, [statementType]: '' })), 5000)
 
     } catch (error) {
-      console.error('AI mapping error:', error)
+      logger.error('AI mapping error:', error)
       setAiMappingMessage(prev => ({
         ...prev,
         [statementType]: `Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`
@@ -785,7 +786,7 @@ Respond with ONLY the JSON object, no other text`
     // Check if template has sections defined (any line item has a section)
     const hasSections = template.line_items.some(item => item.section !== undefined)
 
-    console.log('Filtering line items:', {
+    logger.debug('Filtering line items:', {
       statementType,
       targetSection,
       templateType: template.statement_type,
@@ -801,13 +802,13 @@ Respond with ONLY the JSON object, no other text`
       const filtered = template.line_items.filter(item =>
         item.section === targetSection
       )
-      console.log('Filtered by section (including computed):', filtered.length, 'items')
+      logger.debug('Filtered by section (including computed):', filtered.length, 'items')
       return filtered
     }
 
     // For templates without sections (specific statement type templates), show all items
     const filtered = template.line_items
-    console.log('Showing all items (including computed):', filtered.length)
+    logger.debug('Showing all items (including computed):', filtered.length)
     return filtered
   }
 
@@ -1370,7 +1371,7 @@ Respond with ONLY the JSON object, no other text`
               csvFileName = filesResult.files[0].file_name
             }
           } catch (err) {
-            console.error(`Failed to fetch staged file for ${statementType}:`, err)
+            logger.error(`Failed to fetch staged file for ${statementType}:`, err)
           }
 
           const response = await fetch(apiUrl('/api/statements/save-hierarchical-mapping'), {
@@ -1411,10 +1412,10 @@ Respond with ONLY the JSON object, no other text`
 
             const dataResult = await dataResponse.json()
             if (!dataResponse.ok || !dataResult.success) {
-              console.warn(`Failed to save ${statementType} data: ${dataResult.error}`)
+              logger.warn(`Failed to save ${statementType} data: ${dataResult.error}`)
             }
           } catch (dataErr) {
-            console.error(`Failed to save ${statementType} data:`, dataErr)
+            logger.error(`Failed to save ${statementType} data:`, dataErr)
           }
         }
       }
@@ -1422,7 +1423,7 @@ Respond with ONLY the JSON object, no other text`
       setSaveMessage('All mappings and data saved successfully!')
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
-      console.error('Save error:', error)
+      logger.error('Save error:', error)
       setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsSaving(false)

@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Save, AlertCircle, Sparkles, FileSpreadsheet } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface LineItem {
   code: string
@@ -39,7 +44,7 @@ const DefineFormulas: React.FC = () => {
     fetch(apiUrl(`/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
-        console.log('Templates received:', data)
+        logger.debug('Templates received:', data)
         // Map field names from API response
         const mappedTemplates = data.map((t: any) => ({
           template_code: t.code,
@@ -48,10 +53,10 @@ const DefineFormulas: React.FC = () => {
           line_items: []
         }))
         const unifiedTemplates = mappedTemplates.filter((t: any) => t.statement_type === 'unified')
-        console.log('Unified templates:', unifiedTemplates)
+        logger.debug('Unified templates:', unifiedTemplates)
         setTemplates(unifiedTemplates)
       })
-      .catch(err => console.error('Error fetching templates:', err))
+      .catch(err => logger.error('Error fetching templates:', err))
   }, [])
 
   // Fetch drivers on mount
@@ -60,7 +65,7 @@ const DefineFormulas: React.FC = () => {
     fetch(apiUrl(`/api/drivers?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => setDrivers(data))
-      .catch(err => console.error('Error fetching drivers:', err))
+      .catch(err => logger.error('Error fetching drivers:', err))
   }, [])
 
   // Load formula when line item is selected
@@ -85,7 +90,7 @@ const DefineFormulas: React.FC = () => {
     try {
       const response = await fetch(apiUrl(`/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
-      console.log('Full template loaded:', data)
+      logger.debug('Full template loaded:', data)
 
       // Map API response to component format
       const mappedTemplate = {
@@ -100,7 +105,7 @@ const DefineFormulas: React.FC = () => {
       setFormula('')
       setValidationError(null)
     } catch (err) {
-      console.error('Error loading template:', err)
+      logger.error('Error loading template:', err)
     }
   }
 
@@ -208,7 +213,7 @@ const DefineFormulas: React.FC = () => {
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving formula:', err)
+      logger.error('Error saving formula:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
@@ -281,7 +286,7 @@ ${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so yo
       setFormula(data.suggestion.trim())
       setAiStatus('idle')
     } catch (err) {
-      console.error('Error getting AI suggestion:', err)
+      logger.error('Error getting AI suggestion:', err)
       setAiStatus('error')
       setTimeout(() => setAiStatus('idle'), 3000)
     }

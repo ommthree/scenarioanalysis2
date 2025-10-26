@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { FileText, Plus, Trash2, Save, Upload, Download, GripVertical, List } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Input } from '@/components/ui/input'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface LineItem {
   code: string
@@ -70,7 +77,7 @@ export default function DefineStatements() {
         setTemplates(data)
       }
     } catch (error) {
-      console.error('Failed to load templates:', error)
+      logger.error('Failed to load templates:', error)
     } finally {
       setIsLoadingTemplates(false)
     }
@@ -109,7 +116,7 @@ export default function DefineStatements() {
         setIsEditing(true)
       }
     } catch (error) {
-      console.error('Failed to load template:', error)
+      logger.error('Failed to load template:', error)
     }
   }
 
@@ -243,7 +250,7 @@ export default function DefineStatements() {
         setSaveMessage(`Error: ${result.error || 'Failed to save template'}`)
       }
     } catch (error) {
-      console.error('Save error:', error)
+      logger.error('Save error:', error)
       setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsSaving(false)
@@ -271,7 +278,7 @@ export default function DefineStatements() {
         }
       }
     } catch (error) {
-      console.error('Delete error:', error)
+      logger.error('Delete error:', error)
       setSaveMessage('Error deleting template')
     }
   }

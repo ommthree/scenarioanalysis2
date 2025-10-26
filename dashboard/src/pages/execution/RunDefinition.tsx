@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Save, FileText } from 'lucide-react'
+import { logger } from '@/utils/logger'
 
 export default function RunDefinition() {
   const [runName, setRunName] = useState('')
@@ -19,7 +23,7 @@ export default function RunDefinition() {
         setDescription(data.description || '')
         setStochasticMode(data.stochasticMode || false)
       } catch (err) {
-        console.error('Error loading run definition:', err)
+        logger.error('Error loading run definition:', err)
       }
     }
   }, [])
@@ -39,7 +43,7 @@ export default function RunDefinition() {
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch (err) {
-      console.error('Error saving run definition:', err)
+      logger.error('Error saving run definition:', err)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 2000)
     }

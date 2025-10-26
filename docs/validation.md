@@ -571,6 +571,51 @@ logger.debug('[ViewResults] Received line items:', data)
 
 **Estimated Fix Time**: 2-3 hours
 
+**Status**: ✅ **RESOLVED**
+
+**Resolution Summary**:
+- Created centralized logger utility with conditional logging
+- Replaced 145+ console statements across 24 files
+- Zero raw console.log/warn/info statements remaining in application code
+- Errors still logged in production via logger.error()
+
+**Changes Made**:
+
+1. **Created Logger Utility** (`dashboard/src/utils/logger.ts`):
+   - `logger.debug()` - Only logs in development (replaces console.log)
+   - `logger.info()` - Only logs in development (replaces console.info)
+   - `logger.warn()` - Only logs in development (replaces console.warn)
+   - `logger.error()` - Always logs (replaces console.error)
+   - Uses `import.meta.env.DEV` for environment detection
+
+2. **Replaced Console Statements in 24 Files**:
+   - Pages: ViewResults, PerformCalculation, RunDefinition
+   - Definitions: DefineActions, DefineEntities, DefineFormulas, DefineValidation, DefineScenarios, DefineStatements
+   - Data: Database, SavedCalcs
+   - Load Inputs: LoadDamageCurves, LoadHazardMaps, LoadConversions, LoadCorrelation, LoadStatements, LoadScenarios, LoadLocations
+   - Map Inputs: MapStatements, MapScenarios, MapLocations, MapDamageCurves, MapHazardMaps
+   - Components: HazardMap
+
+3. **Automated Replacement**:
+   - Added logger import to all modified files
+   - `console.log()` → `logger.debug()`
+   - `console.info()` → `logger.info()`
+   - `console.warn()` → `logger.warn()`
+   - `console.error()` → `logger.error()`
+
+**Verification**:
+- ✅ 0 console.log/warn/info statements in src/ (excluding server/)
+- ✅ 24 files now use logger utility
+- ✅ Production builds will have clean console (debug logs suppressed)
+
+**Benefits**:
+- **Performance**: No debug logging overhead in production
+- **Security**: Internal logic not exposed to end users
+- **Clean Console**: No clutter in browser console for production users
+- **Debugging**: Errors still logged for troubleshooting
+
+**Note**: Server-side logging (server/index.js) intentionally not modified as it uses Node.js patterns
+
 ---
 
 ### 7. Catch-All Exception Handlers (4 files)

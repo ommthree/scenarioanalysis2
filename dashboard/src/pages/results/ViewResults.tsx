@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { BarChart3, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface LineItem {
   code: string
@@ -90,7 +95,7 @@ export default function ViewResults() {
         }
       }
     } catch (error) {
-      console.error('Error loading scenarios:', error)
+      logger.error('Error loading scenarios:', error)
     }
   }
 
@@ -110,7 +115,7 @@ export default function ViewResults() {
         setCurrentPeriod(data.periods[0])
       }
     } catch (error) {
-      console.error('Error loading periods:', error)
+      logger.error('Error loading periods:', error)
     }
   }
 
@@ -161,7 +166,7 @@ export default function ViewResults() {
         setExpandedNodes(new Set(expandedNodes))
       }
     } catch (error) {
-      console.error('Error loading entities:', error)
+      logger.error('Error loading entities:', error)
     }
   }
 
@@ -181,7 +186,7 @@ export default function ViewResults() {
       const data = await response.json()
 
       // Debug: Log line items to check sign_convention
-      console.log('[ViewResults] Received line items:', data.lineItems?.map((li: LineItem) => ({ code: li.code, sign_convention: li.sign_convention, value: li.value })))
+      logger.debug('[ViewResults] Received line items:', data.lineItems?.map((li: LineItem) => ({ code: li.code, sign_convention: li.sign_convention, value: li.value })))
 
       if (data.success) {
         // Group line items by section
@@ -220,14 +225,14 @@ export default function ViewResults() {
                 newDriverData.set(item.code, driverData.drivers || [])
               }
             } catch (error) {
-              console.error(`Error loading drivers for ${item.code}:`, error)
+              logger.error(`Error loading drivers for ${item.code}:`, error)
             }
           }
           setDriverData(newDriverData)
         }
       }
     } catch (error) {
-      console.error('Error loading results:', error)
+      logger.error('Error loading results:', error)
     } finally {
       setLoading(false)
     }
@@ -272,7 +277,7 @@ export default function ViewResults() {
       }
       return false
     } catch (error) {
-      console.error('Error loading driver decomposition:', error)
+      logger.error('Error loading driver decomposition:', error)
       return false
     }
   }

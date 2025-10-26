@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Shuffle, FolderOpen, Check, X, FileText, Trash2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface CsvData {
   headers: string[]
@@ -50,7 +55,7 @@ export default function LoadConversions() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -71,7 +76,7 @@ export default function LoadConversions() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -88,7 +93,7 @@ export default function LoadConversions() {
         setPreviewData(parsed)
       }
     } catch (error) {
-      console.error('Failed to load staged file preview:', error)
+      logger.error('Failed to load staged file preview:', error)
     }
   }
 
@@ -152,7 +157,7 @@ export default function LoadConversions() {
             })
           }
         } catch (error) {
-          console.error('Error parsing CSV:', error)
+          logger.error('Error parsing CSV:', error)
         }
       }
       reader.readAsText(file)
@@ -200,7 +205,7 @@ export default function LoadConversions() {
         setLoadMessage('')
       }, 5000)
     } catch (error) {
-      console.error('Error loading files:', error)
+      logger.error('Error loading files:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Failed to load files'}`)
     } finally {
       setIsLoading(false)

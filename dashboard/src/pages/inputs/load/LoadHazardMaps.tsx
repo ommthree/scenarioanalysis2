@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Map, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { logger } from '@/utils/logger'
 import HazardMap from '@/components/visualizations/HazardMap'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface CsvData {
   headers: string[]
@@ -52,7 +59,7 @@ export default function LoadHazardMaps() {
     if (!stagedFileData && hazardMapFiles.length > 0 && selectedUnstagedFileIndex === null) {
       const firstValidIdx = hazardMapFiles.findIndex(f => f.isValid && f.csvData)
       if (firstValidIdx !== -1) {
-        console.log('Auto-selecting first unstaged file at index:', firstValidIdx)
+        logger.debug('Auto-selecting first unstaged file at index:', firstValidIdx)
         setSelectedUnstagedFileIndex(firstValidIdx)
       }
     }
@@ -66,7 +73,7 @@ export default function LoadHazardMaps() {
         h.toLowerCase().includes('intensity') || h.toLowerCase().includes('variance')
       )
       if (firstIntensityCol) {
-        console.log('Auto-selecting column for staged file:', firstIntensityCol)
+        logger.debug('Auto-selecting column for staged file:', firstIntensityCol)
         setSelectedIntensityColumn(firstIntensityCol)
       }
     }
@@ -79,7 +86,7 @@ export default function LoadHazardMaps() {
           h.toLowerCase().includes('intensity') || h.toLowerCase().includes('variance')
         )
         if (firstIntensityCol) {
-          console.log('Auto-selecting column for unstaged file:', firstIntensityCol)
+          logger.debug('Auto-selecting column for unstaged file:', firstIntensityCol)
           setSelectedIntensityColumn(firstIntensityCol)
         }
       }
@@ -101,7 +108,7 @@ export default function LoadHazardMaps() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -117,7 +124,7 @@ export default function LoadHazardMaps() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -199,16 +206,16 @@ export default function LoadHazardMaps() {
       for (const hazardMapFile of hazardMapFiles) {
         if (!hazardMapFile.isValid || !hazardMapFile.file) continue
 
-        console.log('Uploading file:', hazardMapFile.name)
-        console.log('File object:', hazardMapFile.file)
-        console.log('File type:', hazardMapFile.file.type)
-        console.log('File size:', hazardMapFile.file.size)
+        logger.debug('Uploading file:', hazardMapFile.name)
+        logger.debug('File object:', hazardMapFile.file)
+        logger.debug('File type:', hazardMapFile.file.type)
+        logger.debug('File size:', hazardMapFile.file.size)
 
         const formData = new FormData()
         formData.append('dbPath', dbPath)
         formData.append('file', hazardMapFile.file)
 
-        console.log('FormData created, sending request...')
+        logger.debug('FormData created, sending request...')
 
         const response = await fetch(apiUrl('/api/hazard-maps/load'), {
           method: 'POST',
@@ -237,7 +244,7 @@ export default function LoadHazardMaps() {
       }, 3000)
 
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsLoading(false)
@@ -343,7 +350,7 @@ export default function LoadHazardMaps() {
 
         if (latIdx !== -1 && lngIdx !== -1 && intensityIdx !== -1) {
           // Use ALL rows for continuous heatmap coverage
-          console.log(`Loading ${file.csvData.rows.length} points from ${file.name}`)
+          logger.debug(`Loading ${file.csvData.rows.length} points from ${file.name}`)
 
           for (let i = 0; i < file.csvData.rows.length; i++) {
             const row = file.csvData.rows[i]
@@ -357,7 +364,7 @@ export default function LoadHazardMaps() {
               points.push({ lat, lng, intensity, label })
             }
           }
-          console.log(`Loaded ${points.length} valid points from ${file.name}`)
+          logger.debug(`Loaded ${points.length} valid points from ${file.name}`)
         }
       }
     }
@@ -453,12 +460,12 @@ export default function LoadHazardMaps() {
                                 h.toLowerCase().includes('intensity') || h.toLowerCase().includes('variance')
                               )
                               if (firstIntensityCol) {
-                                console.log('Auto-selecting column for newly loaded staged file:', firstIntensityCol)
+                                logger.debug('Auto-selecting column for newly loaded staged file:', firstIntensityCol)
                                 setSelectedIntensityColumn(firstIntensityCol)
                               }
                             }
                           } catch (error) {
-                            console.error('Failed to fetch staged file preview:', error)
+                            logger.error('Failed to fetch staged file preview:', error)
                           }
                         }}
                       >
@@ -505,7 +512,7 @@ export default function LoadHazardMaps() {
                         key={idx}
                         onClick={() => {
                           if (hazardMap.isValid) {
-                            console.log('Selecting file from list:', idx)
+                            logger.debug('Selecting file from list:', idx)
                             setSelectedUnstagedFileIndex(idx)
                             setPinnedRows(new Set())
                             setSelectedIntensityColumn('')

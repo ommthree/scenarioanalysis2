@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
+import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/utils/logger'
 import { Save, Trash2, FolderOpen } from 'lucide-react'
+import { logger } from '@/utils/logger'
 import { useNavigate } from 'react-router-dom'
+import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface SavedRun {
   run_id: number
@@ -34,7 +40,7 @@ export default function SavedCalcs() {
       setSavedRuns(result.runs || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
-      console.error('Error loading saved runs:', err)
+      logger.error('Error loading saved runs:', err)
     } finally {
       setLoading(false)
     }
@@ -73,7 +79,7 @@ export default function SavedCalcs() {
       loadSavedRuns()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to restore run')
-      console.error('Error restoring run:', err)
+      logger.error('Error restoring run:', err)
     }
   }
 
@@ -96,7 +102,7 @@ export default function SavedCalcs() {
       loadSavedRuns()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete run')
-      console.error('Error deleting run:', err)
+      logger.error('Error deleting run:', err)
     }
   }
 

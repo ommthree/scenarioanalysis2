@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import LocationMap from '@/components/visualizations/LocationMap'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
 
 interface CsvData {
   headers: string[]
@@ -58,7 +59,7 @@ export default function LoadLocations() {
         setStagedFiles(result.files || [])
       }
     } catch (error) {
-      console.error('Failed to fetch staged files:', error)
+      logger.error('Failed to fetch staged files:', error)
     }
   }
 
@@ -74,7 +75,7 @@ export default function LoadLocations() {
         fetchStagedFiles()
       }
     } catch (error) {
-      console.error('Failed to delete staged file:', error)
+      logger.error('Failed to delete staged file:', error)
     }
   }
 
@@ -186,7 +187,7 @@ export default function LoadLocations() {
       }, 3000)
 
     } catch (error) {
-      console.error('Import error:', error)
+      logger.error('Import error:', error)
       setLoadMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
     } finally {
       setIsLoading(false)
@@ -358,7 +359,7 @@ export default function LoadLocations() {
                               setStagedFileData(parsed)
                             }
                           } catch (error) {
-                            console.error('Failed to fetch staged file preview:', error)
+                            logger.error('Failed to fetch staged file preview:', error)
                           }
                         }}
                       >
