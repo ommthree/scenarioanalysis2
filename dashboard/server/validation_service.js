@@ -83,7 +83,7 @@ class ValidationService {
         [scenarioId]
       )
       if (fxCount.count === 0) {
-        warnings.push({ code: 'NO_FX_RATES', message: `Base currency is ${scenario.base_currency} but no FX rates defined. Multi-currency calculations may fail.', severity: 'warning' })
+        warnings.push({ code: 'NO_FX_RATES', message: `Base currency is ${scenario.base_currency} but no FX rates defined. Multi-currency calculations may fail.`, severity: 'warning' })
       } else {
         info.push({ code: 'FX_RATES_FOUND', message: `${fxCount.count} FX rate(s) available`, severity: 'info' })
       }
