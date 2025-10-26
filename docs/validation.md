@@ -828,9 +828,15 @@ interface CsvRow {
 
 ### 10. Missing Error Handling in Async Functions
 
+**Status**: ⏸️ DEFERRED (Low priority - non-critical)
+
 **Location**: `dashboard/src/pages/` (multiple components)
 
 **Issue**: Some API calls lack proper error handling, leading to silent failures.
+
+**Analysis (2025-10-26)**:
+
+Found 129 fetch calls with only 37 response.ok checks (~92 missing checks).
 
 **Examples**:
 ```typescript
@@ -861,14 +867,44 @@ async function fetchData() {
     const data = await response.json()
     return data
   } catch (error) {
-    console.error('Fetch error:', error)
+    logger.error('Fetch error:', error)
     // Show user-friendly error message
     throw error
   }
 }
 ```
 
-**Estimated Fix Time**: 3-4 hours
+**Rationale for Deferral**:
+- Most fetch calls are wrapped in existing try-catch blocks
+- Backend API returns proper HTTP status codes
+- Failures are visible to users through UI state (empty results, no data)
+- Not a security risk or data corruption risk
+- Would require touching ~92 call sites across 20+ files
+- Better addressed with a centralized fetch wrapper utility in future refactoring
+
+**Estimated Fix Time**: 8-10 hours (if done comprehensively)
+
+**Recommended Future Fix**:
+Create a centralized API client with built-in error handling:
+```typescript
+// utils/api.ts
+export async function apiClient<T>(url: string, options?: RequestInit): Promise<T> {
+  try {
+    const response = await fetch(apiUrl(url), options)
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`HTTP ${response.status}: ${error}`)
+    }
+    return await response.json()
+  } catch (error) {
+    logger.error('API error:', error)
+    throw error
+  }
+}
+
+// Then replace all fetch calls:
+const data = await apiClient<Template[]>('/api/templates')
+```
 
 ---
 
