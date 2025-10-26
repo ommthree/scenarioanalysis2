@@ -2,12 +2,13 @@
 
 **Issue:** Inconsistent Data Pipeline Architecture
 **Estimated Effort:** 16-20 hours
-**Status:** Foundation Complete (30% done)
+**Status:** Management APIs Complete (40% done)
 **Date Started:** 2025-10-26
+**Latest Update:** 2025-10-26 15:00
 
 ---
 
-## Completed (Steps 1-2: ~5 hours)
+## Completed (Steps 1-2, 4: ~8 hours)
 
 ### ✅ Step 1: Staging Metadata Table (2 hours)
 - Created migration: `data/migrations/add_staging_metadata.sql`
@@ -40,9 +41,45 @@
 - Uses security.js `quoteIdentifier()` for SQL injection protection
 - Full error handling and promise-based async/await pattern
 
+### ✅ Step 4: Add Management Endpoints (3 hours)
+
+Added 5 REST API endpoints to `dashboard/server/index.js`:
+
+#### Completed Endpoints:
+1. **GET /api/staging/list** - List all staging tables with filters
+   - Query params: dbPath (required), dataType (optional), status (optional)
+   - Returns: Array of staging table metadata
+   - Test result: ✅ Returns empty array (no tracked tables yet)
+
+2. **GET /api/staging/orphaned** - Find orphaned staging tables
+   - Query params: dbPath (required)
+   - Returns: Array of table names not in staging_metadata
+   - Test result: ✅ Found 7 legacy tables (staging_scenario_25, staging_location, etc.)
+
+3. **GET /api/staging/:stagingId** - Get specific staging table details
+   - Query params: dbPath (required)
+   - Path params: stagingId
+   - Returns: Full staging metadata record
+
+4. **DELETE /api/staging/:stagingId** - Delete staging table
+   - Query params: dbPath (required)
+   - Path params: stagingId
+   - Action: Drops table and marks metadata as archived
+
+5. **POST /api/staging/cleanup** - Cleanup old staging tables
+   - Body: dbPath (required), daysOld (default: 7)
+   - Returns: Count of deleted tables
+   - Test result: ✅ Works correctly (0 deleted - no old tables)
+
+#### Technical Details:
+- Converted staging_service.js to ES6 modules (export default, import)
+- Fixed route ordering: specific paths before :stagingId to avoid conflicts
+- All endpoints include proper error handling and database cleanup
+- Committed in: bce2554
+
 ---
 
-## Remaining Work (Steps 3-5: ~11-15 hours)
+## Remaining Work (Steps 3, 5: ~8-12 hours)
 
 ### 🔲 Step 3: Refactor Existing Endpoints (6-8 hours)
 
@@ -97,24 +134,6 @@ const { stagingId, tableName } = await stagingService.createStagingTable(
 **Files to Modify:**
 - `dashboard/server/index.js` - All 5 upload endpoints
 
-### 🔲 Step 4: Add Cleanup Endpoints (2 hours)
-
-Add these new endpoints to `dashboard/server/index.js`:
-
-```javascript
-// List staging tables
-GET /api/staging/list?dataType=scenario&status=pending
-
-// Delete specific staging table
-DELETE /api/staging/:stagingId
-
-// Cleanup old tables
-POST /api/staging/cleanup
-Body: { daysOld: 7 }
-
-// Find orphaned tables
-GET /api/staging/orphaned
-```
 
 ### 🔲 Step 5: Add UI Management Page (3-5 hours)
 
@@ -188,4 +207,16 @@ Once complete:
 5. Build UI management page
 6. Update system documentation
 
-**Estimated Time Remaining:** 11-15 hours
+**Estimated Time Remaining:** 8-12 hours (out of 16-20 total)
+
+---
+
+## Session Summary
+
+**Session 3 (2025-10-26)**:
+- Completed Step 4: Staging Management REST API endpoints
+- Fixed ES6 module compatibility issues (staging_service.js)
+- Fixed route ordering conflicts (:stagingId vs orphaned)
+- Tested all 5 endpoints successfully
+- Updated progress documentation
+- Progress: 30% → 40%
