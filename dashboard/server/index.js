@@ -21,6 +21,7 @@ import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
 import * as security from './security.js'
+import StagingService from './staging_service.js'
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
@@ -6878,6 +6879,157 @@ app.delete('/api/runs/:runId', (req, res) => {
       res.json({ success: true, message: 'Run deleted successfully' })
     })
   })
+})
+
+// ============================================================================
+// STAGING TABLE MANAGEMENT ENDPOINTS
+// ============================================================================
+
+/**
+ * List all staging tables with optional filters
+ * GET /api/staging/list?dbPath=...&dataType=scenario&status=pending
+ */
+app.get('/api/staging/list', async (req, res) => {
+  try {
+    const { dbPath, dataType, status } = req.query
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'dbPath is required' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
+
+    const tables = await stagingService.listStagingTables(dataType, status)
+
+    db.close()
+    res.json({ success: true, tables })
+  } catch (error) {
+    console.error('List staging tables error:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+/**
+ * Find orphaned staging tables (tables exist but not tracked in metadata)
+ * GET /api/staging/orphaned?dbPath=...
+ * NOTE: Must be before :stagingId route to avoid conflict
+ */
+app.get('/api/staging/orphaned', async (req, res) => {
+  try {
+    const { dbPath } = req.query
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'dbPath is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
+
+    const orphaned = await stagingService.findOrphanedTables()
+
+    db.close()
+    res.json({
+      success: true,
+      orphanedTables: orphaned,
+      count: orphaned.length
+    })
+  } catch (error) {
+    console.error('Find orphaned tables error:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+/**
+ * Get details of a specific staging table
+ * GET /api/staging/:stagingId?dbPath=...
+ */
+app.get('/api/staging/:stagingId', async (req, res) => {
+  try {
+    const { dbPath } = req.query
+    const { stagingId } = req.params
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'dbPath is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
+
+    const info = await stagingService.getStagingInfo(parseInt(stagingId))
+
+    if (!info) {
+      db.close()
+      return res.status(404).json({ error: 'Staging table not found' })
+    }
+
+    db.close()
+    res.json({ success: true, staging: info })
+  } catch (error) {
+    console.error('Get staging info error:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+/**
+ * Delete a specific staging table
+ * DELETE /api/staging/:stagingId?dbPath=...
+ */
+app.delete('/api/staging/:stagingId', async (req, res) => {
+  try {
+    const { dbPath } = req.query
+    const { stagingId } = req.params
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'dbPath is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
+
+    await stagingService.deleteStagingTable(parseInt(stagingId))
+
+    db.close()
+    res.json({ success: true, message: 'Staging table deleted successfully' })
+  } catch (error) {
+    console.error('Delete staging table error:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+/**
+ * Cleanup old staging tables
+ * POST /api/staging/cleanup
+ * Body: { dbPath, daysOld }
+ */
+app.post('/api/staging/cleanup', async (req, res) => {
+  try {
+    const { dbPath, daysOld = 7 } = req.body
+
+    if (!dbPath) {
+      return res.status(400).json({ error: 'dbPath is required' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
+
+    const result = await stagingService.cleanupOldTables(daysOld)
+
+    db.close()
+    res.json({
+      success: true,
+      message: `Deleted ${result.deletedCount} of ${result.totalFound} old staging tables`,
+      deletedCount: result.deletedCount,
+      totalFound: result.totalFound
+    })
+  } catch (error) {
+    console.error('Cleanup staging tables error:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
 })
 
 /**

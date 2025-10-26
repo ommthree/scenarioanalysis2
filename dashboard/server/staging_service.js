@@ -1,7 +1,7 @@
 // Staging Service: Unified staging table architecture
 // Purpose: Manage all staging tables with metadata tracking and audit trail
 
-const { quoteIdentifier } = require('./security')
+import { quoteIdentifier } from './security.js'
 
 class StagingService {
   constructor(db) {
@@ -219,4 +219,4 @@ class StagingService {
   }
 }
 
-module.exports = StagingService
+export default StagingService
