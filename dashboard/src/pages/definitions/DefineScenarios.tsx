@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
-import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
-import { logger } from '@/utils/logger'
 import { Save, Plus, Trash2, Upload, Download } from 'lucide-react'
-import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { logger } from '@/utils/logger'
 
 interface Driver {
   driver_id?: number

@@ -1,17 +1,11 @@
 import { useState, useEffect } from 'react'
 import { logger } from '@/utils/logger'
 import { Building2, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Upload, Download } from 'lucide-react'
-import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
-import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
-import { logger } from '@/utils/logger'
 import { Input } from '@/components/ui/input'
-import { logger } from '@/utils/logger'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { logger } from '@/utils/logger'
 
 interface Entity {
   entity_id?: number

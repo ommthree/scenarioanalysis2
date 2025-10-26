@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
-import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
-import { logger } from '@/utils/logger'
 import { Switch } from '@/components/ui/switch'
-import { logger } from '@/utils/logger'
 import { Save, AlertCircle, Plus, Sparkles, Download, Upload, Trash2, X, Edit2, FileSpreadsheet } from 'lucide-react'
-import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { logger } from '@/utils/logger'
 
 interface ManagementAction {
   action_id?: number

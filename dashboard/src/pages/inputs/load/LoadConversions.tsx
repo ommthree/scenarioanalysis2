@@ -1,13 +1,9 @@
 import { useState, useEffect } from 'react'
 import { logger } from '@/utils/logger'
 import { Shuffle, FolderOpen, Check, X, FileText, Trash2 } from 'lucide-react'
-import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
-import { logger } from '@/utils/logger'
 import { Button } from '@/components/ui/button'
-import { logger } from '@/utils/logger'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { logger } from '@/utils/logger'
 
 interface CsvData {
   headers: string[]

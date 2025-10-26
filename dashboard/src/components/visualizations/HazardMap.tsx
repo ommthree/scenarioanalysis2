@@ -1,11 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { logger } from '@/utils/logger'
 import { MapContainer, TileLayer, useMap, Marker, Popup } from 'react-leaflet'
-import { logger } from '@/utils/logger'
 import L from 'leaflet'
-import { logger } from '@/utils/logger'
 import 'leaflet/dist/leaflet.css'
-import { logger } from '@/utils/logger'
 
 interface HazardPoint {
   lat: number
