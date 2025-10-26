@@ -262,7 +262,7 @@ export default function Home() {
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              🔄 Transition Planning
+              🌱 Transition Planning
             </h3>
             <p style={{
               fontSize: '14px',
