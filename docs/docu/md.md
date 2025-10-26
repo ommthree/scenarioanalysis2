@@ -22,7 +22,8 @@
 |----------|---------|--------|-------|
 | [SYSTEM_GUIDE.md](SYSTEM_GUIDE.md) | Comprehensive technical guide with calculation flow tracing | ✅ Production | ~1550 |
 | [schema.md](../target/schema.md) | Complete database schema (47 tables + 3 views) | ✅ Production | ~1226 |
-| [codefiles.md](codefiles.md) | Code structure (73 files: 27 C++, 28 headers, 46 TS) | ✅ Production | ~1372 |
+| [codefiles.md](codefiles.md) | Code structure (76 files: 27 C++, 28 headers, 48 TS, 2 config, 1 security) | ✅ Production | ~1450 |
+| [validation.md](../validation.md) | Code quality validation & fixes (7 issues resolved) | ✅ Complete | ~1400 |
 
 ### Archived Documents (Historical Reference)
 
