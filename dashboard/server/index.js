@@ -20,6 +20,7 @@ import { parse } from 'csv-parse/sync'
 import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
+import * as security from './security.js'
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
@@ -79,20 +80,33 @@ app.post('/api/statements/load', upload.single('file'), async (req, res) => {
       }
     })
 
-    // Create staging table name
-    const stagingTableName = `staging_statement_${statementType}`
+    // Create safe staging table name with validation
+    let stagingTableName
+    try {
+      stagingTableName = security.createStatementStagingTableName(statementType)
+    } catch (err) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: err.message })
+    }
 
-    // Get columns from first record
+    // Get columns from first record and validate
     const columns = Object.keys(records[0])
-    const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ')
+    try {
+      security.validateColumnNames(columns)
+    } catch (err) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'Invalid column names in CSV: ' + err.message })
+    }
+
+    const columnDefs = columns.map(col => `"${col.replace(/"/g, '""')}" TEXT`).join(', ')
 
     // Execute database operations
     db.serialize(() => {
       // Drop existing staging table
-      db.run(`DROP TABLE IF EXISTS ${stagingTableName}`)
+      db.run(`DROP TABLE IF EXISTS ${security.quoteIdentifier(stagingTableName)}`)
 
       // Create new staging table
-      db.run(`CREATE TABLE ${stagingTableName} (
+      db.run(`CREATE TABLE ${security.quoteIdentifier(stagingTableName)} (
         _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         ${columnDefs},
         imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -107,7 +121,7 @@ app.post('/api/statements/load', upload.single('file'), async (req, res) => {
         // Insert records
         const placeholders = columns.map(() => '?').join(', ')
         const columnNames = columns.map(c => `"${c}"`).join(', ')
-        const stmt = db.prepare(`INSERT INTO ${stagingTableName} (${columnNames}) VALUES (${placeholders})`)
+        const stmt = db.prepare(`INSERT INTO ${security.quoteIdentifier(stagingTableName)} (${columnNames}) VALUES (${placeholders})`)
 
         let inserted = 0
         for (const record of records) {
@@ -199,21 +213,33 @@ app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
       }
     })
 
-    // Create staging table name with scenario name sanitized
-    const sanitizedScenarioName = scenarioName.replace(/[^a-zA-Z0-9_]/g, '_')
-    const stagingTableName = `staging_scenario_${sanitizedScenarioName}`
+    // Create safe staging table name with validation
+    let stagingTableName
+    try {
+      stagingTableName = security.createScenarioStagingTableName(scenarioName)
+    } catch (err) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: err.message })
+    }
 
-    // Get columns from first record
+    // Get columns from first record and validate
     const columns = Object.keys(records[0])
-    const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ')
+    try {
+      security.validateColumnNames(columns)
+    } catch (err) {
+      fs.unlinkSync(file.path)
+      return res.status(400).json({ error: 'Invalid column names in CSV: ' + err.message })
+    }
+
+    const columnDefs = columns.map(col => `"${col.replace(/"/g, '""')}" TEXT`).join(', ')
 
     // Execute database operations
     db.serialize(() => {
       // Drop existing staging table for this scenario
-      db.run(`DROP TABLE IF EXISTS ${stagingTableName}`)
+      db.run(`DROP TABLE IF EXISTS ${security.quoteIdentifier(stagingTableName)}`)
 
       // Create new staging table
-      db.run(`CREATE TABLE ${stagingTableName} (
+      db.run(`CREATE TABLE ${security.quoteIdentifier(stagingTableName)} (
         _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         ${columnDefs},
         imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -228,7 +254,7 @@ app.post('/api/scenarios/load', upload.single('file'), async (req, res) => {
         // Insert records
         const placeholders = columns.map(() => '?').join(', ')
         const columnNames = columns.map(c => `"${c}"`).join(', ')
-        const stmt = db.prepare(`INSERT INTO ${stagingTableName} (${columnNames}) VALUES (${placeholders})`)
+        const stmt = db.prepare(`INSERT INTO ${security.quoteIdentifier(stagingTableName)} (${columnNames}) VALUES (${placeholders})`)
 
         let inserted = 0
         for (const record of records) {
@@ -369,11 +395,21 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
 
           const fileData = filesData[fileIdx]
           const tableNum = maxTableNum + fileIdx + 1
-          const stagingTableName = `staging_scenario_${tableNum}`
+
+          // Create safe staging table name with validation
+          let stagingTableName
+          try {
+            stagingTableName = security.createNumberedStagingTableName(tableNum)
+          } catch (err) {
+            db.close()
+            files.forEach(f => fs.unlinkSync(f.path))
+            return res.status(400).json({ error: err.message })
+          }
+
           const columnDefs = fileData.columns.map(col => `"${col}" TEXT`).join(', ')
 
           // Create table for this file
-          db.run(`CREATE TABLE ${stagingTableName} (
+          db.run(`CREATE TABLE ${security.quoteIdentifier(stagingTableName)} (
             _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
             ${columnDefs},
             imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -401,7 +437,7 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
                 // Insert records
                 const placeholders = fileData.columns.map(() => '?').join(', ')
                 const columnNames = fileData.columns.map(c => `"${c}"`).join(', ')
-                const stmt = db.prepare(`INSERT INTO ${stagingTableName} (${columnNames}) VALUES (${placeholders})`)
+                const stmt = db.prepare(`INSERT INTO ${security.quoteIdentifier(stagingTableName)} (${columnNames}) VALUES (${placeholders})`)
 
                 for (const record of fileData.records) {
                   const values = fileData.columns.map(col => record[col])
@@ -892,7 +928,17 @@ app.post('/api/statements/staging', express.json(), (req, res) => {
       'carbon': 'staging_statement_carbon'
     }
 
-    const tableName = tableNameMap[statementType.toLowerCase()] || `staging_statement_${statementType}`
+    const tableName = tableNameMap[statementType.toLowerCase()]
+    if (!tableName) {
+      return res.status(400).json({ error: 'Invalid statement type' })
+    }
+
+    // Validate table name for additional safety
+    try {
+      security.validateTableName(tableName, 'staging_statement_')
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
 
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
@@ -901,7 +947,7 @@ app.post('/api/statements/staging', express.json(), (req, res) => {
     })
 
     // Get table info to find columns
-    db.all(`PRAGMA table_info(${tableName})`, [], (err, columns) => {
+    db.all(`PRAGMA table_info(${security.quoteIdentifier(tableName)})`, [], (err, columns) => {
       if (err) {
         db.close()
         return res.status(500).json({ error: 'Failed to get table info: ' + err.message })
@@ -913,7 +959,7 @@ app.post('/api/statements/staging', express.json(), (req, res) => {
         .filter(name => !['_rowid', 'imported_at', 'is_mapped'].includes(name))
 
       // Get all rows - each row represents a line item
-      db.all(`SELECT * FROM ${tableName}`, [], (err, rows) => {
+      db.all(`SELECT * FROM ${security.quoteIdentifier(tableName)}`, [], (err, rows) => {
         db.close()
 
         if (err) {
@@ -1228,9 +1274,17 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           return res.status(400).json({ error: 'Invalid statement type: ' + statementType })
         }
 
+        // Validate table name for additional safety
+        try {
+          security.validateTableName(tables.staging, 'staging_statement_')
+        } catch (err) {
+          db.close()
+          return res.status(400).json({ error: err.message })
+        }
+
         // Now get all staging data
         console.log('Querying staging table:', tables.staging)
-        db.all(`SELECT * FROM ${tables.staging}`, [], (err, stagingRows) => {
+        db.all(`SELECT * FROM ${security.quoteIdentifier(tables.staging)}`, [], (err, stagingRows) => {
       if (err) {
         console.log('ERROR reading staging data:', err.message)
         db.close()
@@ -1293,14 +1347,14 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
         if (statementType === 'pnl') {
           // P&L has specific schema with statement_id
           insertSql = `
-            INSERT OR REPLACE INTO ${tables.result}
+            INSERT OR REPLACE INTO ${security.quoteIdentifier(tables.result)}
             (entity_id, scenario_id, period_id, statement_id, code, value, calculation_timestamp)
             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
           `
           insertParams = [targetEntityId, scenarioId, periodId, statementId, line_item_code, value]
         } else if (statementType === 'carbon') {
           insertSql = `
-            INSERT OR REPLACE INTO ${tables.result}
+            INSERT OR REPLACE INTO ${security.quoteIdentifier(tables.result)}
             (entity_id, scenario_id, period_id, template_code, line_item_code, value, created_at)
             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
           `
@@ -1779,7 +1833,15 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
         // Handle different file types
         if (fileType === 'scenario') {
           // Delete scenario mapping configuration, staging table, and staged file
-          const stagingTableName = `staging_scenario_${fileId}`
+          // Validate file_id and create safe staging table name
+          let stagingTableName
+          try {
+            const validatedFileId = security.validateFileId(fileId)
+            stagingTableName = security.createNumberedStagingTableName(validatedFileId)
+          } catch (err) {
+            db.close()
+            return res.status(400).json({ error: err.message })
+          }
 
           new Promise((resolve, reject) => {
             db.run(
@@ -1795,7 +1857,7 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
               // Drop the staging table if it exists
               return new Promise((resolve, reject) => {
                 db.run(
-                  `DROP TABLE IF EXISTS ${stagingTableName}`,
+                  `DROP TABLE IF EXISTS ${security.quoteIdentifier(stagingTableName)}`,
                   (err) => {
                     if (err) {
                       console.warn(`Warning: Failed to drop table ${stagingTableName}:`, err.message)
@@ -2062,21 +2124,28 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
         let stagingTableName
         let useFileIdFilter = true
 
-        if (file.file_type === 'pnl' || file.file_type === 'balance_sheet' ||
-            file.file_type === 'cashflow' || file.file_type === 'carbon') {
-          stagingTableName = `staging_statement_${file.file_type}`
-          useFileIdFilter = false  // Statement staging tables don't have file_id
-        } else if (file.file_type === 'scenario') {
-          // Scenarios use numbered tables
-          stagingTableName = `staging_scenario_${fileId}`
-          useFileIdFilter = false
-        } else if (file.file_type === 'location') {
-          stagingTableName = 'staging_location'
-        } else if (file.file_type === 'hazard_map') {
-          stagingTableName = 'staging_hazard_map'
-        } else {
+        try {
+          if (file.file_type === 'pnl' || file.file_type === 'balance_sheet' ||
+              file.file_type === 'cashflow' || file.file_type === 'carbon') {
+            stagingTableName = `staging_statement_${file.file_type}`
+            security.validateTableName(stagingTableName, 'staging_statement_')
+            useFileIdFilter = false  // Statement staging tables don't have file_id
+          } else if (file.file_type === 'scenario') {
+            // Scenarios use numbered tables - validate fileId
+            const validatedFileId = security.validateFileId(fileId)
+            stagingTableName = security.createNumberedStagingTableName(validatedFileId)
+            useFileIdFilter = false
+          } else if (file.file_type === 'location') {
+            stagingTableName = 'staging_location'
+          } else if (file.file_type === 'hazard_map') {
+            stagingTableName = 'staging_hazard_map'
+          } else {
+            db.close()
+            return res.status(400).json({ error: 'Unknown file type: ' + file.file_type })
+          }
+        } catch (err) {
           db.close()
-          return res.status(400).json({ error: 'Unknown file type: ' + file.file_type })
+          return res.status(400).json({ error: err.message })
         }
 
         // Query the staging table
@@ -2084,8 +2153,8 @@ app.get('/api/staged-files/:fileId/preview', (req, res) => {
         // For other types, limit to 1000 rows for preview
         const rowLimit = file.file_type === 'hazard_map' ? 500000 : 1000
         const query = useFileIdFilter
-          ? `SELECT * FROM ${stagingTableName} WHERE file_id = ? LIMIT ${rowLimit}`
-          : `SELECT * FROM ${stagingTableName} LIMIT ${rowLimit}`
+          ? `SELECT * FROM ${security.quoteIdentifier(stagingTableName)} WHERE file_id = ? LIMIT ${rowLimit}`
+          : `SELECT * FROM ${security.quoteIdentifier(stagingTableName)} LIMIT ${rowLimit}`
         const params = useFileIdFilter ? [fileId] : []
 
         db.all(query, params, (err, rows) => {
@@ -2197,13 +2266,20 @@ app.get('/api/scenarios/staging-columns', (req, res) => {
       return res.status(400).json({ error: 'Table name is required' })
     }
 
+    // Validate table name
+    try {
+      security.validateTableName(tableName, 'staging_scenario_')
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
+
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
       }
     })
 
-    db.all(`PRAGMA table_info(${tableName})`, [], (err, columns) => {
+    db.all(`PRAGMA table_info(${security.quoteIdentifier(tableName)})`, [], (err, columns) => {
       db.close()
 
       if (err) {
@@ -2240,6 +2316,13 @@ app.get('/api/scenarios/staging-preview', (req, res) => {
       return res.status(400).json({ error: 'Table name is required' })
     }
 
+    // Validate table name
+    try {
+      security.validateTableName(tableName, 'staging_scenario_')
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
+
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
@@ -2248,7 +2331,7 @@ app.get('/api/scenarios/staging-preview', (req, res) => {
 
     const limitNum = parseInt(limit) || 5
 
-    db.all(`SELECT * FROM ${tableName} LIMIT ?`, [limitNum], (err, rows) => {
+    db.all(`SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?`, [limitNum], (err, rows) => {
       db.close()
 
       if (err) {
@@ -2521,6 +2604,14 @@ app.get('/api/scenarios/unique-values', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
+    // Validate table name and column name
+    try {
+      security.validateTableName(tableName, 'staging_scenario_')
+      security.validateColumnName(columnName)
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
+
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
@@ -2529,7 +2620,7 @@ app.get('/api/scenarios/unique-values', (req, res) => {
 
     // Get distinct values from the specified column
     db.all(
-      `SELECT DISTINCT "${columnName}" as value FROM "${tableName}" WHERE "${columnName}" IS NOT NULL ORDER BY "${columnName}"`,
+      `SELECT DISTINCT ${security.quoteIdentifier(columnName)} as value FROM ${security.quoteIdentifier(tableName)} WHERE ${security.quoteIdentifier(columnName)} IS NOT NULL ORDER BY ${security.quoteIdentifier(columnName)}`,
       [],
       (err, rows) => {
         db.close()
@@ -2834,7 +2925,7 @@ app.post('/api/locations/load', upload.single('file'), async (req, res) => {
           })
           const columnDefs = sanitizedColumns.map(col => `"${col}" TEXT`).join(', ')
 
-          db.run(`DROP TABLE IF EXISTS staging_location`, (err) => {
+          db.run(`DROP TABLE IF EXISTS ${security.quoteIdentifier('staging_location')}`, (err) => {
             if (err) {
               console.error('Drop table error:', err)
               db.close()
@@ -2991,6 +3082,11 @@ app.get('/api/locations/staging-full', (req, res) => {
       return res.status(400).json({ error: 'Missing tableName parameter' })
     }
 
+    // Validate table name (should be staging_location)
+    if (tableName !== 'staging_location') {
+      return res.status(400).json({ error: 'Invalid table name - expected staging_location' })
+    }
+
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
@@ -2999,7 +3095,7 @@ app.get('/api/locations/staging-full', (req, res) => {
 
     // Get all rows from the staging table
     db.all(
-      `SELECT * FROM ${tableName}`,
+      `SELECT * FROM ${security.quoteIdentifier(tableName)}`,
       [],
       (err, rows) => {
         db.close()
@@ -3591,7 +3687,7 @@ app.post('/api/damage-curves/load', upload.single('file'), async (req, res) => {
           const columns = Object.keys(records[0])
           const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ')
 
-          db.run(`DROP TABLE IF EXISTS staging_damage_curve`)
+          db.run(`DROP TABLE IF EXISTS ${security.quoteIdentifier('staging_damage_curve')}`)
 
           db.run(`CREATE TABLE staging_damage_curve (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5790,10 +5886,19 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               })
 
               // Read from staging table instead of csv_content
-              const stagingTableName = `staging_scenario_${mapping.file_id}`
+              // Validate file_id and create safe staging table name
+              let stagingTableName
+              try {
+                const validatedFileId = security.validateFileId(mapping.file_id)
+                stagingTableName = security.createNumberedStagingTableName(validatedFileId)
+              } catch (err) {
+                errors.push(`Invalid file_id: ${mapping.file_id}`)
+                continue
+              }
+
               logVerbose(`Reading data from staging table: ${stagingTableName}`)
               const csvData = await new Promise((res, rej) => {
-                db.all(`SELECT * FROM ${stagingTableName}`, [], (err, rows) => {
+                db.all(`SELECT * FROM ${security.quoteIdentifier(stagingTableName)}`, [], (err, rows) => {
                   if (err) rej(err)
                   else res(rows)
                 })
