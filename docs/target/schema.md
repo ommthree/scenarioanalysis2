@@ -1,29 +1,49 @@
 # Database Schema Documentation
 
-**Last Updated:** 2025-10-10
+**Last Updated:** 2025-10-26
 **Schema Version:** 1.0.0
 **Database Engine:** SQLite 3.42+ with JSON1 extension
+**Production Database:** `/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db`
 
 ---
 
 ## Table of Contents
 
-1. [Core Tables](#core-tables)
-2. [Policy Tables](#policy-tables)
-3. [Result Tables](#result-tables)
-4. [Transition & Carbon Tables](#transition--carbon-tables)
-5. [Aggregation Tables](#aggregation-tables)
-6. [Audit & Lineage Tables](#audit--lineage-tables)
-7. [Credit Risk Tables](#credit-risk-tables)
-8. [Schema Evolution](#schema-evolution)
-9. [Relationships Diagram](#relationships-diagram)
+1. [Overview](#overview)
+2. [Core Tables](#core-tables)
+3. [Management Actions Tables](#management-actions-tables)
+4. [Physical Risk Tables](#physical-risk-tables)
+5. [Result Tables](#result-tables)
+6. [Staging Tables](#staging-tables)
+7. [Mapping Configuration Tables](#mapping-configuration-tables)
+8. [Utility Tables](#utility-tables)
+9. [Views](#views)
+10. [Schema Evolution](#schema-evolution)
+11. [Relationships Diagram](#relationships-diagram)
+
+---
+
+## Overview
+
+This database supports a unified financial modeling engine with:
+- **Multi-scenario analysis** with driver-based adjustments
+- **Physical risk modeling** with location-based damage calculations
+- **Management actions** with formula transformations and MAC curves
+- **Entity hierarchy** for portfolio aggregation
+- **Multi-currency support** with FX conversions
+- **Unit conversion system** for carbon, mass, energy, etc.
+- **Template-driven statements** (P&L, Balance Sheet, Cash Flow, Carbon)
+- **Driver decomposition** for drill-down analysis
+
+**Total Tables:** 47 active + 3 views
+**Architecture:** Unified engine (single statement_result table) with value provider pattern
 
 ---
 
 ## Core Tables
 
 ### `scenario`
-**Purpose:** Stores scenario definitions with driver adjustments and metadata
+**Purpose:** Scenario definitions with driver adjustments and configuration
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
@@ -32,7 +52,11 @@
 | `name` | TEXT | NOT NULL | Human-readable name |
 | `description` | TEXT | | Detailed scenario description |
 | `parent_scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | For inheritance of drivers |
-| `json_drivers` | TEXT | NOT NULL, DEFAULT '{}' | JSON array of driver adjustments |
+| `statement_template_id` | INTEGER | FOREIGN KEY → statement_template(template_id) | Template to use |
+| `tax_strategy_id` | INTEGER | | Tax calculation strategy |
+| `base_currency` | TEXT | | ISO 4217 3-character currency code |
+| `enable_lineage_tracking` | INTEGER | DEFAULT 0, CHECK IN (0,1) | Track calculation dependencies |
+| `json_drivers` | TEXT | NOT NULL, DEFAULT '{}' | Legacy: JSON array of driver adjustments |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `created_by` | TEXT | | Username or system identifier |
 
@@ -40,36 +64,35 @@
 - `idx_scenario_code` on `code`
 - `idx_scenario_parent` on `parent_scenario_id`
 
-**Example `json_drivers`:**
-```json
-[
-  {"driver_code": "REVENUE_GROWTH", "multiplier": 1.05, "additive": 0},
-  {"driver_code": "COGS_MARGIN", "multiplier": 1.0, "additive": -0.02}
-]
-```
+**Notes:**
+- Driver values now primarily stored in `scenario_drivers` table (not json_drivers)
+- `base_currency` enables multi-currency scenarios with FX conversion
 
 ---
 
-### `period`
-**Purpose:** Defines time periods for projections
+### `scenario_drivers`
+**Purpose:** Driver values per scenario/period/entity
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
-| `period_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `start_date` | TEXT | NOT NULL | ISO 8601 date (YYYY-MM-DD) |
-| `end_date` | TEXT | NOT NULL | ISO 8601 date (YYYY-MM-DD) |
-| `days_in_period` | INTEGER | NOT NULL | Calculated from date range |
-| `period_type` | TEXT | CHECK IN ('calendar', 'fiscal', 'custom') | Period classification |
-| `period_index` | INTEGER | NOT NULL | Sequential ordering (0, 1, 2...) |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | NOT NULL, FOREIGN KEY → period(period_id) | Period reference |
+| `driver_code` | TEXT | NOT NULL | Driver identifier |
+| `value` | NUMERIC | NOT NULL | Driver value for this scenario/period |
+| `unit_code` | TEXT | | Unit of measurement |
+| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity-specific driver (optional) |
+| `is_populated` | INTEGER | DEFAULT 1 | Data availability flag |
+
+**Primary Key:** `(scenario_id, period_id, driver_code, COALESCE(entity_id, -1))`
 
 **Indexes:**
-- `idx_period_date_range` on `start_date, end_date`
-- `idx_period_index` on `period_index`
+- `idx_scenario_drivers_lookup` on `scenario_id, period_id, driver_code`
+- `idx_scenario_drivers_entity` on `entity_id`
 
-**Constraints:**
-- `CHECK(start_date < end_date)`
-- `CHECK(days_in_period > 0)`
-- `CHECK(period_index >= 0)`
+**Notes:**
+- Replaces scenario.json_drivers for explicit driver storage
+- Supports entity-specific driver values for granular control
+- Critical for driver decomposition feature
 
 ---
 
@@ -93,14 +116,65 @@
 
 ---
 
+### `period`
+**Purpose:** Defines time periods for projections
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `period_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `start_date` | TEXT | NOT NULL | ISO 8601 date (YYYY-MM-DD) |
+| `end_date` | TEXT | NOT NULL | ISO 8601 date (YYYY-MM-DD) |
+| `days_in_period` | INTEGER | NOT NULL | Calculated from date range |
+| `label` | TEXT | | Period label (e.g., "Q1 2024") |
+| `period_type` | TEXT | CHECK IN ('calendar', 'fiscal', 'custom') | Period classification |
+| `period_index` | INTEGER | NOT NULL | Sequential ordering (0, 1, 2...) |
+| `fiscal_year` | INTEGER | | Fiscal year |
+| `fiscal_quarter` | INTEGER | | Fiscal quarter (1-4) |
+
+**Indexes:**
+- `idx_period_date_range` on `start_date, end_date`
+- `idx_period_index` on `period_index`
+
+**Constraints:**
+- `CHECK(start_date < end_date)`
+- `CHECK(days_in_period > 0)`
+- `CHECK(period_index >= 0)`
+
+---
+
+### `entity`
+**Purpose:** Companies/business units for portfolio mode and hierarchy management
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `entity_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `code` | TEXT | UNIQUE, NOT NULL | Short code (e.g., "ACME_US") |
+| `name` | TEXT | NOT NULL | Legal/trade name |
+| `parent_entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | For hierarchies |
+| `granularity_level` | TEXT | | E.g., "group", "entity", "division", "product" |
+| `base_currency` | TEXT | | ISO 4217 3-character currency code |
+| `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
+| `json_metadata` | TEXT | DEFAULT '{}' | Industry, geography, etc. |
+
+**Indexes:**
+- `idx_entity_code` on `code`
+- `idx_entity_parent` on `parent_entity_id`
+- `idx_entity_granularity` on `granularity_level`
+
+**Notes:**
+- `base_currency` enables multi-currency portfolio consolidation
+- Entity hierarchy enables aggregation from leaf to parent entities
+
+---
+
 ### `statement_template`
-**Purpose:** JSON-driven templates for P&L, Balance Sheet, Cash Flow statements
+**Purpose:** JSON-driven templates for statements
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `template_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
 | `code` | TEXT | UNIQUE, NOT NULL | Short code (e.g., "CORP_PL_001") |
-| `statement_type` | TEXT | CHECK IN ('pl', 'bs', 'cf') | Statement classification |
+| `statement_type` | TEXT | CHECK IN ('pl', 'bs', 'cf', 'unified', 'carbon') | Statement classification |
 | `industry` | TEXT | | Target industry (e.g., "Corporate", "Insurance") |
 | `version` | TEXT | NOT NULL | Version identifier (e.g., "1.0", "2.3") |
 | `json_structure` | TEXT | NOT NULL | JSON definition of line items & formulas |
@@ -111,469 +185,109 @@
 - `idx_template_type_industry` on `statement_type, industry`
 - `idx_template_active` on `is_active`
 
-**Example `json_structure` (P&L):**
+**Statement Types:**
+- `pl` - Profit & Loss
+- `bs` - Balance Sheet
+- `cf` - Cash Flow
+- `unified` - Combined financial statements
+- `carbon` - Carbon accounting statements
+
+**Example `json_structure`:**
 ```json
 {
   "line_items": [
-    {"code": "REVENUE", "name": "Total Revenue", "formula": "REVENUE_LINE1 + REVENUE_LINE2"},
-    {"code": "COGS", "name": "Cost of Goods Sold", "formula": "REVENUE * COGS_MARGIN"},
-    {"code": "GROSS_PROFIT", "name": "Gross Profit", "formula": "REVENUE - COGS"}
-  ],
-  "subtotals": ["GROSS_PROFIT", "EBITDA", "NET_INCOME"],
-  "validation_rules": ["REVENUE > 0", "GROSS_PROFIT >= 0"]
+    {
+      "code": "REVENUE",
+      "name": "Total Revenue",
+      "formula": "base:REVENUE + driver:REVENUE_GROWTH",
+      "sign_convention": 1
+    },
+    {
+      "code": "COGS",
+      "name": "Cost of Goods Sold",
+      "formula": "REVENUE * driver:COGS_MARGIN",
+      "sign_convention": -1
+    },
+    {
+      "code": "GROSS_PROFIT",
+      "name": "Gross Profit",
+      "formula": "REVENUE - COGS",
+      "sign_convention": 1
+    }
+  ]
 }
 ```
 
 ---
 
-### `entity`
-**Purpose:** Companies/business units for portfolio mode and granularity management
+### `unit_definition`
+**Purpose:** Defines unit conversions across different measurement types
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
-| `entity_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `code` | TEXT | UNIQUE, NOT NULL | Short code (e.g., "ACME_US") |
-| `name` | TEXT | NOT NULL | Legal/trade name |
-| `parent_entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | For hierarchies |
-| `granularity_level` | TEXT | | E.g., "group", "entity", "division", "product" |
-| `json_metadata` | TEXT | DEFAULT '{}' | Industry, geography, etc. |
-
-**Indexes:**
-- `idx_entity_code` on `code`
-- `idx_entity_parent` on `parent_entity_id`
-- `idx_entity_granularity` on `granularity_level`
-
----
-
-## Policy Tables
-
-### `funding_policy`
-**Purpose:** Working capital and debt management rules
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `policy_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `code` | TEXT | UNIQUE, NOT NULL | Short code (e.g., "FUND_001") |
-| `name` | TEXT | NOT NULL | Policy name |
-| `min_cash_balance` | NUMERIC | DEFAULT 0 | Minimum cash to maintain |
-| `target_cash_balance` | NUMERIC | | Target cash level |
-| `debt_priority` | TEXT | NOT NULL | JSON array of debt instruments in payoff order |
-| `cash_sweep_enabled` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Auto-pay debt with excess cash |
+| `unit_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `unit_code` | TEXT | UNIQUE, NOT NULL | Unit identifier (e.g., "KG", "USD", "KWH") |
+| `unit_name` | TEXT | NOT NULL | Human-readable name |
+| `unit_type` | TEXT | NOT NULL, CHECK IN ('CARBON', 'CURRENCY', 'MASS', 'ENERGY', 'VOLUME', 'DISTANCE', 'DIMENSIONLESS') | Unit category |
+| `conversion_type` | TEXT | CHECK IN ('STATIC', 'TIME_VARYING') | Conversion method |
+| `base_unit_code` | TEXT | | Base unit for this type (e.g., "KG" for MASS) |
+| `conversion_factor` | NUMERIC | | Multiplier to convert to base unit |
 | `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
 
-**Example `debt_priority`:**
-```json
-["OVERDRAFT", "REVOLVER", "TERM_LOAN", "BOND"]
-```
+**Indexes:**
+- `idx_unit_code` on `unit_code`
+- `idx_unit_type` on `unit_type`
+- `idx_unit_base` on `base_unit_code`
+
+**Notes:**
+- `STATIC` conversions use conversion_factor directly
+- `TIME_VARYING` conversions (e.g., FX rates) use fx_rate table
+- Supports carbon accounting (TCO2E, KG_CO2E), energy (KWH, MWH), etc.
 
 ---
 
-### `capex_policy`
-**Purpose:** Capital expenditure allocation rules
+### `fx_rate`
+**Purpose:** Foreign exchange rates for multi-currency support
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
-| `policy_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `code` | TEXT | UNIQUE, NOT NULL | Short code |
-| `name` | TEXT | NOT NULL | Policy name |
-| `method` | TEXT | CHECK IN ('fixed', 'revenue_pct', 'depreciation_pct') | Calculation method |
-| `fixed_amount` | NUMERIC | | For 'fixed' method |
-| `revenue_pct` | NUMERIC | | For 'revenue_pct' method (0.05 = 5%) |
-| `depreciation_pct` | NUMERIC | | For 'depreciation_pct' method (e.g., 1.2) |
-| `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
-
----
-
-### `wc_policy`
-**Purpose:** Working capital assumptions (DSO, DPO, DIO)
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `policy_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `code` | TEXT | UNIQUE, NOT NULL | Short code |
-| `name` | TEXT | NOT NULL | Policy name |
-| `dso_days` | NUMERIC | CHECK >= 0 | Days Sales Outstanding |
-| `dpo_days` | NUMERIC | CHECK >= 0 | Days Payable Outstanding |
-| `dio_days` | NUMERIC | CHECK >= 0 | Days Inventory Outstanding |
-| `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
-
----
-
-## Result Tables
-
-### `pl_result`
-**Purpose:** Stores P&L calculation results for each scenario/period/entity
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `rate_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario-specific rates |
 | `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
-| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
-| `granularity_level` | TEXT | | E.g., "entity.division.product" |
-| `json_dims` | TEXT | DEFAULT '{}' | JSON dimensions for drill-down |
-| `json_line_items` | TEXT | NOT NULL | JSON map of line_code → value |
-| `revenue` | NUMERIC | | Denormalized for quick access |
-| `ebitda` | NUMERIC | | Denormalized for quick access |
-| `net_income` | NUMERIC | | Denormalized for quick access |
-| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+| `from_currency` | TEXT | NOT NULL | ISO 4217 source currency |
+| `to_currency` | TEXT | NOT NULL | ISO 4217 target currency |
+| `rate` | NUMERIC | NOT NULL, CHECK > 0 | Exchange rate |
+| `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Unique Constraint:** `(scenario_id, period_id, from_currency, to_currency)`
 
 **Indexes:**
-- `idx_pl_scenario_period` on `scenario_id, period_id`
-- `idx_pl_entity` on `entity_id`
-- `idx_pl_granularity` on `granularity_level`
-
-**Example `json_dims`:**
-```json
-{"entity": "ACME_US", "division": "Retail", "product": "WidgetA", "region": "Northeast"}
-```
-
-**Example `json_line_items`:**
-```json
-{
-  "REVENUE": 1000000.00,
-  "COGS": 600000.00,
-  "GROSS_PROFIT": 400000.00,
-  "OPEX": 200000.00,
-  "EBITDA": 200000.00,
-  "DEPRECIATION": 50000.00,
-  "EBIT": 150000.00,
-  "INTEREST_EXPENSE": 20000.00,
-  "EBT": 130000.00,
-  "TAX_EXPENSE": 27300.00,
-  "NET_INCOME": 102700.00
-}
-```
+- `idx_fx_rate_scenario_period` on `scenario_id, period_id`
+- `idx_fx_rate_currencies` on `from_currency, to_currency`
 
 ---
 
-### `bs_result`
-**Purpose:** Stores Balance Sheet calculation results
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
-| `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
-| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
-| `granularity_level` | TEXT | | E.g., "group" (coarser than P&L) |
-| `json_dims` | TEXT | DEFAULT '{}' | JSON dimensions |
-| `json_line_items` | TEXT | NOT NULL | JSON map of line_code → value |
-| `total_assets` | NUMERIC | | Denormalized |
-| `total_liabilities` | NUMERIC | | Denormalized |
-| `total_equity` | NUMERIC | | Denormalized |
-| `cash` | NUMERIC | | Denormalized for quick access |
-| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_bs_scenario_period` on `scenario_id, period_id`
-- `idx_bs_entity` on `entity_id`
-- `idx_bs_granularity` on `granularity_level`
-
-**Validation:** `total_assets ≈ total_liabilities + total_equity` (within tolerance)
-
----
-
-### `cf_result`
-**Purpose:** Stores Cash Flow statement results
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
-| `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
-| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
-| `granularity_level` | TEXT | | Granularity level |
-| `json_dims` | TEXT | DEFAULT '{}' | JSON dimensions |
-| `json_line_items` | TEXT | NOT NULL | JSON map of line_code → value |
-| `operating_cf` | NUMERIC | | Denormalized |
-| `investing_cf` | NUMERIC | | Denormalized |
-| `financing_cf` | NUMERIC | | Denormalized |
-| `net_cf` | NUMERIC | | Denormalized |
-| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_cf_scenario_period` on `scenario_id, period_id`
-- `idx_cf_entity` on `entity_id`
-
-**Validation:** `net_cf ≈ Δcash` from BS
-
----
-
-## Transition & Carbon Tables
-
-### `transition_lever`
-**Purpose:** Decarbonization/transition actions for MAC curve generation
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `lever_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `code` | TEXT | UNIQUE, NOT NULL | Short code (e.g., "SOLAR_INSTALL") |
-| `name` | TEXT | NOT NULL | Lever name |
-| `description` | TEXT | | Detailed description |
-| `capex_impact` | NUMERIC | DEFAULT 0 | One-time capital cost |
-| `opex_impact_annual` | NUMERIC | DEFAULT 0 | Annual operating cost change |
-| `co2_abatement_annual` | NUMERIC | DEFAULT 0 | Annual CO₂ reduction (tCO₂e) |
-| `abatement_lifetime_years` | INTEGER | DEFAULT 10 | Useful life of lever |
-| `cost_per_tco2` | NUMERIC | GENERATED ALWAYS AS | Auto-calculated |
-| `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
-
-**Generated Column Formula:**
-```sql
-cost_per_tco2 = (capex_impact / abatement_lifetime_years + opex_impact_annual) /
-                NULLIF(co2_abatement_annual, 0)
-```
-
-**Indexes:**
-- `idx_lever_code` on `code`
-- `idx_lever_cost_per_tco2` on `cost_per_tco2`
-
----
-
-### `carbon_emissions`
-**Purpose:** Tracks Scope 1/2/3 emissions for entities
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `emission_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
-| `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
-| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
-| `scope` | TEXT | CHECK IN ('scope1', 'scope2', 'scope3') | Emission scope |
-| `emissions_tco2e` | NUMERIC | NOT NULL, CHECK >= 0 | Emissions in tonnes CO₂e |
-| `calculation_method` | TEXT | | E.g., "activity-based", "spend-based" |
-| `json_breakdown` | TEXT | DEFAULT '{}' | Detailed emission sources |
-| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_carbon_scenario_period` on `scenario_id, period_id`
-- `idx_carbon_entity_scope` on `entity_id, scope`
-
----
-
-### `mac_curve_result`
-**Purpose:** Stores MAC curve calculation results for each scenario
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
-| `lever_id` | INTEGER | FOREIGN KEY → transition_lever(lever_id) | Lever reference |
-| `baseline_emissions_tco2e` | NUMERIC | NOT NULL | Total emissions without lever |
-| `lever_emissions_tco2e` | NUMERIC | NOT NULL | Total emissions with lever |
-| `abatement_tco2e` | NUMERIC | | Calculated: baseline - lever |
-| `npv_cost` | NUMERIC | | Net present value of costs |
-| `cost_per_tco2` | NUMERIC | | NPV cost / cumulative abatement |
-| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_mac_scenario` on `scenario_id`
-- `idx_mac_cost_per_tco2` on `cost_per_tco2`
-
----
-
-## Aggregation Tables
-
-### `aggregation_rule`
-**Purpose:** Defines how to aggregate data across granularities
+### `validation_rule`
+**Purpose:** Defines validation constraints for results
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `rule_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `source_granularity` | TEXT | NOT NULL | E.g., "entity.division.product" |
-| `target_granularity` | TEXT | NOT NULL | E.g., "entity.division" |
-| `line_item_code` | TEXT | NOT NULL | Which line item to aggregate |
-| `aggregation_method` | TEXT | CHECK IN ('sum', 'weighted_avg', 'max', 'min') | Method |
-| `weight_column` | TEXT | | For weighted_avg (e.g., "revenue") |
+| `code` | TEXT | UNIQUE, NOT NULL | Rule identifier |
+| `rule_type` | TEXT | CHECK IN ('equation', 'boundary', 'reconciliation') | Rule category |
+| `formula` | TEXT | NOT NULL | Validation formula/expression |
+| `tolerance` | NUMERIC | DEFAULT 0.01 | Acceptable deviation |
+| `severity` | TEXT | CHECK IN ('error', 'warning') | Severity level |
 | `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
 
 **Indexes:**
-- `idx_aggregation_granularity` on `source_granularity, target_granularity`
-- `idx_aggregation_line_item` on `line_item_code`
+- `idx_validation_code` on `code`
+- `idx_validation_active` on `is_active`
 
----
-
-### `granularity_mapping`
-**Purpose:** Maps entities to their hierarchical granularity paths
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `mapping_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
-| `dimension_name` | TEXT | NOT NULL | E.g., "division", "product", "region" |
-| `dimension_value` | TEXT | NOT NULL | E.g., "Retail", "WidgetA", "Northeast" |
-| `parent_dimension` | TEXT | | For hierarchies |
-
-**Indexes:**
-- `idx_granularity_entity` on `entity_id`
-- `idx_granularity_dimension` on `dimension_name, dimension_value`
-
-**Example:**
-```
-entity_id=1 → dimension_name="division", dimension_value="Retail"
-entity_id=1 → dimension_name="product", dimension_value="WidgetA"
-entity_id=1 → dimension_name="region", dimension_value="Northeast"
-```
-
----
-
-## Audit & Lineage Tables
-
-### `run_log`
-**Purpose:** Audit trail of all scenario runs
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `run_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
-| `started_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-| `completed_at` | TEXT | | ISO 8601 timestamp (NULL if failed) |
-| `status` | TEXT | CHECK IN ('running', 'completed', 'failed') | Run status |
-| `error_message` | TEXT | | Error details if failed |
-| `user` | TEXT | | Username or API key |
-| `json_config` | TEXT | DEFAULT '{}' | Run configuration snapshot |
-
-**Indexes:**
-- `idx_run_scenario` on `scenario_id`
-- `idx_run_started` on `started_at`
-- `idx_run_status` on `status`
-
----
-
-### `calculation_lineage`
-**Purpose:** Tracks calculation dependencies for transparency
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `lineage_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `result_type` | TEXT | CHECK IN ('pl', 'bs', 'cf') | Result table type |
-| `result_id` | INTEGER | NOT NULL | Foreign key to result table |
-| `line_item_code` | TEXT | NOT NULL | Which line item |
-| `formula` | TEXT | NOT NULL | Formula used |
-| `json_dependencies` | TEXT | DEFAULT '[]' | JSON array of dependency codes |
-| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_lineage_result` on `result_type, result_id`
-- `idx_lineage_line_item` on `line_item_code`
-
-**Example `json_dependencies`:**
-```json
-["REVENUE", "COGS_MARGIN", "DRIVER:REVENUE_GROWTH"]
-```
-
----
-
-### `run_result`
-**Purpose:** Links run_log to calculated results for reproducibility
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `run_id` | INTEGER | FOREIGN KEY → run_log(run_id) | Run reference |
-| `result_type` | TEXT | CHECK IN ('pl', 'bs', 'cf') | Result table type |
-| `result_id` | INTEGER | NOT NULL | Foreign key to result table (pl_result, bs_result, cf_result) |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 timestamp |
-
-**Primary Key:** `(run_id, result_type, result_id)`
-
-**Indexes:**
-- `idx_run_result_run` on `run_id`
-- `idx_run_result_type_id` on `result_type, result_id`
-
-**Purpose:**
-This table creates a many-to-many relationship between runs and their output results. When a run executes, every P&L, Balance Sheet, and Cash Flow result generated gets recorded here, enabling:
-- Complete traceability: "Which run generated this result?"
-- Reproducibility: "What were all the outputs from run #42?"
-- Cleanup: CASCADE delete removes orphaned results when runs are purged
-
----
-
-### `run_input_snapshot`
-**Purpose:** Archives all input data used in each run for full reproducibility
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `snapshot_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `run_id` | INTEGER | FOREIGN KEY → run_log(run_id) | Run reference |
-| `input_type` | TEXT | CHECK IN ('scenario_config', 'driver_values', 'opening_balance_sheet', 'policy_config', 'template', 'base_data') | Type of input data |
-| `data_source` | TEXT | | Original file path or table reference (e.g., "data/inputs/scenario_base.json") |
-| `json_data` | TEXT | NOT NULL | Full JSON snapshot of input data |
-| `file_hash` | TEXT | | SHA256 hash for file-based inputs to detect changes |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_run_input_run` on `run_id`
-- `idx_run_input_type` on `input_type`
-
-**Input Types:**
-- `scenario_config`: Complete scenario definition with driver adjustments
-- `driver_values`: All driver baseline values used
-- `opening_balance_sheet`: Starting balance sheet for the projection
-- `policy_config`: Funding, CapEx, and WC policies applied
-- `template`: Statement templates (P&L, BS, CF structures)
-- `base_data`: Any historical data or external inputs
-
-**Example Usage:**
-```sql
--- Archive scenario config when run starts
-INSERT INTO run_input_snapshot (run_id, input_type, data_source, json_data, file_hash)
-VALUES (123, 'scenario_config', 'data/scenarios/stress_test.json',
-        '{"code":"STRESS","drivers":[...]}',
-        'a7b3c2d1...');
-
--- Retrieve all inputs for a historical run
-SELECT input_type, json_data, file_hash
-FROM run_input_snapshot
-WHERE run_id = 42
-ORDER BY input_type;
-```
-
----
-
-### `run_output_snapshot`
-**Purpose:** Archives summary outputs and reports for each run
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `snapshot_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `run_id` | INTEGER | FOREIGN KEY → run_log(run_id) | Run reference |
-| `output_type` | TEXT | CHECK IN ('pl_summary', 'bs_summary', 'cf_summary', 'kpi_summary', 'validation_report', 'convergence_log') | Type of output data |
-| `json_data` | TEXT | NOT NULL | Summary data in JSON format |
-| `format` | TEXT | NOT NULL, DEFAULT 'json' | Output format (json, csv, html for reports) |
-| `file_path` | TEXT | | Optional: Path if exported to file (e.g., "exports/run_123_pl.xlsx") |
-| `file_size_bytes` | INTEGER | | File size if exported |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 timestamp |
-
-**Indexes:**
-- `idx_run_output_run` on `run_id`
-- `idx_run_output_type` on `output_type`
-
-**Output Types:**
-- `pl_summary`: Aggregated P&L across periods (e.g., annual totals, CAGR)
-- `bs_summary`: Key balance sheet metrics (leverage ratios, working capital)
-- `cf_summary`: Cash flow summaries (free cash flow, cumulative cash)
-- `kpi_summary`: Calculated KPIs (ROE, ROIC, debt/equity, interest coverage)
-- `validation_report`: Balance check results, constraint violations
-- `convergence_log`: Iterative calculation convergence details (for circular references)
-
-**Example Usage:**
-```sql
--- Archive P&L summary when run completes
-INSERT INTO run_output_snapshot (run_id, output_type, json_data)
-VALUES (123, 'pl_summary',
-        '{"total_revenue":15000000,"avg_ebitda_margin":0.23,"net_income_final":2100000}');
-
--- Archive validation report
-INSERT INTO run_output_snapshot (run_id, output_type, json_data)
-VALUES (123, 'validation_report',
-        '{"balance_checks":{"all_passed":true},"constraint_violations":[]}');
-
--- Retrieve all outputs for a historical run
-SELECT output_type, json_data, created_at
-FROM run_output_snapshot
-WHERE run_id = 42
-ORDER BY output_type;
-```
+**Example Rules:**
+- `"ASSETS - LIABILITIES - EQUITY" = 0` (balance sheet identity)
+- `"REVENUE > 0"` (boundary check)
+- `"NET_CF ≈ CASH_CLOSING - CASH_OPENING"` (reconciliation)
 
 ---
 
@@ -590,321 +304,922 @@ ORDER BY output_type;
 
 ---
 
-## Credit Risk Tables
+## Management Actions Tables
 
-### `credit_exposure`
-**Purpose:** Fixed income instruments for credit risk calculation
+### `management_action`
+**Purpose:** Catalog of management actions available for scenarios
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `action_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `action_code` | TEXT | UNIQUE, NOT NULL | Action identifier (e.g., "SOLAR_INSTALL") |
+| `action_name` | TEXT | NOT NULL | Human-readable name |
+| `action_category` | TEXT | CHECK IN ('ENERGY', 'PROCESS', 'TRANSPORT', 'SUPPLY_CHAIN', 'OFFSETS', 'OTHER') | Action classification |
+| `description` | TEXT | | Detailed action description |
+| `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
+| `is_mac_relevant` | INTEGER | DEFAULT 0, CHECK IN (0,1) | Appears on MAC curve |
+
+**Indexes:**
+- `idx_action_code` on `action_code`
+- `idx_action_category` on `action_category`
+
+**Notes:**
+- Actions can modify formulas, add costs, reduce emissions
+- MAC-relevant actions appear on Marginal Abatement Cost curves
+
+---
+
+### `action_trigger`
+**Purpose:** Defines when management actions activate
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `trigger_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `action_code` | TEXT | NOT NULL, FOREIGN KEY → management_action(action_code) | Action reference |
+| `trigger_type` | TEXT | CHECK IN ('UNCONDITIONAL', 'CONDITIONAL', 'TIMED') | Trigger classification |
+| `condition_formula` | TEXT | | Formula for CONDITIONAL triggers |
+| `start_period` | INTEGER | | Start period for TIMED triggers |
+| `end_period` | INTEGER | | End period for TIMED triggers |
+
+**Indexes:**
+- `idx_trigger_action` on `action_code`
+- `idx_trigger_type` on `trigger_type`
+
+**Trigger Types:**
+- `UNCONDITIONAL` - Always active
+- `CONDITIONAL` - Active when condition_formula evaluates to true
+- `TIMED` - Active during [start_period, end_period]
+
+---
+
+### `action_transformation`
+**Purpose:** Defines how actions modify formulas
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `transformation_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `action_code` | TEXT | NOT NULL, FOREIGN KEY → management_action(action_code) | Action reference |
+| `line_item` | TEXT | NOT NULL | Affected line item code |
+| `type` | TEXT | CHECK IN ('FORMULA_OVERRIDE', 'ADDITIVE', 'MULTIPLICATIVE') | Transformation type |
+| `new_formula` | TEXT | | Replacement formula (for FORMULA_OVERRIDE) |
+| `adjustment` | NUMERIC | | Adjustment value (for ADDITIVE/MULTIPLICATIVE) |
+
+**Indexes:**
+- `idx_transformation_action` on `action_code`
+- `idx_transformation_line_item` on `line_item`
+
+**Example:**
+- Action "SOLAR_INSTALL" → Line item "ELECTRICITY_COST" → Type "MULTIPLICATIVE" → Adjustment 0.7 (30% reduction)
+
+---
+
+### `scenario_action`
+**Purpose:** Links actions to scenarios with costs and effects
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `scenario_action_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `action_code` | TEXT | NOT NULL, FOREIGN KEY → management_action(action_code) | Action reference |
+| `trigger_type` | TEXT | CHECK IN ('UNCONDITIONAL', 'CONDITIONAL', 'TIMED') | Trigger type for this scenario |
+| `trigger_condition` | TEXT | | Condition formula |
+| `trigger_sticky` | INTEGER | DEFAULT 0, CHECK IN (0,1) | Once triggered, stays active |
+| `start_period` | INTEGER | | Start period |
+| `end_period` | INTEGER | | End period |
+| `capex` | NUMERIC | DEFAULT 0 | One-time capital cost |
+| `opex_annual` | NUMERIC | DEFAULT 0 | Annual operating cost change |
+| `emission_reduction_annual` | NUMERIC | DEFAULT 0 | Annual CO₂ reduction (tCO₂e) |
+| `financial_transformations` | TEXT | DEFAULT '[]' | JSON array of formula modifications |
+| `carbon_transformations` | TEXT | DEFAULT '[]' | JSON array of carbon modifications |
+
+**Unique Constraint:** `(scenario_id, action_code)`
+
+**Indexes:**
+- `idx_scenario_action_scenario` on `scenario_id`
+- `idx_scenario_action_action` on `action_code`
+
+---
+
+### `mac_curve_point`
+**Purpose:** Marginal Abatement Cost (MAC) curve calculation results
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `point_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `action_code` | TEXT | NOT NULL, FOREIGN KEY → management_action(action_code) | Action reference |
+| `cumulative_reduction_tco2e` | NUMERIC | NOT NULL | X-axis: Cumulative CO₂ reduction |
+| `marginal_cost_per_tco2e` | NUMERIC | NOT NULL | Y-axis: Cost per tonne CO₂ reduced |
+| `annual_reduction_tco2e` | NUMERIC | NOT NULL | Annual CO₂ reduction for this action |
+| `annual_cost_chf` | NUMERIC | NOT NULL | Annual cost for this action |
+| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Indexes:**
+- `idx_mac_scenario` on `scenario_id`
+- `idx_mac_action` on `action_code`
+- `idx_mac_cost_per_tco2e` on `marginal_cost_per_tco2e`
+
+**Notes:**
+- MAC curve plots cumulative_reduction_tco2e (X) vs marginal_cost_per_tco2e (Y)
+- Actions sorted by cost efficiency
+- Enables "what actions give best CO₂ reduction per dollar" analysis
+
+---
+
+## Physical Risk Tables
+
+### `location`
+**Purpose:** Asset locations for physical risk calculations
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `location_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `location_code` | TEXT | UNIQUE, NOT NULL | Location identifier |
+| `archetype` | TEXT | NOT NULL | Building type (e.g., "Residential", "Commercial", "Standard") |
+| `latitude` | NUMERIC | NOT NULL, CHECK BETWEEN -90 AND 90 | Geographic latitude |
+| `longitude` | NUMERIC | NOT NULL, CHECK BETWEEN -180 AND 180 | Geographic longitude |
+| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Owner entity |
+| `json_values` | TEXT | DEFAULT '{}' | JSON: {"PPE": amount, "BI": amount, "inventory": amount} |
+| `file_id` | INTEGER | FOREIGN KEY → staged_file(file_id) | Source file reference |
+
+**Indexes:**
+- `idx_location_code` on `location_code`
+- `idx_location_entity` on `entity_id`
+- `idx_location_coords` on `latitude, longitude`
+- `idx_location_archetype` on `archetype`
+
+**Notes:**
+- `json_values` stores asset values for different value types (PPE, BI, inventory)
+- `archetype` matches to damage_curve entries
+- Physical risk calculation aggregates damage to entity level
+
+---
+
+### `damage_curve`
+**Purpose:** Damage functions mapping hazard intensity to damage percentage
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `curve_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `peril_type` | TEXT | NOT NULL | Hazard type (e.g., "FLOOD", "HURRICANE", "WILDFIRE") |
+| `archetype` | TEXT | NOT NULL | Building type matching location.archetype |
+| `value_type` | TEXT | NOT NULL | Asset type (e.g., "PPE", "BI", "inventory") |
+| `curve_points` | TEXT | NOT NULL | JSON array: [{"intensity": 0, "damage_pct": 0}, ...] |
+| `intensity_unit` | TEXT | NOT NULL | Unit (e.g., "meters", "km/h", "degrees_C") |
+| `driver_code` | TEXT | | Driver that provides intensity values |
+| `file_id` | INTEGER | FOREIGN KEY → staged_file(file_id) | Source file reference |
+
+**Unique Constraint:** `(peril_type, archetype, value_type)`
+
+**Indexes:**
+- `idx_damage_curve_lookup` on `peril_type, archetype, value_type`
+- `idx_damage_curve_driver` on `driver_code`
+
+**Example `curve_points`:**
+```json
+[
+  {"intensity": 0.0, "damage_pct": 0.00},
+  {"intensity": 0.5, "damage_pct": 0.15},
+  {"intensity": 1.0, "damage_pct": 0.30},
+  {"intensity": 1.5, "damage_pct": 0.50},
+  {"intensity": 2.0, "damage_pct": 0.70},
+  {"intensity": 3.0, "damage_pct": 0.90}
+]
+```
+
+---
+
+### `physical_risk_result`
+**Purpose:** Calculated physical damage per location/period/scenario
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | NOT NULL, FOREIGN KEY → period(period_id) | Period reference |
+| `location_id` | INTEGER | NOT NULL, FOREIGN KEY → location(location_id) | Location reference |
+| `peril_type` | TEXT | NOT NULL | Hazard type |
+| `value_type` | TEXT | NOT NULL | Asset type (PPE, BI, inventory) |
+| `intensity_value` | NUMERIC | NOT NULL | Hazard intensity at location |
+| `damage_pct` | NUMERIC | NOT NULL, CHECK BETWEEN 0 AND 1 | Damage percentage from curve |
+| `damage_amount` | NUMERIC | NOT NULL | Calculated damage (exposure * damage_pct) |
+
+**Indexes:**
+- `idx_physical_risk_scenario_period` on `scenario_id, period_id`
+- `idx_physical_risk_location` on `location_id`
+
+**Notes:**
+- Results aggregated to entity level for formula integration
+- Can be referenced in formulas as `peril:FLOOD_DAMAGE`
+
+---
+
+### `hazard_map_scenario`
+**Purpose:** Stores hazard map intensity values per location
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `mapping_id` | INTEGER | NOT NULL, FOREIGN KEY → hazard_map_mapping(mapping_id) | Mapping configuration |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `latitude` | NUMERIC | NOT NULL | Location latitude |
+| `longitude` | NUMERIC | NOT NULL | Location longitude |
+| `year_1` | NUMERIC | | Intensity for year 1 |
+| `year_2` | NUMERIC | | Intensity for year 2 |
+| `year_3` | NUMERIC | | Intensity for year 3 |
+| `year_4` | NUMERIC | | Intensity for year 4 |
+| `year_5` | NUMERIC | | Intensity for year 5 |
+
+**Indexes:**
+- `idx_hazard_map_scenario_lookup` on `mapping_id, scenario_id`
+- `idx_hazard_map_scenario_coords` on `latitude, longitude`
+
+---
+
+### `hazard_map_mapping`
+**Purpose:** Configuration for hazard map CSV import
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `mapping_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `file_id` | INTEGER | NOT NULL, FOREIGN KEY → staged_file(file_id) | Source file reference |
+| `latitude_column` | TEXT | | CSV column name for latitude |
+| `longitude_column` | TEXT | | CSV column name for longitude |
+| `intensity_columns` | TEXT | DEFAULT '[]' | JSON array of intensity column names |
+| `variance_columns` | TEXT | DEFAULT '[]' | JSON array of variance column names |
+
+**Indexes:**
+- `idx_hazard_map_mapping_file` on `file_id`
+
+---
+
+### `physical_peril` (DEPRECATED)
+**Purpose:** Explicit peril event definitions (superseded by driver-based approach)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `peril_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `peril_type` | TEXT | NOT NULL | Hazard type |
+| `peril_code` | TEXT | UNIQUE, NOT NULL | Event identifier |
+| `latitude` | NUMERIC | | Event epicenter latitude |
+| `longitude` | NUMERIC | | Event epicenter longitude |
+| `intensity` | NUMERIC | | Event intensity |
+| `intensity_unit` | TEXT | | Unit of measurement |
+| `start_period` | INTEGER | | Event start period |
+| `end_period` | INTEGER | | Event end period |
+
+**Notes:**
+- Table exists but is not actively used
+- Current implementation uses drivers (e.g., "FLOOD_INTENSITY") instead
+- Kept for potential future event-based modeling
+
+---
+
+### `asset_exposure` (LEGACY)
+**Purpose:** Asset exposure catalog (superseded by location table)
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `exposure_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
-| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
-| `instrument_code` | TEXT | NOT NULL | E.g., "BOND_XYZ_2030" |
-| `instrument_type` | TEXT | CHECK IN ('bond', 'loan', 'derivative') | Instrument type |
-| `notional_amount` | NUMERIC | NOT NULL, CHECK > 0 | Nominal value |
-| `maturity_date` | TEXT | NOT NULL | ISO 8601 date |
-| `coupon_rate` | NUMERIC | | Annual coupon rate (0.05 = 5%) |
-| `rating` | TEXT | | Credit rating (e.g., "AAA", "BB+") |
-| `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
+| `asset_code` | TEXT | UNIQUE, NOT NULL | Asset identifier |
+| `asset_type` | TEXT | | Asset classification |
+| `latitude` | NUMERIC | | Asset latitude |
+| `longitude` | NUMERIC | | Asset longitude |
+| `replacement_value` | NUMERIC | | Asset replacement cost |
+| `inventory_value` | NUMERIC | | Inventory value |
+| `annual_revenue` | NUMERIC | | Business interruption baseline |
+| `archetype` | TEXT | | Building archetype |
 
-**Indexes:**
-- `idx_credit_entity` on `entity_id`
-- `idx_credit_instrument` on `instrument_code`
-- `idx_credit_maturity` on `maturity_date`
+**Notes:**
+- Older schema, superseded by location table
+- May contain historical data
 
 ---
 
-### `credit_result`
-**Purpose:** Stores credit risk metrics (PD, LGD, EL) per scenario
+### `damage_function_definition` (LEGACY)
+**Purpose:** Damage function definitions (superseded by damage_curve)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `function_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `peril_type` | TEXT | NOT NULL | Hazard type |
+| `archetype` | TEXT | NOT NULL | Building archetype |
+| `value_type` | TEXT | NOT NULL | Asset type |
+| `function_type` | TEXT | CHECK IN ('PIECEWISE_LINEAR', 'POLYNOMIAL', 'EXPONENTIAL') | Function form |
+| `parameters` | TEXT | NOT NULL | JSON parameters |
+
+**Notes:**
+- Older schema, superseded by damage_curve table
+- May contain historical data
+
+---
+
+## Result Tables
+
+### `statement_result`
+**Purpose:** Unified result storage for all statement types
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | NOT NULL, FOREIGN KEY → period(period_id) | Period reference |
+| `entity_id` | INTEGER | NOT NULL, FOREIGN KEY → entity(entity_id) | Entity reference |
+| `line_item_code` | TEXT | NOT NULL | Line item identifier |
+| `value` | NUMERIC | NOT NULL | Calculated value |
+| `is_populated` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Data availability flag |
+
+**Unique Constraint:** `(scenario_id, period_id, entity_id, line_item_code)`
+
+**Indexes:**
+- `idx_statement_result_lookup` on `scenario_id, period_id, entity_id`
+- `idx_statement_result_line_item` on `line_item_code`
+
+**Notes:**
+- Replaces separate pl_result, bs_result, cf_result tables
+- Simpler schema enables unified queries across statement types
+- Sparse data support via is_populated flag
+
+---
+
+### `statement_result_by_driver`
+**Purpose:** Driver decomposition for drill-down analysis
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `decomp_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | NOT NULL, FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | NOT NULL, FOREIGN KEY → period(period_id) | Period reference |
+| `entity_id` | INTEGER | NOT NULL, FOREIGN KEY → entity(entity_id) | Entity reference |
+| `line_item_code` | TEXT | NOT NULL | Line item identifier |
+| `driver_code` | TEXT | NOT NULL | Driver that contributed |
+| `value` | NUMERIC | NOT NULL | Driver's contribution to line item |
+
+**Indexes:**
+- `idx_result_by_driver_lookup` on `scenario_id, period_id, entity_id, line_item_code`
+- `idx_result_by_driver_driver` on `driver_code`
+
+**Notes:**
+- Enables "show me how drivers contributed to REVENUE" drill-down
+- Powers dashboard chevron drill-down feature
+- Each row shows one driver's contribution to a line item's total value
+
+---
+
+### `pl_result` (LEGACY)
+**Purpose:** P&L results (being replaced by statement_result)
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
 | `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
-| `exposure_id` | INTEGER | FOREIGN KEY → credit_exposure(exposure_id) | Exposure reference |
 | `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
-| `equity_value` | NUMERIC | NOT NULL | From BS result |
-| `asset_value` | NUMERIC | | From Merton model |
-| `asset_volatility` | NUMERIC | | From Merton model |
-| `distance_to_default` | NUMERIC | | (asset - debt) / (asset * volatility) |
-| `probability_of_default` | NUMERIC | CHECK BETWEEN 0 AND 1 | PD from distance-to-default |
-| `loss_given_default` | NUMERIC | CHECK BETWEEN 0 AND 1 | LGD assumption (e.g., 0.45) |
-| `expected_loss` | NUMERIC | | EL = exposure * PD * LGD |
+| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
+| `granularity_level` | TEXT | | Granularity level |
+| `json_dims` | TEXT | DEFAULT '{}' | JSON dimensions |
+| `json_line_items` | TEXT | NOT NULL | JSON map of line_code → value |
+| `revenue` | NUMERIC | | Denormalized |
+| `ebitda` | NUMERIC | | Denormalized |
+| `net_income` | NUMERIC | | Denormalized |
 | `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 
+**Notes:**
+- Older schema with JSON storage
+- Being replaced by statement_result table
+- May contain historical data
+
+---
+
+### `bs_result` (LEGACY)
+**Purpose:** Balance Sheet results (being replaced by statement_result)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
+| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
+| `granularity_level` | TEXT | | Granularity level |
+| `json_dims` | TEXT | DEFAULT '{}' | JSON dimensions |
+| `json_line_items` | TEXT | NOT NULL | JSON map of line_code → value |
+| `total_assets` | NUMERIC | | Denormalized |
+| `total_liabilities` | NUMERIC | | Denormalized |
+| `total_equity` | NUMERIC | | Denormalized |
+| `cash` | NUMERIC | | Denormalized |
+| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Notes:**
+- Older schema with JSON storage
+- Being replaced by statement_result table
+- May contain historical data
+
+---
+
+### `cf_result` (LEGACY)
+**Purpose:** Cash Flow results (being replaced by statement_result)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
+| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
+| `granularity_level` | TEXT | | Granularity level |
+| `json_dims` | TEXT | DEFAULT '{}' | JSON dimensions |
+| `json_line_items` | TEXT | NOT NULL | JSON map of line_code → value |
+| `operating_cf` | NUMERIC | | Denormalized |
+| `investing_cf` | NUMERIC | | Denormalized |
+| `financing_cf` | NUMERIC | | Denormalized |
+| `net_cf` | NUMERIC | | Denormalized |
+| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Notes:**
+- Older schema with JSON storage
+- Being replaced by statement_result table
+- May contain historical data
+
+---
+
+### `carbon_result`
+**Purpose:** Carbon accounting results
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `result_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `scenario_id` | INTEGER | FOREIGN KEY → scenario(scenario_id) | Scenario reference |
+| `period_id` | INTEGER | FOREIGN KEY → period(period_id) | Period reference |
+| `entity_id` | INTEGER | FOREIGN KEY → entity(entity_id) | Entity reference |
+| `json_line_items` | TEXT | NOT NULL | JSON map of carbon line items |
+| `calculated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Notes:**
+- Carbon-specific result storage
+- May transition to statement_result table in future
+
+---
+
+## Staging Tables
+
+### `staged_file`
+**Purpose:** Tracks uploaded CSV files
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `file_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `file_name` | TEXT | NOT NULL | Original filename |
+| `file_type` | TEXT | CHECK IN ('scenario', 'balance_sheet', 'pnl', 'carbon', 'cashflow', 'location', 'damage_curve', 'hazard_map', 'correlation', 'conversion') | File classification |
+| `row_count` | INTEGER | | Number of data rows |
+| `uploaded_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+| `is_valid` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Validation status |
+| `csv_content` | TEXT | | Full CSV content stored |
+
 **Indexes:**
-- `idx_credit_result_scenario_period` on `scenario_id, period_id`
-- `idx_credit_result_exposure` on `exposure_id`
+- `idx_staged_file_type` on `file_type`
+- `idx_staged_file_uploaded` on `uploaded_at`
+
+**Notes:**
+- `csv_content` stores full CSV for preview/re-processing
+- Each file type has corresponding staging table
+
+---
+
+### `staging_scenario_25`
+**Purpose:** Staged scenario data in 25-period format
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_id` | INTEGER | Foreign key to staged_file |
+| `row_id` | INTEGER | Row number in CSV |
+| `Scenario` | TEXT | Scenario name |
+| `Option` | TEXT | Option/variant |
+| `DriverName` | TEXT | Driver code |
+| `Region` | TEXT | Geographic region |
+| `DataType` | TEXT | Data classification |
+| `Units` | TEXT | Unit of measurement |
+| `y1` to `y5` | NUMERIC | Year 1-5 values |
+
+**Notes:**
+- Dynamic table name: `staging_scenario_{file_id}`
+- Created per uploaded scenario file
+- Dropped when file is deleted
+
+---
+
+### `staging_statement_balance_sheet`
+**Purpose:** Staged balance sheet data
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_id` | INTEGER | Foreign key to staged_file |
+| `row_id` | INTEGER | Row number in CSV |
+| `line_item` | TEXT | Line item code |
+| `units` | TEXT | Unit of measurement |
+| `value` | NUMERIC | Line item value |
+
+---
+
+### `staging_statement_pnl`
+**Purpose:** Staged P&L data
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_id` | INTEGER | Foreign key to staged_file |
+| `row_id` | INTEGER | Row number in CSV |
+| `line_item` | TEXT | Line item code |
+| `units` | TEXT | Unit of measurement |
+| `value` | NUMERIC | Line item value |
+
+---
+
+### `staging_location`
+**Purpose:** Staged location data
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_id` | INTEGER | Foreign key to staged_file |
+| `row_id` | INTEGER | Row number in CSV |
+| `ID` | TEXT | Location identifier |
+| `PortfolioAsset` | TEXT | Asset name |
+| `Option` | TEXT | Option/variant |
+| `Region` | TEXT | Geographic region |
+| `Division` | TEXT | Business division |
+| `Unit` | TEXT | Business unit |
+| `PPE` | NUMERIC | Property, Plant, Equipment value |
+| `BI` | NUMERIC | Business Interruption value |
+| `Archetype` | TEXT | Building archetype |
+| `Lat` | NUMERIC | Latitude |
+| `Long` | NUMERIC | Longitude |
+
+**Notes:**
+- Column names from CSV preserved
+- Deleted when file is deleted
+
+---
+
+### `staging_damage_curve`
+**Purpose:** Staged damage curve data
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_id` | INTEGER | Foreign key to staged_file |
+| `row_id` | INTEGER | Row number in CSV |
+| *(dynamic columns)* | NUMERIC/TEXT | Columns from CSV |
+
+**Notes:**
+- Schema varies by file
+- Typically: peril, archetype, value_type, intensity, damage_factor, unit
+
+---
+
+### `staging_hazard_map`
+**Purpose:** Staged hazard map data
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `file_id` | INTEGER | Foreign key to staged_file |
+| `row_id` | INTEGER | Row number in CSV |
+| `location_id` | TEXT | Location identifier |
+| `latitude` | NUMERIC | Latitude |
+| `longitude` | NUMERIC | Longitude |
+| `period_1_intensity_m` to `period_5_intensity_m` | NUMERIC | Intensity values |
+| `period_1_variance` to `period_5_variance` | NUMERIC | Variance values |
+| `hazard_type` | TEXT | Hazard classification |
+| `unit` | TEXT | Intensity unit |
+
+---
+
+## Mapping Configuration Tables
+
+### `scenario_mapping`
+**Purpose:** Column mapping for scenario CSV import
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `mapping_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `file_id` | INTEGER | UNIQUE, NOT NULL, FOREIGN KEY → staged_file(file_id) | Source file reference |
+| `driver_column` | TEXT | | CSV column name for driver codes |
+| `value_columns` | TEXT | DEFAULT '[]' | JSON array of value column names |
+| `variable_mappings` | TEXT | DEFAULT '{}' | JSON: {csv_driver_name: db_driver_code} |
+| `scenario_column` | TEXT | | CSV column name for scenario |
+| `units_column` | TEXT | | CSV column name for units |
+
+**Indexes:**
+- `idx_scenario_mapping_file` on `file_id`
+
+**Example `variable_mappings`:**
+```json
+{
+  "Revenue Growth": "REVENUE_GROWTH",
+  "COGS Margin": "COGS_MARGIN",
+  "OPEX Growth": "OPEX_GROWTH"
+}
+```
+
+---
+
+### `statement_mapping`
+**Purpose:** Column mapping for statement CSV import
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `mapping_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `file_id` | INTEGER | NOT NULL, FOREIGN KEY → staged_file(file_id) | Source file reference |
+| `template_code` | TEXT | NOT NULL | Target template code |
+| `statement_type` | TEXT | CHECK IN ('pl', 'bs', 'cf', 'carbon') | Statement type |
+| `company_id` | TEXT | | Company identifier |
+| `column_mapping` | TEXT | DEFAULT '{}' | JSON: {csv_column: line_item_code} |
+
+**Indexes:**
+- `idx_statement_mapping_file` on `file_id`
+- `idx_statement_mapping_template` on `template_code`
+
+---
+
+### `location_mapping_config`
+**Purpose:** Column mapping for location CSV import
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `mapping_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `file_id` | INTEGER | NOT NULL, FOREIGN KEY → staged_file(file_id) | Source file reference |
+| `identifier_column` | TEXT | NOT NULL | CSV column for location ID |
+| `latitude_column` | TEXT | | CSV column for latitude |
+| `longitude_column` | TEXT | | CSV column for longitude |
+| `entity_column` | TEXT | | CSV column for entity code |
+| `value_columns` | TEXT | DEFAULT '{}' | JSON: {value_type: csv_column} |
+| `entity_mappings` | TEXT | DEFAULT '{}' | JSON: {csv_entity: db_entity_code} |
+| `archetype_column` | TEXT | | CSV column for archetype |
+| `unit_column` | TEXT | | CSV column for units |
+
+**Indexes:**
+- `idx_location_mapping_file` on `file_id`
+
+**Example `value_columns`:**
+```json
+{
+  "PPE": "PPE",
+  "BI": "BI",
+  "inventory": "inventory"
+}
+```
+
+---
+
+### `damage_curve_mapping`
+**Purpose:** Column mapping for damage curve CSV import
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `mapping_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `file_id` | INTEGER | NOT NULL, FOREIGN KEY → staged_file(file_id) | Source file reference |
+| `column_mapping` | TEXT | DEFAULT '{}' | JSON: {csv_column: schema_field} |
+| `peril_driver_mapping` | TEXT | DEFAULT '{}' | JSON: {peril_type: driver_code} |
+
+**Indexes:**
+- `idx_damage_curve_mapping_file` on `file_id`
+
+**Example `peril_driver_mapping`:**
+```json
+{
+  "FLOOD": "FLOOD_INTENSITY",
+  "HURRICANE": "WIND_SPEED",
+  "WILDFIRE": "FIRE_INTENSITY"
+}
+```
+
+---
+
+## Utility Tables
+
+### `saved_runs`
+**Purpose:** Stores calculation snapshots for restore/replay
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `run_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
+| `run_name` | TEXT | NOT NULL | User-provided name |
+| `run_description` | TEXT | | Description |
+| `config_data` | TEXT | NOT NULL | JSON: scenario_id, template_id, entity_id, periods |
+| `snapshot_data` | TEXT | NOT NULL | JSON: complete results snapshot |
+| `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Indexes:**
+- `idx_saved_runs_name` on `run_name`
+- `idx_saved_runs_created` on `created_at`
+
+**Notes:**
+- Enables saving complete calculation state
+- Can restore and compare historical runs
+- `snapshot_data` contains all statement_result rows
+
+---
+
+## Views
+
+### `v_latest_pl_results`
+**Purpose:** Latest P&L results with metadata
+
+```sql
+CREATE VIEW v_latest_pl_results AS
+SELECT
+  p.result_id,
+  p.scenario_id,
+  s.code AS scenario_code,
+  s.name AS scenario_name,
+  p.period_id,
+  per.label AS period_label,
+  p.entity_id,
+  e.code AS entity_code,
+  e.name AS entity_name,
+  p.revenue,
+  p.ebitda,
+  p.net_income,
+  p.calculated_at
+FROM pl_result p
+INNER JOIN scenario s ON p.scenario_id = s.scenario_id
+INNER JOIN period per ON p.period_id = per.period_id
+INNER JOIN entity e ON p.entity_id = e.entity_id
+ORDER BY p.calculated_at DESC;
+```
+
+---
+
+### `v_scenario_summary`
+**Purpose:** Scenario execution summary
+
+```sql
+CREATE VIEW v_scenario_summary AS
+SELECT
+  s.scenario_id,
+  s.code,
+  s.name,
+  COUNT(DISTINCT sr.period_id) AS periods_calculated,
+  MAX(sr.calculated_at) AS last_run
+FROM scenario s
+LEFT JOIN statement_result sr ON s.scenario_id = sr.scenario_id
+GROUP BY s.scenario_id, s.code, s.name;
+```
+
+**Notes:**
+- Older view may reference non-existent run_log table
+- Consider rebuilding to use statement_result
+
+---
+
+### `v_fx_rates`
+**Purpose:** Bidirectional FX rates
+
+```sql
+CREATE VIEW v_fx_rates AS
+SELECT
+  rate_id,
+  scenario_id,
+  period_id,
+  from_currency,
+  to_currency,
+  rate,
+  created_at
+FROM fx_rate
+
+UNION ALL
+
+SELECT
+  rate_id,
+  scenario_id,
+  period_id,
+  to_currency AS from_currency,
+  from_currency AS to_currency,
+  1.0 / rate AS rate,
+  created_at
+FROM fx_rate
+WHERE rate > 0;
+```
+
+**Notes:**
+- Provides inverse rates automatically
+- Enables querying rates in both directions
 
 ---
 
 ## Schema Evolution
 
-### Migration Strategy
-1. **Version tracking:** All schema changes logged in `schema_version` table
-2. **Backward compatibility:** Additive changes preferred (new columns with defaults)
-3. **Breaking changes:** Major version bump (e.g., 1.x → 2.0)
-4. **Migration scripts:** Stored in `scripts/migrations/` directory
+### Recent Changes (Since 2025-10-10)
 
-### Planned Migrations
-- **v1.1.0:** Add intercompany elimination tables for portfolio consolidation
-- **v1.2.0:** Add stochastic correlation matrices (time-varying)
-- **v1.3.0:** Add LLM mapping cache tables
+**New Tables:**
+1. `scenario_drivers` - Explicit driver storage
+2. `statement_result_by_driver` - Driver decomposition
+3. `unit_definition` - Unit conversion system
+4. `management_action` - Action catalog
+5. `action_trigger` - Action triggers
+6. `action_transformation` - Formula transformations
+7. `scenario_action` - Actions per scenario
+8. `mac_curve_point` - MAC curve results
+9. `saved_runs` - Calculation snapshots
+10. `hazard_map_scenario` - Hazard map data
+11. `hazard_map_mapping` - Hazard map config
+
+**Modified Tables:**
+- `scenario` - Added statement_template_id, tax_strategy_id, base_currency, enable_lineage_tracking
+- `entity` - Added base_currency
+- `statement_template` - Added 'unified', 'carbon' types
+- `staged_file` - Added csv_content
+
+**Architecture Changes:**
+- Unified engine replaces separate pl_engine, bs_engine, cf_engine
+- Single statement_result table replaces separate result tables
+- Driver decomposition support added
+- Physical risk fully implemented
+- Management actions with MAC curves implemented
 
 ---
 
 ## Relationships Diagram
 
 ```
-┌─────────────┐
-│  scenario   │───┐
-└─────────────┘   │
-                  ├──→ pl_result ──┐
-┌─────────────┐   │                │
-│   period    │───┤                ├──→ calculation_lineage
-└─────────────┘   │                │
-                  ├──→ bs_result ──┤
-┌─────────────┐   │                │
-│   entity    │───┘                │
-└─────────────┘   │                │
-      │           └──→ cf_result ──┘
-      │                    │
-      │                    └──→ run_result
-      │                              │
-      └──→ granularity_mapping       │
-      └──→ credit_exposure ──→ credit_result
-                                     │
-┌──────────────────┐                 │
-│ statement_       │                 │
-│   template       │                 │
-└──────────────────┘                 │
-                                     │
-┌─────────────┐                      │
-│   driver    │                      │
-└─────────────┘                      │
-                                     │
-┌──────────────────┐                 │
-│ transition_      │──→ mac_curve_result
-│   lever          │                 │
-└──────────────────┘                 │
-                                     │
-┌──────────────────┐                 │
-│ carbon_          │                 │
-│   emissions      │                 │
-└──────────────────┘                 │
-                                     │
-┌──────────────────┐                 │
-│ funding_policy   │                 │
-│ capex_policy     │                 │
-│ wc_policy        │                 │
-└──────────────────┘                 │
-                                     │
-┌──────────────────┐                 │
-│ aggregation_     │                 │
-│   rule           │                 │
-└──────────────────┘                 │
-                                     │
-┌──────────────────┐                 │
-│ run_log          │←────────────────┘
-│                  │
-│  ├──→ run_result (links to pl/bs/cf_result)
-│  │
-│  ├──→ run_input_snapshot (archives all inputs)
-│  │
-│  └──→ run_output_snapshot (archives summaries)
+┌──────────────┐
+│  scenario    │───┐
+└──────────────┘   │
+                   ├──→ scenario_drivers
+┌──────────────┐   │     (period_id, driver_code, value)
+│   period     │───┤
+└──────────────┘   │
+                   ├──→ statement_result
+┌──────────────┐   │     (line_item_code, value)
+│   entity     │───┤
+└──────────────┘   │     ├──→ statement_result_by_driver
+      │            │          (driver_code, value)
+      │            │
+      └──→ location         └──→ physical_risk_result
+           (lat, lng, values)    (peril, damage)
+
+┌──────────────────┐
+│ statement_       │───→ Used by unified_engine
+│   template       │     for calculation
 └──────────────────┘
 
 ┌──────────────────┐
-│ schema_version   │
+│ management_      │───→ scenario_action
+│   action         │     ├──→ action_trigger
+└──────────────────┘     └──→ action_transformation
+
+┌──────────────────┐
+│ damage_curve     │───→ Used by physical_risk_engine
+│                  │     with location + intensity
+└──────────────────┘     → damage_amount
+
+┌──────────────────┐
+│ unit_definition  │───→ Used for conversions
+│                  │     (CARBON, CURRENCY, etc.)
 └──────────────────┘
+
+┌──────────────────┐
+│ fx_rate          │───→ Used for currency conversion
+└──────────────────┘     (scenario-specific rates)
+
+┌──────────────────┐
+│ saved_runs       │───→ Snapshots of statement_result
+└──────────────────┘
+
+┌──────────────────┐
+│ staged_file      │───→ staging_scenario_*
+│                  │     staging_statement_*
+│                  │     staging_location
+│                  │     staging_damage_curve
+│                  │     staging_hazard_map
+└──────────────────┘
+
+Mapping Tables:
+  scenario_mapping
+  statement_mapping
+  location_mapping_config
+  damage_curve_mapping
+  hazard_map_mapping
 ```
-
----
-
-## Archiving & Reproducibility Workflow
-
-The archiving system ensures complete reproducibility of any historical run through three linked tables: `run_result`, `run_input_snapshot`, and `run_output_snapshot`.
-
-### Run Lifecycle
-
-```
-1. RUN START
-   ├─ INSERT INTO run_log (status='running', json_config=...)
-   ├─ run_id generated
-   │
-2. ARCHIVE INPUTS
-   ├─ INSERT INTO run_input_snapshot (run_id, input_type='scenario_config', json_data=...)
-   ├─ INSERT INTO run_input_snapshot (run_id, input_type='driver_values', json_data=...)
-   ├─ INSERT INTO run_input_snapshot (run_id, input_type='opening_balance_sheet', json_data=...)
-   ├─ INSERT INTO run_input_snapshot (run_id, input_type='policy_config', json_data=...)
-   ├─ INSERT INTO run_input_snapshot (run_id, input_type='template', json_data=...)
-   └─ INSERT INTO run_input_snapshot (run_id, input_type='base_data', json_data=...)
-   │
-3. EXECUTE CALCULATIONS
-   ├─ Generate pl_result records
-   ├─ Generate bs_result records
-   ├─ Generate cf_result records
-   └─ Generate calculation_lineage records
-   │
-4. LINK RESULTS TO RUN
-   ├─ INSERT INTO run_result (run_id, result_type='pl', result_id=...)
-   ├─ INSERT INTO run_result (run_id, result_type='bs', result_id=...)
-   └─ INSERT INTO run_result (run_id, result_type='cf', result_id=...)
-   │
-5. ARCHIVE OUTPUTS
-   ├─ INSERT INTO run_output_snapshot (run_id, output_type='pl_summary', json_data=...)
-   ├─ INSERT INTO run_output_snapshot (run_id, output_type='bs_summary', json_data=...)
-   ├─ INSERT INTO run_output_snapshot (run_id, output_type='cf_summary', json_data=...)
-   ├─ INSERT INTO run_output_snapshot (run_id, output_type='kpi_summary', json_data=...)
-   ├─ INSERT INTO run_output_snapshot (run_id, output_type='validation_report', json_data=...)
-   └─ INSERT INTO run_output_snapshot (run_id, output_type='convergence_log', json_data=...)
-   │
-6. RUN COMPLETE
-   └─ UPDATE run_log SET status='completed', completed_at=NOW()
-```
-
-### Reproducing a Historical Run
-
-To fully reproduce run #42:
-
-```sql
--- 1. Get run metadata
-SELECT scenario_id, started_at, json_config
-FROM run_log
-WHERE run_id = 42;
-
--- 2. Retrieve all inputs
-SELECT input_type, data_source, json_data, file_hash
-FROM run_input_snapshot
-WHERE run_id = 42
-ORDER BY input_type;
-
--- 3. Get all results generated
-SELECT result_type, result_id
-FROM run_result
-WHERE run_id = 42;
-
--- 4. Retrieve detailed P&L results
-SELECT p.*
-FROM pl_result p
-INNER JOIN run_result rr ON rr.result_id = p.result_id AND rr.result_type = 'pl'
-WHERE rr.run_id = 42
-ORDER BY p.period_id;
-
--- 5. Get output summaries
-SELECT output_type, json_data, created_at
-FROM run_output_snapshot
-WHERE run_id = 42
-ORDER BY output_type;
-
--- 6. Verify calculation lineage
-SELECT cl.*
-FROM calculation_lineage cl
-INNER JOIN run_result rr ON rr.result_id = cl.result_id AND rr.result_type = cl.result_type
-WHERE rr.run_id = 42;
-```
-
-### Data Retention Policies
-
-The CASCADE delete on foreign keys enables clean data retention:
-
-```sql
--- Delete all run data (inputs, outputs, results, lineage)
--- Single command cascades through all related tables
-DELETE FROM run_log WHERE run_id = 42;
-
--- Archive runs older than 1 year (keep only summary snapshots)
-DELETE FROM run_log
-WHERE status = 'completed'
-  AND completed_at < date('now', '-1 year');
-
--- Selective cleanup: keep input snapshots, delete detailed results
-DELETE FROM run_result WHERE run_id IN (
-  SELECT run_id FROM run_log
-  WHERE completed_at < date('now', '-90 days')
-);
-```
-
-### File Hash Verification
-
-Input snapshots track file hashes to detect configuration drift:
-
-```sql
--- Check if input files have changed since run #42
-SELECT
-  ris.input_type,
-  ris.data_source,
-  ris.file_hash AS original_hash,
-  -- Compare with current file hash (computed by application)
-  ris.created_at
-FROM run_input_snapshot ris
-WHERE ris.run_id = 42
-  AND ris.file_hash IS NOT NULL;
-```
-
-If hashes differ, the run cannot be exactly reproduced unless original files are archived separately (e.g., in S3 with versioning).
-
----
-
-## Data Types Reference
-
-### SQLite Type Mapping
-- `INTEGER`: 64-bit signed integer
-- `NUMERIC`: Flexible numeric storage (exact for decimals)
-- `TEXT`: UTF-8 encoded string
-- `REAL`: 64-bit floating point (avoid for financial data)
-
-### JSON Storage
-- All JSON columns use SQLite's JSON1 extension
-- Query with `json_extract(column, '$.key')` or `column->>'$.key'`
-- Validate with `json_valid(column)`
-
-### Date/Time Storage
-- All timestamps stored as TEXT in ISO 8601 format: `YYYY-MM-DDTHH:MM:SS.sssZ`
-- Query with SQLite date functions: `date()`, `datetime()`, `julianday()`
-
----
-
-## Validation Rules
-
-### Referential Integrity
-- All foreign keys enforced with `PRAGMA foreign_keys = ON`
-- Cascade deletes configured where appropriate (e.g., delete scenario → delete results)
-
-### Business Rules
-1. **Balance Sheet:** `total_assets ≈ total_liabilities + total_equity` (within 0.01 tolerance)
-2. **Cash Flow:** `net_cf ≈ cash(t) - cash(t-1)` from BS
-3. **Aggregation:** Sum of detailed granularity ≈ coarse granularity (within tolerance)
-4. **MAC Curve:** `cost_per_tco2` must be non-negative
-5. **Carbon:** `emissions_tco2e >= 0` for all scopes
-
-### Constraints
-- Check constraints enforce data integrity (e.g., `CHECK(period_index >= 0)`)
-- Unique constraints prevent duplicates (e.g., `UNIQUE(code)` on driver, scenario)
-- Not null constraints ensure required fields populated
 
 ---
 
 ## Performance Considerations
 
 ### Index Strategy
-- Indexes created on foreign keys for join performance
-- Composite indexes for common query patterns (e.g., `scenario_id, period_id`)
-- Avoid over-indexing: indexes slow down INSERT/UPDATE
+- Compound indexes on frequent join patterns (scenario_id, period_id, entity_id)
+- Unique constraints for data integrity
+- Covering indexes for common queries
 
 ### Query Optimization
 - Use `EXPLAIN QUERY PLAN` to analyze slow queries
-- Consider materialized views for complex aggregations (M4+)
-- Pagination via `LIMIT/OFFSET` or cursor-based for large result sets
+- statement_result table enables efficient single-table queries
+- Indexes support both drill-down (by entity) and roll-up (aggregation)
 
-### Data Volumes
-- **Scenario:** 10-100 scenarios typical
-- **Period:** 40-100 periods (10 years monthly/quarterly)
-- **pl_result:** 10 scenarios × 40 periods × 100 entities × 10 granularities = 400K rows
-- **Total DB size estimate:** 50-200 MB for typical use case
+### Data Volumes (Typical)
+- **Scenarios:** 10-50
+- **Periods:** 5-60 (monthly/quarterly projections)
+- **Entities:** 1-100 (portfolio size)
+- **Locations:** 1-10,000 (for physical risk)
+- **statement_result rows:** scenarios × periods × entities × line_items (~10K-1M rows)
+- **Total DB size:** 50-500 MB for typical use cases
 
 ---
 
-**Last Reviewed:** 2025-10-10
+**Last Reviewed:** 2025-10-26
 **Maintainer:** Development Team
-**Next Review:** After M3 completion (Week 9)
+**Next Review:** After major feature additions
