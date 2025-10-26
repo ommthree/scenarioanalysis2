@@ -125,28 +125,49 @@ export default function Layout({ children }: LayoutProps) {
         {/* Header */}
         <div className="px-6 py-5 border-b border-border">
           <div style={{ paddingLeft: '0.5rem', paddingRight: '0.5rem' }}>
-            <Link to="/" style={{ textDecoration: 'none' }}>
-              <h1 className="text-2xl font-bold text-foreground mb-2 whitespace-nowrap" style={{ cursor: 'pointer' }}>
+            <Link
+              to="/"
+              style={{ textDecoration: 'none' }}
+              onMouseEnter={(e) => {
+                const h1 = e.currentTarget.querySelector('h1')
+                if (h1) h1.style.color = '#3b82f6'
+              }}
+              onMouseLeave={(e) => {
+                const h1 = e.currentTarget.querySelector('h1')
+                if (h1) h1.style.color = ''
+              }}
+            >
+              <h1 className="text-2xl font-bold text-foreground mb-2 whitespace-nowrap transition-colors" style={{ cursor: 'pointer' }}>
                 Financial Statement Model
               </h1>
             </Link>
-            <div className="flex items-center whitespace-nowrap" style={{ gap: '1rem' }}>
-              <p className="text-xs text-muted-foreground" style={{ marginLeft: '0.5rem' }}>Scenario Analysis Dashboard</p>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
-                className="h-6 px-2"
-                style={{
-                  backgroundColor: '#2563eb',
-                  border: 'none',
-                  boxShadow: 'none'
-                }}
-                title="Switch to Flowchart"
-              >
-                <GitBranch className="w-3.5 h-3.5" />
-              </Button>
-            </div>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
+              className="h-6 px-3 transition-all flex items-center whitespace-nowrap"
+              style={{
+                backgroundColor: '#2563eb',
+                border: 'none',
+                boxShadow: 'none',
+                cursor: 'pointer',
+                marginLeft: '0.5rem',
+                marginBottom: '0.5rem',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#1d4ed8'
+                e.currentTarget.style.transform = 'scale(1.02)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#2563eb'
+                e.currentTarget.style.transform = 'scale(1)'
+              }}
+              title="Switch to Flowchart"
+            >
+              <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Scenario Analysis Dashboard</span>
+              <GitBranch className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </div>
 

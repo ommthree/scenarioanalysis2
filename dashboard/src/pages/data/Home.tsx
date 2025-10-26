@@ -76,7 +76,7 @@ export default function Home() {
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))',
           gap: '32px',
           marginTop: '48px',
           textAlign: 'left'
@@ -89,7 +89,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -113,7 +113,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -137,7 +137,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -161,7 +161,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -185,7 +185,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -209,7 +209,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -233,7 +233,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -257,7 +257,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
@@ -281,7 +281,7 @@ export default function Home() {
             padding: '24px'
           }}>
             <h3 style={{
-              fontSize: '18px',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#3b82f6',
               marginBottom: '12px'
