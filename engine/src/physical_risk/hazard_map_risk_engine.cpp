@@ -100,9 +100,28 @@ std::vector<Location> HazardMapRiskEngine::load_locations() {
         return {};
     }
 
+    // Get the staging table name from staging_metadata
+    auto staging_result = db_->execute_query(
+        "SELECT staging_table_name FROM staging_metadata "
+        "WHERE file_id = :file_id AND data_type = 'location'",
+        {{"file_id", file_id}}
+    );
+
+    std::string staging_table_name;
+    if (staging_result->next()) {
+        staging_table_name = staging_result->get_string("staging_table_name");
+    }
+
+    if (staging_table_name.empty()) {
+        std::cout << "[Hazard Map Risk] No staging table found for file_id " << file_id << std::endl;
+        return {};
+    }
+
+    std::cout << "[Hazard Map Risk] Using staging table: " << staging_table_name << std::endl;
+
     // Build dynamic query with only the value type columns we need
     // Note: location.location_code may have a prefix like "LOC_" added
-    // We need to strip it to match staging_location.ID
+    // We need to strip it to match staging table ID column
     std::ostringstream query;
     query << "SELECT l.location_id, l.location_code, l.latitude, l.longitude, "
           << "       l.entity_id, l.archetype";
@@ -113,12 +132,11 @@ std::vector<Location> HazardMapRiskEngine::load_locations() {
     }
 
     query << " FROM location l "
-          << "JOIN staging_location sl ON sl.ID = REPLACE(l.location_code, 'LOC_', '') "
-          << "WHERE sl.file_id = :file_id";
+          << "JOIN \"" << staging_table_name << "\" sl ON sl.ID = REPLACE(l.location_code, 'LOC_', '')";
 
     std::cout << "[Hazard Map Risk] Loading locations with query: " << query.str() << std::endl;
 
-    auto result = db_->execute_query(query.str(), {{"file_id", file_id}});
+    auto result = db_->execute_query(query.str(), {});
 
     std::vector<Location> locations;
     while (result->next()) {
@@ -212,14 +230,33 @@ HazardMapRiskEngine::load_hazard_map_data(int scenario_id, int period) {
         std::string intensity_col = intensity_cols[period - 1];
         std::string variance_col = variance_cols[period - 1];
 
-        // Load grid data from staging_hazard_map
+        // Get the staging table name from staging_metadata
+        auto staging_result = db_->execute_query(
+            "SELECT staging_table_name FROM staging_metadata "
+            "WHERE file_id = :file_id AND data_type = 'hazard_map'",
+            {{"file_id", file_id}}
+        );
+
+        std::string staging_table_name;
+        if (staging_result->next()) {
+            staging_table_name = staging_result->get_string("staging_table_name");
+        }
+
+        if (staging_table_name.empty()) {
+            std::cout << "[Hazard Map Risk] No staging table found for hazard map file_id "
+                      << file_id << std::endl;
+            continue;
+        }
+
+        std::cout << "[Hazard Map Risk] Using staging table: " << staging_table_name << std::endl;
+
+        // Load grid data from dynamic staging table
         std::string query =
             "SELECT latitude, longitude, " + intensity_col + " as intensity, " +
             variance_col + " as variance "
-            "FROM staging_hazard_map "
-            "WHERE file_id = :fid";
+            "FROM \"" + staging_table_name + "\"";
 
-        auto grid_result = db_->execute_query(query, {{"fid", file_id}});
+        auto grid_result = db_->execute_query(query, {});
 
         std::vector<HazardGridPoint> grid_points;
         while (grid_result->next()) {

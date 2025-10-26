@@ -1889,7 +1889,9 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
               res.status(500).json({ error: 'Failed to delete: ' + err.message })
             })
         } else if (fileType === 'damage_curve') {
-          // Delete damage curve mapping, staging data, and file
+          // Delete damage curve mapping, staging table, and file using StagingService
+          const stagingService = new StagingService(db)
+
           new Promise((resolve, reject) => {
             db.run(
               `DELETE FROM damage_curve_mapping WHERE file_id = ?`,
@@ -1900,20 +1902,13 @@ app.delete('/api/staged-files/:fileId', (req, res) => {
               }
             )
           })
-            .then(() => {
-              // Delete staging data
-              return new Promise((resolve, reject) => {
-                db.run(
-                  `DELETE FROM staging_damage_curve WHERE file_id = ?`,
-                  [fileId],
-                  (err) => {
-                    if (err) {
-                      console.warn(`Warning: Failed to delete staging_damage_curve for file_id ${fileId}:`, err.message)
-                    }
-                    resolve()
-                  }
-                )
-              })
+            .then(async () => {
+              // Get staging table name and drop it
+              const stagingInfo = await stagingService.getStagingInfoByFileId(fileId, 'damage_curve')
+              if (stagingInfo) {
+                await stagingService.deleteStagingTable(stagingInfo.staging_id)
+                console.log(`Deleted staging table ${stagingInfo.staging_table_name} for damage curve file_id ${fileId}`)
+              }
             })
             .then(() => {
               return new Promise((resolve, reject) => {
@@ -2919,15 +2914,13 @@ app.post('/api/locations/load', upload.single('file'), async (req, res) => {
     )
 
     // 3. Insert data into staging table
-    // Store file_id in first column for backward compatibility
-    const allColumns = ['file_id', ...sanitizedColumns]
-    const placeholders = allColumns.map(() => '?').join(', ')
-    const columnNames = allColumns.map(c => security.quoteIdentifier(c)).join(', ')
+    const placeholders = sanitizedColumns.map(() => '?').join(', ')
+    const columnNames = sanitizedColumns.map(c => security.quoteIdentifier(c)).join(', ')
     const insertSql = `INSERT INTO ${security.quoteIdentifier(tableName)} (${columnNames}) VALUES (${placeholders})`
 
     const stmt = db.prepare(insertSql)
     for (const record of records) {
-      const values = [fileId, ...columns.map(col => record[col])]
+      const values = columns.map(col => record[col])
       await new Promise((resolve, reject) => {
         stmt.run(values, (err) => {
           if (err) reject(err)
@@ -2978,10 +2971,19 @@ app.post('/api/locations/load', upload.single('file'), async (req, res) => {
  */
 app.get('/api/locations/staging-preview', (req, res) => {
   try {
-    const { dbPath, limit = 10 } = req.query
+    const { dbPath, tableName, limit = 10 } = req.query
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ error: 'Missing tableName parameter' })
+    }
+
+    // Validate table name format for security
+    if (!/^staging_location_\d+$/.test(tableName)) {
+      return res.status(400).json({ error: 'Invalid table name format' })
     }
 
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
@@ -2991,7 +2993,7 @@ app.get('/api/locations/staging-preview', (req, res) => {
     })
 
     db.all(
-      `SELECT * FROM staging_location LIMIT ?`,
+      `SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?`,
       [limit],
       (err, rows) => {
         db.close()
@@ -3065,9 +3067,9 @@ app.get('/api/locations/staging-full', (req, res) => {
       return res.status(400).json({ error: 'Missing tableName parameter' })
     }
 
-    // Validate table name (should be staging_location)
-    if (tableName !== 'staging_location') {
-      return res.status(400).json({ error: 'Invalid table name - expected staging_location' })
+    // Validate table name format for security
+    if (!/^staging_location(_\d+)?$/.test(tableName)) {
+      return res.status(400).json({ error: 'Invalid table name format' })
     }
 
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
@@ -3118,12 +3120,18 @@ app.get('/api/locations/staging-tables', (req, res) => {
       }
     })
 
-    // Get all staged location files
+    // Get all staged location files with their staging table names from staging_metadata
     db.all(
-      `SELECT file_id, file_name, row_count, uploaded_at
-       FROM staged_file
-       WHERE file_type = 'location'
-       ORDER BY uploaded_at DESC`,
+      `SELECT
+        sf.file_id,
+        sf.file_name,
+        sf.row_count,
+        sf.uploaded_at,
+        sm.staging_table_name
+       FROM staged_file sf
+       LEFT JOIN staging_metadata sm ON sf.file_id = sm.file_id
+       WHERE sf.file_type = 'location'
+       ORDER BY sf.uploaded_at DESC`,
       [],
       (err, files) => {
         if (err) {
@@ -3131,11 +3139,11 @@ app.get('/api/locations/staging-tables', (req, res) => {
           return res.status(500).json({ error: 'Failed to fetch staged files: ' + err.message })
         }
 
-        // Return file info with table name
+        // Return file info with actual table names from staging_metadata
         const tables = files.map(file => ({
           fileId: file.file_id,
           fileName: file.file_name,
-          tableName: 'staging_location'  // All location files use the same staging table
+          tableName: file.staging_table_name || 'staging_location'  // Fallback for legacy files
         }))
 
         db.close()
@@ -3352,81 +3360,130 @@ app.post('/api/locations/ingest', async (req, res) => {
           entityMap[em.csv_entity_value] = em.entity_id
         })
 
-        // Clear existing locations for this file
-        db.run(
-          `DELETE FROM location WHERE location_code IN (
-            SELECT 'LOC_' || ID FROM staging_location WHERE file_id = ?
-          )`,
+        // Get the staging table name from staging_metadata
+        db.get(
+          `SELECT staging_table_name FROM staging_metadata WHERE file_id = ?`,
           [fileId],
-          (delErr) => {
-            if (delErr) {
-              console.error('[Location Ingestion] Error deleting old locations:', delErr)
+          (metaErr, metaResult) => {
+            if (metaErr) {
+              db.close()
+              return res.status(500).json({ error: 'Failed to find staging table: ' + metaErr.message })
             }
 
-            // Get all rows from staging_location for this file
+            if (!metaResult) {
+              db.close()
+              return res.status(400).json({ error: 'No staging table found for this file' })
+            }
+
+            const tableName = metaResult.staging_table_name
+            console.log('[Location Ingestion] Using staging table:', tableName)
+
+            // Validate table name format for security
+            if (!/^staging_location(_\d+)?$/.test(tableName)) {
+              db.close()
+              return res.status(400).json({ error: 'Invalid staging table name format' })
+            }
+
+            // Clear existing locations for this file (using identifier_column from mapping)
+            // Note: We can't use file_id in the staging table anymore since new tables don't have it
+            // Instead, we'll clear locations that match this batch and re-insert them
+            const identifierCol = mapping.identifier_column
+
+            // Get all staging data first to know what location_codes to delete
             db.all(
-              `SELECT * FROM staging_location WHERE file_id = ?`,
-              [fileId],
-              (err, rows) => {
-                if (err) {
+              `SELECT ${security.quoteIdentifier(identifierCol)} as identifier FROM ${security.quoteIdentifier(tableName)}`,
+              [],
+              (preErr, preRows) => {
+                if (preErr) {
                   db.close()
-                  return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+                  return res.status(500).json({ error: 'Failed to fetch identifiers: ' + preErr.message })
                 }
 
-                if (!rows || rows.length === 0) {
-                  db.close()
-                  return res.status(400).json({ error: 'No staging data found' })
-                }
+                const locationCodes = preRows.map(r => 'LOC_' + r.identifier)
 
-                console.log(`[Location Ingestion] Processing ${rows.length} locations`)
-
-                let inserted = 0
-                let errors = 0
-
-                // Process each row
-                const insertPromises = rows.map((row, index) => {
-                  return new Promise((resolve) => {
-                    // Get entity_id from the entity column
-                    const entityValue = row[mapping.entity_column]
-                    const entity_id = entityMap[entityValue]
-
-                    if (!entity_id) {
-                      console.warn(`[Location Ingestion] No entity mapping for value: ${entityValue}`)
-                    }
-
-                    // Build location_code with LOC_ prefix
-                    const location_code = 'LOC_' + row[mapping.identifier_column]
-                    const latitude = parseFloat(row[mapping.latitude_column])
-                    const longitude = parseFloat(row[mapping.longitude_column])
-                    const archetype = row[mapping.archetype_column] || 'Standard'
-
-                    db.run(
-                      `INSERT INTO location (location_code, latitude, longitude, entity_id, archetype, json_values)
-                       VALUES (?, ?, ?, ?, ?, ?)`,
-                      [location_code, latitude, longitude, entity_id, archetype, '{}'],
-                      function(insertErr) {
-                        if (insertErr) {
-                          console.error(`[Location Ingestion] Error inserting location ${location_code}:`, insertErr.message)
-                          errors++
-                        } else {
-                          inserted++
-                        }
-                        resolve()
+                // Delete old locations with these codes
+                if (locationCodes.length > 0) {
+                  const placeholders = locationCodes.map(() => '?').join(',')
+                  db.run(
+                    `DELETE FROM location WHERE location_code IN (${placeholders})`,
+                    locationCodes,
+                    (delErr) => {
+                      if (delErr) {
+                        console.error('[Location Ingestion] Error deleting old locations:', delErr)
                       }
-                    )
-                  })
-                })
 
-                Promise.all(insertPromises).then(() => {
+                      // Get all rows from the staging table
+                      db.all(
+                        `SELECT * FROM ${security.quoteIdentifier(tableName)}`,
+                        [],
+                        (err, rows) => {
+                          if (err) {
+                            db.close()
+                            return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+                          }
+
+                          if (!rows || rows.length === 0) {
+                            db.close()
+                            return res.status(400).json({ error: 'No staging data found' })
+                          }
+
+                          console.log(`[Location Ingestion] Processing ${rows.length} locations`)
+
+                          let inserted = 0
+                          let errors = 0
+
+                          // Process each row
+                          const insertPromises = rows.map((row, index) => {
+                            return new Promise((resolve) => {
+                              // Get entity_id from the entity column
+                              const entityValue = row[mapping.entity_column]
+                              const entity_id = entityMap[entityValue]
+
+                              if (!entity_id) {
+                                console.warn(`[Location Ingestion] No entity mapping for value: ${entityValue}`)
+                              }
+
+                              // Build location_code with LOC_ prefix
+                              const location_code = 'LOC_' + row[mapping.identifier_column]
+                              const latitude = parseFloat(row[mapping.latitude_column])
+                              const longitude = parseFloat(row[mapping.longitude_column])
+                              const archetype = row[mapping.archetype_column] || 'Standard'
+
+                              db.run(
+                                `INSERT INTO location (location_code, latitude, longitude, entity_id, archetype, json_values)
+                                 VALUES (?, ?, ?, ?, ?, ?)`,
+                                [location_code, latitude, longitude, entity_id, archetype, '{}'],
+                                function(insertErr) {
+                                  if (insertErr) {
+                                    console.error(`[Location Ingestion] Error inserting location ${location_code}:`, insertErr.message)
+                                    errors++
+                                  } else {
+                                    inserted++
+                                  }
+                                  resolve()
+                                }
+                              )
+                            })
+                          })
+
+                          Promise.all(insertPromises).then(() => {
+                            db.close()
+                            console.log(`[Location Ingestion] Complete: ${inserted} inserted, ${errors} errors`)
+                            res.json({
+                              success: true,
+                              inserted,
+                              errors,
+                              message: `Ingested ${inserted} locations from staging`
+                            })
+                          })
+                        }
+                      )
+                    }
+                  )
+                } else {
                   db.close()
-                  console.log(`[Location Ingestion] Complete: ${inserted} inserted, ${errors} errors`)
-                  res.json({
-                    success: true,
-                    inserted,
-                    errors,
-                    message: `Ingested ${inserted} locations from staging`
-                  })
-                })
+                  res.status(400).json({ error: 'No locations found in staging table' })
+                }
               }
             )
           }
@@ -3614,14 +3671,16 @@ app.post('/api/damage-curves/load-batch', upload.array('files'), async (req, res
 })
 
 /**
- * Load damage curve CSV into staging_damage_curve table
+ * Load damage curve CSV into unique staging table
  * POST /api/damage-curves/load
  * Body: dbPath
  * File: CSV file
+ * Refactored to use StagingService for unified staging architecture
  */
 app.post('/api/damage-curves/load', upload.single('file'), async (req, res) => {
   console.log('Received damage curve upload request')
 
+  let db
   try {
     const { dbPath } = req.body
     const file = req.file
@@ -3630,6 +3689,7 @@ app.post('/api/damage-curves/load', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
+    // Read and parse CSV
     const fileContent = fs.readFileSync(file.path, 'utf-8')
     const records = parse(fileContent, {
       columns: true,
@@ -3647,77 +3707,76 @@ app.post('/api/damage-curves/load', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: `Database not found at ${dbPath}` })
     }
 
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
-      if (err) {
-        fs.unlinkSync(file.path)
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-      }
+    // Get columns from first record
+    const columns = Object.keys(records[0])
+
+    // Connect to database
+    db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
+
+    // 1. Insert into staged_file table
+    const fileResult = await stagingService.dbRun(`
+      INSERT INTO staged_file (file_name, file_type, row_count, csv_content)
+      VALUES (?, ?, ?, ?)
+    `, [file.originalname, 'damage_curve', records.length, fileContent])
+
+    const fileId = fileResult.lastID
+
+    // 2. Create staging table with metadata tracking
+    const { stagingId, tableName } = await stagingService.createStagingTable(
+      'damage_curve',
+      fileId,
+      file.originalname,
+      columns
+    )
+
+    // 3. Insert data into staging table
+    const placeholders = columns.map(() => '?').join(', ')
+    const columnNames = columns.map(c => security.quoteIdentifier(c)).join(', ')
+    const insertSql = `INSERT INTO ${security.quoteIdentifier(tableName)} (${columnNames}) VALUES (${placeholders})`
+
+    const stmt = db.prepare(insertSql)
+    for (const record of records) {
+      const values = columns.map(col => record[col])
+      await new Promise((resolve, reject) => {
+        stmt.run(values, (err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    }
+
+    await new Promise((resolve, reject) => {
+      stmt.finalize((err) => {
+        if (err) reject(err)
+        else resolve()
+      })
     })
 
-    db.serialize(() => {
-      // Insert file record
-      db.run(
-        `INSERT INTO staged_file (file_name, file_type, row_count) VALUES (?, 'damage_curve', ?)`,
-        [file.originalname, records.length],
-        function(err) {
-          if (err) {
-            db.close()
-            fs.unlinkSync(file.path)
-            return res.status(500).json({ error: 'Failed to record file' })
-          }
+    // 4. Update row count and status in staging metadata
+    await stagingService.updateRowCount(stagingId, records.length)
+    await stagingService.updateStatus(stagingId, 'pending')
 
-          const fileId = this.lastID
-          const columns = Object.keys(records[0])
-          const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ')
+    // Cleanup
+    db.close()
+    fs.unlinkSync(file.path)
 
-          db.run(`DROP TABLE IF EXISTS ${security.quoteIdentifier('staging_damage_curve')}`)
-
-          db.run(`CREATE TABLE staging_damage_curve (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_id INTEGER,
-            ${columnDefs},
-            imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            is_mapped INTEGER DEFAULT 0,
-            FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
-          )`, (err) => {
-            if (err) {
-              db.close()
-              fs.unlinkSync(file.path)
-              return res.status(500).json({ error: 'Failed to create staging table' })
-            }
-
-            const placeholders = columns.map(() => '?').join(', ')
-            const columnNames = columns.map(c => `"${c}"`).join(', ')
-            const stmt = db.prepare(
-              `INSERT INTO staging_damage_curve (file_id, ${columnNames}) VALUES (?, ${placeholders})`
-            )
-
-            let inserted = 0
-            for (const record of records) {
-              const values = [fileId, ...columns.map(col => record[col])]
-              stmt.run(values, (err) => {
-                if (err) console.error('Insert error:', err)
-                inserted++
-                if (inserted === records.length) {
-                  stmt.finalize()
-                  db.close()
-                  fs.unlinkSync(file.path)
-                  res.json({
-                    success: true,
-                    fileId,
-                    rowCount: records.length,
-                    columns
-                  })
-                }
-              })
-            }
-          })
-        }
-      )
+    res.json({
+      success: true,
+      message: `Successfully loaded ${records.length} damage curve records into staging area.`,
+      rowCount: records.length,
+      tableName: tableName,
+      stagingId: stagingId,
+      fileId: fileId,
+      columns: columns
     })
+
   } catch (error) {
     console.error('Load damage curve error:', error)
-    if (req.file) fs.unlinkSync(req.file.path)
+    if (db) db.close()
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path)
+    }
     res.status(500).json({ error: error.message })
   }
 })
@@ -3725,14 +3784,19 @@ app.post('/api/damage-curves/load', upload.single('file'), async (req, res) => {
 /**
  * Get damage curve staging data preview
  * GET /api/damage-curves/staging-preview
- * Query params: dbPath, limit (optional)
+ * Query params: dbPath, fileId, limit (optional)
+ * Refactored to use dynamic staging table names from staging_metadata
  */
 app.get('/api/damage-curves/staging-preview', (req, res) => {
   try {
-    const { dbPath, limit = 100 } = req.query
+    const { dbPath, fileId, limit = 100 } = req.query
 
-    if (!dbPath || !fs.existsSync(dbPath)) {
-      return res.status(400).json({ error: 'Invalid database path' })
+    if (!dbPath || !fileId) {
+      return res.status(400).json({ error: 'Missing required fields (dbPath, fileId)' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
     }
 
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
@@ -3741,15 +3805,41 @@ app.get('/api/damage-curves/staging-preview', (req, res) => {
       }
     })
 
-    db.all(
-      `SELECT * FROM staging_damage_curve LIMIT ?`,
-      [limit],
-      (err, rows) => {
-        db.close()
-        if (err) {
-          return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+    // Get the staging table name from staging_metadata
+    db.get(
+      `SELECT staging_table_name FROM staging_metadata WHERE file_id = ?`,
+      [fileId],
+      (metaErr, metaResult) => {
+        if (metaErr) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to find staging table: ' + metaErr.message })
         }
-        res.json({ success: true, data: rows })
+
+        if (!metaResult) {
+          db.close()
+          return res.status(400).json({ error: 'No staging table found for this file' })
+        }
+
+        const tableName = metaResult.staging_table_name
+
+        // Validate table name format for security
+        if (!/^staging_damage_curve(_\d+)?$/.test(tableName)) {
+          db.close()
+          return res.status(400).json({ error: 'Invalid staging table name format' })
+        }
+
+        // Query the dynamic staging table
+        db.all(
+          `SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?`,
+          [limit],
+          (err, rows) => {
+            db.close()
+            if (err) {
+              return res.status(500).json({ error: 'Failed to fetch staging data: ' + err.message })
+            }
+            res.json({ success: true, data: rows })
+          }
+        )
       }
     )
   } catch (error) {
@@ -4560,14 +4650,16 @@ app.put('/api/validation-rules/:ruleId', (req, res) => {
 })
 
 /**
- * Load hazard map CSV into staging_hazard_map table
+ * Load hazard map CSV into unique staging table
  * POST /api/hazard-maps/load
  * Body: dbPath
  * File: CSV file
+ * Refactored to use StagingService for unified staging architecture
  */
 app.post('/api/hazard-maps/load', upload.single('file'), async (req, res) => {
   console.log('Received hazard map upload request')
 
+  let db
   try {
     const { dbPath } = req.body
     const file = req.file
@@ -4594,134 +4686,90 @@ app.post('/api/hazard-maps/load', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: `Database not found at ${dbPath}` })
     }
 
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
-      if (err) {
-        fs.unlinkSync(file.path)
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    // Get columns and sanitize
+    const columns = Object.keys(records[0])
+    const sanitizedColumns = []
+    const seenColumns = new Map()
+    columns.forEach(col => {
+      let sanitized = col.replace(/[^a-zA-Z0-9_]/g, '_')
+      const lowerSanitized = sanitized.toLowerCase()
+      if (seenColumns.has(lowerSanitized)) {
+        const count = seenColumns.get(lowerSanitized)
+        sanitized = `${sanitized}_${count}`
+        seenColumns.set(lowerSanitized, count + 1)
+      } else {
+        seenColumns.set(lowerSanitized, 1)
       }
+      sanitizedColumns.push(sanitized)
     })
 
-    db.serialize(() => {
-      // Insert file record into staged_file
-      db.run(
-        `INSERT INTO staged_file (file_name, file_type, row_count) VALUES (?, 'hazard_map', ?)`,
-        [file.originalname, records.length],
-        function(err) {
-          if (err) {
-            console.error('Error inserting staged_file:', err)
-            db.close()
-            fs.unlinkSync(file.path)
-            return res.status(500).json({ error: 'Failed to record file' })
-          }
+    // Connect to database
+    db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE)
+    const stagingService = new StagingService(db)
 
-          const fileId = this.lastID
+    // 1. Insert into staged_file table
+    const fileResult = await stagingService.dbRun(`
+      INSERT INTO staged_file (file_name, file_type, row_count, csv_content)
+      VALUES (?, ?, ?, ?)
+    `, [file.originalname, 'hazard_map', records.length, fileContent])
 
-          // Create staging table with dynamic columns
-          const columns = Object.keys(records[0])
-          // Sanitize and deduplicate column names
-          const sanitizedColumns = []
-          const seenColumns = new Map()
-          columns.forEach(col => {
-            let sanitized = col.replace(/[^a-zA-Z0-9_]/g, '_')
-            const lowerSanitized = sanitized.toLowerCase()
-            if (seenColumns.has(lowerSanitized)) {
-              const count = seenColumns.get(lowerSanitized)
-              sanitized = `${sanitized}_${count}`
-              seenColumns.set(lowerSanitized, count + 1)
-            } else {
-              seenColumns.set(lowerSanitized, 1)
-            }
-            sanitizedColumns.push(sanitized)
-          })
-          const columnDefs = sanitizedColumns.map(col => `"${col}" TEXT`).join(', ')
+    const fileId = fileResult.lastID
 
-          // Check if staging_hazard_map table exists, create if not
-          db.get(`SELECT name FROM sqlite_master WHERE type='table' AND name='staging_hazard_map'`, (err, row) => {
-            if (err) {
-              console.error('Check table error:', err)
-              db.close()
-              fs.unlinkSync(file.path)
-              return res.status(500).json({ error: 'Failed to check staging table' })
-            }
+    // 2. Create staging table with metadata tracking
+    const { stagingId, tableName } = await stagingService.createStagingTable(
+      'hazard_map',
+      fileId,
+      file.originalname,
+      sanitizedColumns
+    )
 
-            const createTableIfNeeded = (callback) => {
-              if (!row) {
-                // Table doesn't exist, create it
-                db.run(`CREATE TABLE staging_hazard_map (
-                  staging_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  file_id INTEGER,
-                  ${columnDefs},
-                  imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                  is_mapped INTEGER DEFAULT 0,
-                  FOREIGN KEY (file_id) REFERENCES staged_file(file_id)
-                )`, callback)
-              } else {
-                // Table exists, just continue
-                callback(null)
-              }
-            }
+    // 3. Insert data into staging table
+    const placeholders = sanitizedColumns.map(() => '?').join(', ')
+    const columnNames = sanitizedColumns.map(c => security.quoteIdentifier(c)).join(', ')
+    const insertSql = `INSERT INTO ${security.quoteIdentifier(tableName)} (${columnNames}) VALUES (${placeholders})`
 
-            createTableIfNeeded((err) => {
-              if (err) {
-                console.error('Create table error:', err)
-                db.close()
-                fs.unlinkSync(file.path)
-                return res.status(500).json({ error: 'Failed to create staging table' })
-              }
+    const stmt = db.prepare(insertSql)
+    for (const record of records) {
+      const values = columns.map(col => record[col])
+      await new Promise((resolve, reject) => {
+        stmt.run(values, (err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    }
 
-              // Delete existing rows for this file_id before inserting new data
-              db.run(`DELETE FROM staging_hazard_map WHERE file_id = ?`, [fileId], (err) => {
-                if (err) {
-                  console.error('Delete old rows error:', err)
-                  db.close()
-                  fs.unlinkSync(file.path)
-                  return res.status(500).json({ error: 'Failed to delete old rows' })
-                }
+    await new Promise((resolve, reject) => {
+      stmt.finalize((err) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
 
-                // Insert records
-            const placeholders = sanitizedColumns.map(() => '?').join(', ')
-            const columnNames = sanitizedColumns.map(c => `"${c}"`).join(', ')
-            const stmt = db.prepare(
-              `INSERT INTO staging_hazard_map (file_id, ${columnNames}) VALUES (?, ${placeholders})`
-            )
+    // 4. Update row count and status in staging metadata
+    await stagingService.updateRowCount(stagingId, records.length)
+    await stagingService.updateStatus(stagingId, 'pending')
 
-            let inserted = 0
-            for (const record of records) {
-              const values = [fileId, ...columns.map(col => record[col])]
-              stmt.run(values, (err) => {
-                if (err) {
-                  console.error('Insert error:', err)
-                }
-              })
-              inserted++
-            }
+    // Cleanup
+    db.close()
+    fs.unlinkSync(file.path)
 
-            stmt.finalize((err) => {
-              if (err) {
-                console.error('Finalize error:', err)
-                db.close()
-                fs.unlinkSync(file.path)
-                return res.status(500).json({ error: 'Failed to insert records' })
-              }
+    console.log(`Successfully imported ${records.length} hazard map records`)
+    res.json({
+      success: true,
+      message: `Successfully imported ${records.length} records`,
+      rowCount: records.length,
+      tableName: tableName,
+      stagingId: stagingId,
+      fileId: fileId
+    })
 
-              db.close()
-              fs.unlinkSync(file.path)
-
-              console.log(`Successfully imported ${inserted} hazard map records`)
-              res.json({
-                success: true,
-                message: `Successfully imported ${inserted} records`,
-                rowCount: inserted,
-                fileId: fileId
-              })
-            }) // end stmt.finalize
-              }) // end db.run DELETE
-            }) // end createTableIfNeeded
-          }) // end db.get
-        }) // end db.run INSERT staged_file
-    }) // end db.serialize
   } catch (error) {
     console.error('Hazard map import error:', error)
+    if (db) db.close()
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path)
+    }
     res.status(500).json({ error: error.message })
   }
 })
@@ -7292,26 +7340,46 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
     for (const hazardMapLink of hazardMapLinks) {
       console.log(`[Physical Risk] Processing hazard map ${hazardMapLink.hazard_map_id} (peril: ${hazardMapLink.peril_type})`)
 
-      // Get file_id for this hazard map
-      const mapInfo = await dbAll(`
-        SELECT file_id FROM staging_hazard_map WHERE staging_id = ? LIMIT 1
+      // Get file_id for this hazard map from hazard_map_mapping table
+      // mapping_id is the primary key in hazard_map_mapping
+      const mapMappingInfo = await dbAll(`
+        SELECT file_id FROM hazard_map_mapping WHERE mapping_id = ?
       `, [hazardMapLink.hazard_map_id])
 
-      if (mapInfo.length === 0) {
-        console.log(`[Physical Risk] No hazard map found for mapping_id ${hazardMapLink.hazard_map_id}`)
+      if (mapMappingInfo.length === 0) {
+        console.log(`[Physical Risk] No hazard map mapping found for mapping_id ${hazardMapLink.hazard_map_id}`)
         continue
       }
 
-      const fileId = mapInfo[0].file_id
-      console.log(`[Physical Risk] Loading grid data for file_id ${fileId}...`)
+      const fileId = mapMappingInfo[0].file_id
 
-      // Get all grid points for this file_id
-      const hazardMapGrid = await dbAll(`
-        SELECT * FROM staging_hazard_map WHERE file_id = ?
+      // Get the staging table name from staging_metadata
+      const stagingInfo = await dbAll(`
+        SELECT staging_table_name FROM staging_metadata WHERE file_id = ? AND data_type = 'hazard_map'
       `, [fileId])
 
+      if (stagingInfo.length === 0) {
+        console.log(`[Physical Risk] No staging table found for file_id ${fileId}`)
+        continue
+      }
+
+      const stagingTableName = stagingInfo[0].staging_table_name
+
+      // Validate table name format for security
+      if (!/^staging_hazard_map(_\d+)?$/.test(stagingTableName)) {
+        console.log(`[Physical Risk] Invalid staging table name format: ${stagingTableName}`)
+        continue
+      }
+
+      console.log(`[Physical Risk] Loading grid data from ${stagingTableName} for file_id ${fileId}...`)
+
+      // Get all grid points from the dynamic staging table
+      const hazardMapGrid = await dbAll(`
+        SELECT * FROM ${security.quoteIdentifier(stagingTableName)}
+      `)
+
       if (hazardMapGrid.length === 0) {
-        console.log(`[Physical Risk] No grid points found for file_id ${fileId}`)
+        console.log(`[Physical Risk] No grid points found in ${stagingTableName}`)
         continue
       }
 
@@ -7369,8 +7437,8 @@ app.post('/api/physical-risk/calculate', express.json(), async (req, res) => {
 })
 
 /**
- * Build grid data structure from staging_hazard_map rows
- * @param {Array} hazardMapGrid - Array of grid point rows from staging_hazard_map
+ * Build grid data structure from hazard map staging table rows
+ * @param {Array} hazardMapGrid - Array of grid point rows from dynamic staging table
  */
 function buildGridFromHazardMap(hazardMapGrid) {
   const gridLats = []

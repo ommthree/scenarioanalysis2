@@ -93,6 +93,19 @@ class StagingService {
   }
 
   /**
+   * Get staging metadata by file_id and data_type
+   * @param {number} fileId - File ID from staged_file table
+   * @param {string} dataType - Type of data (scenario, location, etc.)
+   * @returns {Promise<object|null>}
+   */
+  async getStagingInfoByFileId(fileId, dataType) {
+    return await this.dbGet(`
+      SELECT * FROM staging_metadata
+      WHERE file_id = ? AND data_type = ? AND deleted_at IS NULL
+    `, [fileId, dataType])
+  }
+
+  /**
    * List all staging tables with optional filter
    * @param {string|null} dataType - Filter by data type
    * @param {string|null} status - Filter by status
