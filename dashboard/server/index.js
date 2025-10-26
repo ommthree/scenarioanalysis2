@@ -22,6 +22,8 @@ import path from 'path'
 import { exec } from 'child_process'
 import * as security from './security.js'
 import StagingService from './staging_service.js'
+import ValidationService from './validation_service.js'
+import LoggingService from './logging_service.js'
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
@@ -6427,7 +6429,43 @@ app.get('/api/results/driver-decomposition', (req, res) => {
 })
 
 /**
- * Run calculation engine
+ * Validate scenario readiness for calculation (Issues #12, #14)
+ * POST /api/validate-scenario
+ * Body: { dbPath, scenarioId }
+ * Returns: { valid, errors, warnings, info }
+ */
+app.post('/api/validate-scenario', (req, res) => {
+  const { dbPath, scenarioId } = req.body
+
+  if (!dbPath || !scenarioId) {
+    return res.status(400).json({ error: 'dbPath and scenarioId are required' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  const validationService = new ValidationService(db)
+
+  validationService.validateScenario(scenarioId)
+    .then(result => {
+      db.close()
+      res.json(result)
+    })
+    .catch(error => {
+      db.close()
+      res.status(500).json({ error: error.message })
+    })
+})
+
+/**
+ * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
 app.post('/api/calculate', (req, res) => {
   const { dbPath } = req.body
