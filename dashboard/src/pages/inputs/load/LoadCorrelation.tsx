@@ -3,7 +3,7 @@ import { Activity, FolderOpen, Check, X, FileText, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import JointDistributionPanel from '@/components/JointDistributionPanel'
+import JointDistributionPanel from '@/components/visualizations/JointDistributionPanel'
 
 interface CsvData {
   headers: string[]

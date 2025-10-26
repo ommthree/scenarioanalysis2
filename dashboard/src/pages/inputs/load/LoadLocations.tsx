@@ -3,7 +3,7 @@ import { MapPin, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import LocationMap from '@/components/LocationMap'
+import LocationMap from '@/components/visualizations/LocationMap'
 
 interface CsvData {
   headers: string[]

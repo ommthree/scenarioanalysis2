@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState } from 'react'
-import Layout from './components/Layout'
+import Layout from './components/layout/Layout'
 import Home from './pages/data/Home'
 import Dashboard from './pages/data/Dashboard'
 import Database from './pages/data/Database'

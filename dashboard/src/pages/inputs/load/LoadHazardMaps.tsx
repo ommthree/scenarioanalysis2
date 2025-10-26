@@ -3,7 +3,7 @@ import { Map, FolderOpen, Check, X, FileText, Database as DatabaseIcon, Trash2 }
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import HazardMap from '@/components/HazardMap'
+import HazardMap from '@/components/visualizations/HazardMap'
 
 interface CsvData {
   headers: string[]
