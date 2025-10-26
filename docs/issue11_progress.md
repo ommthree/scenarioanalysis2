@@ -220,3 +220,19 @@ Once complete:
 - Tested all 5 endpoints successfully
 - Updated progress documentation
 - Progress: 30% → 40%
+
+**Next Steps Recommendation**:
+- Step 3 (Refactor upload endpoints) is complex and high-risk
+- Current upload endpoints use callback-based sqlite3 with db.serialize()
+- New endpoints need async/await pattern with proper error handling
+- Recommend thorough testing strategy before refactoring:
+  1. Create comprehensive test suite for existing endpoints
+  2. Document expected behavior and edge cases
+  3. Refactor one endpoint at a time with full regression testing
+  4. Consider feature flag for gradual rollout
+
+**Technical Considerations**:
+- Current endpoints don't use `staged_file` table consistently
+- Need to align `file_type` values between staged_file and staging_metadata
+- Consider backward compatibility for existing staging tables
+- May need migration script for legacy tables
