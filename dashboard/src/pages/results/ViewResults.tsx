@@ -287,7 +287,7 @@ export default function ViewResults() {
     setExpandedLineItems(newExpanded)
   }
 
-  const renderEntityTree = (entities: Entity[], level = 0): JSX.Element => {
+  const renderEntityTree = (entities: Entity[], level = 0): React.ReactElement => {
     return (
       <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
         {entities.map((entity) => {

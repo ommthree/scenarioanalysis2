@@ -319,7 +319,7 @@ export default function PerformCalculation() {
         throw new Error('Failed to save run')
       }
 
-      const result = await response.json()
+      await response.json()
       addLog('success', `Run saved successfully as "${uniqueRunName}"`)
     } catch (err) {
       addLog('error', `Failed to save run: ${err}`)

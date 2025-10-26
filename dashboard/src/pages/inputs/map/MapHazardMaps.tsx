@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles, CheckCircle2, Circle, Activity } from 'lucide-react'
+import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles, CheckCircle2, Circle } from 'lucide-react'
 
 interface PhysicalPeril {
   peril_id: number
@@ -20,12 +20,6 @@ interface Scenario {
   source_file_name?: string
 }
 
-interface HazardMapMapping {
-  mapping_id: number
-  file_name: string
-  peril_type: string
-  peril_code: string
-}
 
 interface StagedFile {
   file_id: number
@@ -70,7 +64,7 @@ export default function MapHazardMaps() {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [currentMappingId, setCurrentMappingId] = useState<number | null>(null)
   const [selectedScenarios, setSelectedScenarios] = useState<Set<string>>(new Set())
-  const [scenarioSaveStatus, setScenarioSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+  const [_scenarioSaveStatus, _setScenarioSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
@@ -493,7 +487,7 @@ Rules:
   const handleSaveScenarios = async () => {
     if (!currentMappingId) return
 
-    setScenarioSaveStatus('saving')
+    _setScenarioSaveStatus('saving')
 
     try {
       const response = await fetch('http://localhost:3001/api/hazard-maps/save-scenario-mappings', {
@@ -511,12 +505,12 @@ Rules:
         throw new Error(result.error || 'Failed to save scenario mappings')
       }
 
-      setScenarioSaveStatus('success')
-      setTimeout(() => setScenarioSaveStatus('idle'), 2000)
+      _setScenarioSaveStatus('success')
+      setTimeout(() => _setScenarioSaveStatus('idle'), 2000)
     } catch (err) {
       console.error('Error saving scenarios:', err)
-      setScenarioSaveStatus('error')
-      setTimeout(() => setScenarioSaveStatus('idle'), 3000)
+      _setScenarioSaveStatus('error')
+      setTimeout(() => _setScenarioSaveStatus('idle'), 3000)
     }
   }
 

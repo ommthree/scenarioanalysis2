@@ -282,8 +282,6 @@ export default function LoadLocations() {
     return { minLat, maxLat, minLng, maxLng, centerLat, centerLng }
   }
 
-  const bounds = getMapBounds()
-
   return (
     <div className="p-12 max-w-7xl mx-auto">
       <div className="mb-12" style={{ marginLeft: '1.5rem' }}>

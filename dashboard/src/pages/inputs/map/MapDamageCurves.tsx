@@ -16,12 +16,6 @@ interface TableInfo {
   fileId: number
 }
 
-interface StagedFile {
-  file_id: number
-  file_name: string
-  row_count: number
-  uploaded_at: string
-}
 
 interface CsvRow {
   [key: string]: any
@@ -48,7 +42,7 @@ const MapDamageCurves: React.FC = () => {
 
   // Drag state
   const [draggedRole, setDraggedRole] = useState<'input' | 'output' | 'archetype' | 'peril' | 'unit' | 'valueType' | null>(null)
-  const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
+  const [_draggedRowIndex, _setDraggedRowIndex] = useState<number | null>(null)
   const [draggedPerilValueType, setDraggedPerilValueType] = useState<{peril_type: string, value_type: string} | null>(null)
 
   // Driver mappings: maps driver_code to array of {peril_type, value_type} combinations

@@ -34,28 +34,11 @@ interface Driver {
 
 interface Transformation {
   line_item: string
-  type: 'formula_override'
+  type: 'formula_override' | 'carbon_formula_override'
   new_formula: string
   comment?: string
 }
 
-interface ScenarioAssignment {
-  scenario_action_id?: number
-  scenario_id: number
-  action_code: string
-  start_period?: number
-  end_period?: number
-  capex?: number
-  opex_annual?: number
-  emission_reduction_annual?: number
-  financial_transformations: Transformation[]
-  carbon_transformations: Transformation[]
-  notes?: string
-  trigger_type: 'UNCONDITIONAL' | 'TIMED' | 'CONDITIONAL'
-  trigger_condition?: string
-  trigger_period?: number
-  trigger_sticky: boolean
-}
 
 interface DefineActionsProps {
   dbPath: string | null
@@ -95,10 +78,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   const [triggerEndPeriod, setTriggerEndPeriod] = useState<number>(10)
 
   // Current editing transformation
-  const [currentTransformType, setCurrentTransformType] = useState<'financial' | 'carbon'>('financial')
-  const [currentLineItem, setCurrentLineItem] = useState('')
   const [currentFormula, setCurrentFormula] = useState('')
-  const [currentComment, setCurrentComment] = useState('')
 
   // Fetch actions on mount
   useEffect(() => {
@@ -611,38 +591,6 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     event.target.value = ''
   }
 
-  const addTransformation = () => {
-    if (!currentFormula) {
-      setValidationError('Formula is required')
-      return
-    }
-
-    // Extract the first line item code from the formula
-    const lineItemCodes = selectedTemplate?.line_items.map(item => item.code) || []
-    const foundLineItem = lineItemCodes.find(code => currentFormula.includes(code))
-
-    if (!foundLineItem) {
-      setValidationError('Formula must reference at least one line item')
-      return
-    }
-
-    const newTransform: Transformation = {
-      line_item: foundLineItem,
-      type: 'formula_override',
-      new_formula: currentFormula,
-      comment: currentComment
-    }
-
-    if (currentTransformType === 'financial') {
-      setFinancialTransformations([...financialTransformations, newTransform])
-    } else {
-      setCarbonTransformations([...carbonTransformations, newTransform])
-    }
-
-    setCurrentFormula('')
-    setCurrentComment('')
-    setValidationError(null)
-  }
 
   const removeTransformation = (index: number, type: 'financial' | 'carbon') => {
     if (type === 'financial') {
@@ -652,7 +600,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     }
   }
 
-  const handleDragStart = (e: React.DragEvent, type: 'row' | 'prior' | 'driver' | 'operator', value: string) => {
+  const handleDragStart = (e: React.DragEvent, _type: 'row' | 'prior' | 'driver' | 'operator', value: string) => {
     e.dataTransfer.setData('text/plain', value)
     e.dataTransfer.effectAllowed = 'copy'
   }
@@ -771,7 +719,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
       const newFinancialTransforms: Transformation[] = []
       const newCarbonTransforms: Transformation[] = []
 
-      lines.forEach(line => {
+      lines.forEach((line: string) => {
         // Remove markdown formatting (**, ##, etc)
         const cleanLine = line.replace(/\*\*/g, '').trim()
 
@@ -1061,16 +1009,30 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                           <Edit2 className="w-4 h-4 mr-2" />
                           Edit
                         </Button>
-                        <label>
-                          <Button
-                            as="span"
-                            variant="outline"
-                            size="sm"
-                            style={{ color: '#ffffff', borderColor: 'rgba(255, 255, 255, 0.2)', cursor: 'pointer' }}
+                        <label style={{ cursor: 'pointer' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '0.375rem 0.75rem',
+                            fontSize: '0.875rem',
+                            fontWeight: '500',
+                            color: '#ffffff',
+                            backgroundColor: 'transparent',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: '0.375rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                          }}
                           >
                             <Upload className="w-4 h-4 mr-2" />
                             Import JSON
-                          </Button>
+                          </span>
                           <input
                             type="file"
                             accept=".json"

@@ -39,7 +39,7 @@ export default function LoadHazardMaps() {
   const [loadSuccess, setLoadSuccess] = useState(false)
   const [loadMessage, setLoadMessage] = useState('')
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
-  const [highlightedRowIndex, setHighlightedRowIndex] = useState<number | null>(null)
+  const [_highlightedRowIndex, _setHighlightedRowIndex] = useState<number | null>(null)
   const [selectedStagedFile, setSelectedStagedFile] = useState<StagedFile | null>(null)
   const [stagedFileData, setStagedFileData] = useState<CsvData | null>(null)
   const [selectedIntensityColumn, setSelectedIntensityColumn] = useState<string>('')

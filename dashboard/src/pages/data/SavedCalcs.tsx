@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, Trash2, FolderOpen, Calendar, FileText } from 'lucide-react'
+import { Save, Trash2, FolderOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 interface SavedRun {

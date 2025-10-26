@@ -189,7 +189,7 @@ export default function DefineEntities() {
     setExpandedNodes(newExpanded)
   }
 
-  const renderTree = (entities: Entity[], level = 0): JSX.Element => {
+  const renderTree = (entities: Entity[], level = 0): React.ReactElement => {
     return (
       <div style={{ marginLeft: level > 0 ? '24px' : '8px', marginRight: '8px' }}>
         {entities.map((entity) => {

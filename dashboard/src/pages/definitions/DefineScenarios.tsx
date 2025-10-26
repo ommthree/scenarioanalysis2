@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, Plus, Trash2, Upload, Download, GitBranch } from 'lucide-react'
+import { Save, Plus, Trash2, Upload, Download } from 'lucide-react'
 
 interface Driver {
   driver_id?: number

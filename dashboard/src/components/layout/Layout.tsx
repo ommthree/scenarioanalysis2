@@ -1,16 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
 import {
-  Home,
   FileJson,
   Database,
   Activity,
-  Cloud,
-  List,
   BarChart3,
   Settings,
   GitBranch,
   Menu,
-  ChevronDown,
   ArrowRightLeft,
   Building2,
   Calculator,
@@ -39,7 +35,7 @@ interface LayoutProps {
 
 type NavigationMode = 'sidebar' | 'flowchart'
 
-export default function Layout({ children, dbPath, onChangeDb }: LayoutProps) {
+export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const [navMode, setNavMode] = useState<NavigationMode>('sidebar')
   const prevPathnameRef = useRef(location.pathname)

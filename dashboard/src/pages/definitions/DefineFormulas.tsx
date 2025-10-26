@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Save, AlertCircle, Plus, Sparkles, FileSpreadsheet } from 'lucide-react'
+import { Save, AlertCircle, Sparkles, FileSpreadsheet } from 'lucide-react'
 
 interface LineItem {
   code: string
@@ -107,7 +107,7 @@ const DefineFormulas: React.FC = () => {
     setSelectedLineItem(lineItem)
   }
 
-  const handleDragStart = (e: React.DragEvent, type: 'row' | 'prior' | 'base' | 'driver' | 'operator', value: string) => {
+  const handleDragStart = (e: React.DragEvent, _type: 'row' | 'prior' | 'base' | 'driver' | 'operator', value: string) => {
     e.dataTransfer.setData('text/plain', value)
     e.dataTransfer.effectAllowed = 'copy'
   }
@@ -189,7 +189,7 @@ const DefineFormulas: React.FC = () => {
       // Update local state
       const updatedLineItems = selectedTemplate.line_items.map(item =>
         item.code === selectedLineItem.code
-          ? { ...item, formula: formula || null }
+          ? { ...item, formula: formula || undefined }
           : item
       )
 

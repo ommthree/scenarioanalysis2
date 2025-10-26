@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useState } from 'react'
 import Layout from './components/layout/Layout'
 import Home from './pages/data/Home'
@@ -29,16 +29,10 @@ import ViewResults from './pages/results/ViewResults'
 import Explore from './pages/results/Explore'
 
 function App() {
-  const [dbPath, setDbPath] = useState<string | null>(() => {
+  const [dbPath, _setDbPath] = useState<string | null>(() => {
     return localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
   })
-  const [showDbSelector, setShowDbSelector] = useState(false)
-
-  const handleDbSelected = (path: string) => {
-    setDbPath(path)
-    localStorage.setItem('lastDatabasePath', path)
-    setShowDbSelector(false)
-  }
+  const [showDbSelector, _setShowDbSelector] = useState(false)
 
   if (showDbSelector) {
     return <div style={{padding: '20px', color: 'white'}}>Database Selector Placeholder</div>
@@ -46,7 +40,7 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Layout dbPath={dbPath} onChangeDb={() => setShowDbSelector(true)}>
+      <Layout dbPath={dbPath} onChangeDb={() => _setShowDbSelector(true)}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/data/database" element={<Database />} />

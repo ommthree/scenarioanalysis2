@@ -22,9 +22,10 @@ interface TemplateMetadata {
   display_name: string
   description: string
   statement_type: string
+  version?: string
 }
 
-interface Template extends TemplateMetadata {
+export interface Template extends TemplateMetadata {
   lineItems?: LineItem[]
 }
 

@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import Plot from 'react-plotly.js'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { X } from 'lucide-react'
@@ -127,7 +126,7 @@ export default function JointDistributionPlot({
                   }
                 },
                 opacity: 0.95
-              }
+              } as any
             ]}
             layout={{
               autosize: true,

@@ -17,12 +17,6 @@ interface TableInfo {
   fileId: number
 }
 
-interface StagedFile {
-  file_id: number
-  file_name: string
-  row_count: number
-  uploaded_at: string
-}
 
 interface CsvRow {
   [key: string]: any

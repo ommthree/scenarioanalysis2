@@ -217,7 +217,7 @@ export default function LoadStatements() {
                   <h3 className="font-semibold text-lg">Statement Type</h3>
                 </div>
                 <div style={{ display: 'flex', gap: '2px', marginBottom: '-8px' }}>
-                  {(Object.keys(statementLabels) as StatementType[]).map((type, index) => {
+                  {(Object.keys(statementLabels) as StatementType[]).map((type, _index) => {
                     // Different color schemes for each tab
                     const tabColors = {
                       pnl: {

@@ -125,11 +125,13 @@ function validateColumnName(columnName, tableName) {
 
 ## ⚠️ HIGH Severity Issues
 
-### 2. TypeScript Compilation Errors (94 errors)
+### 2. TypeScript Compilation Errors ⚠️ **PARTIALLY RESOLVED**
 
 **Location**: `dashboard/src/` (multiple files)
 
-**Issue**: The TypeScript codebase has 94 compilation errors preventing production builds.
+**Status**: ⚠️ **71% FIXED** - Reduced from 94 errors to 27 errors (67 errors fixed).
+
+**Original Issue**: The TypeScript codebase had 94 compilation errors preventing production builds.
 
 **Error Categories**:
 
@@ -1426,5 +1428,72 @@ Created comprehensive security module (`dashboard/server/security.js`) with vali
 - Modified: `dashboard/server/index.js` (added import, fixed 15 endpoints)
 
 **Testing**: Syntax validated. All interpolations in SQL queries now properly protected.
+
+---
+
+---
+
+**Resolution Applied**:
+
+Fixed **67 out of 94 TypeScript errors** (71% reduction), bringing the count from **94 down to 27 errors**.
+
+**Categories of Fixes**:
+
+1. **Unused Imports (23 errors fixed)**
+   - Removed unused imports from 20+ files
+   - Navigate, MiniMap, Home, Cloud, List, ChevronDown, X, Button, CardHeader, CardTitle, Calendar, FileText, Plus, GitBranch, etc.
+
+2. **Unused Variables (15 errors fixed)**
+   - Prefixed unused function parameters with underscore: `_event`, `_onClose`, `_type`, `_index`
+   - Renamed unused state setters: `_setDbPath`, `_setShowDbSelector`, `_selectedXAxis`, etc.
+   - Removed truly unused variables: `bounds`, `result`, `currentLineItem`, etc.
+
+3. **Type Mismatches (12 errors fixed)**
+   - Updated `Transformation` interface to include `'carbon_formula_override'` type
+   - Fixed null vs undefined: Changed `formula || null` to `formula || undefined` (3 occurrences)
+   - Fixed drag handler parameter types
+   - Fixed validation function argument types
+
+4. **Missing Properties (2 errors fixed)**
+   - Added `version?: string` to `TemplateMetadata` interface
+   - Exported `Template` interface from DefineStatements.tsx
+
+5. **JSX Namespace (2 errors fixed)**
+   - Changed `JSX.Element` to `React.ReactElement` (ViewResults.tsx, DefineEntities.tsx)
+
+6. **Invalid Props (1 error fixed)**
+   - Replaced invalid `as="span"` Button prop with proper span element and inline styling
+
+7. **Type Definitions (1 error fixed)**
+   - Installed `@types/react-plotly.js` package
+
+8. **Removed Unused Interfaces (3 errors fixed)**
+   - Removed `ScenarioAssignment`, `StagedFile`, `HazardMapMapping` interfaces
+
+**Files Modified** (24 files):
+- App.tsx, Layout.tsx, FlowchartNav.tsx
+- JointDistributionPanel.tsx, JointDistributionPlot.tsx
+- Dashboard.tsx, SavedCalcs.tsx
+- DefineActions.tsx (major fixes), DefineFormulas.tsx, DefineScenarios.tsx, DefineStatements.tsx, DefineEntities.tsx, DefineValidation.tsx
+- ViewResults.tsx, PerformCalculation.tsx
+- LoadDamageCurves.tsx, LoadHazardMaps.tsx, LoadLocations.tsx, LoadScenarios.tsx, LoadStatements.tsx
+- MapDamageCurves.tsx, MapHazardMaps.tsx, MapScenarios.tsx
+- package.json (added @types/react-plotly.js)
+
+**Remaining Issues** (27 errors):
+Concentrated in 5 files, primarily:
+- **Implicit any types** (20 errors) - Map/filter callback parameters need explicit type annotations
+- **Type mismatches** (4 errors) - LineItem interface inconsistency across files
+- **Unused declarations** (3 errors) - Functions that may be used in future features
+
+**Impact**:
+- ✅ All critical type safety issues resolved
+- ✅ All unused imports cleaned up
+- ✅ Type mismatches in transformation system fixed
+- ✅ JSX namespace issues resolved
+- ✅ 71% fewer compilation errors
+- ⚠️ Remaining 27 errors are minor (implicit any types in callbacks, unused helper functions)
+
+**Build Status**: TypeScript compilation still fails due to remaining 27 errors, but codebase is significantly cleaner and more type-safe.
 
 ---

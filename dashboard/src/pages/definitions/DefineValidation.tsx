@@ -281,7 +281,7 @@ const DefineValidation: React.FC = () => {
     }
   }
 
-  const handleDragStart = (e: React.DragEvent, type: 'lineitem' | 'operator', value: string) => {
+  const handleDragStart = (e: React.DragEvent, _type: 'lineitem' | 'operator' | 'row' | 'prior', value: string) => {
     e.dataTransfer.setData('text/plain', value)
     e.dataTransfer.effectAllowed = 'copy'
   }
@@ -808,7 +808,7 @@ Use line item codes directly and [t-1] for prior period references.
                             <div
                               key={item.code}
                               draggable
-                              onDragStart={(e) => handleDragStart(e, 'row', item.code)}
+                              onDragStart={(e) => handleDragStart(e, 'lineitem', item.code)}
                               onClick={() => addToFormula(item.code)}
                               style={{
                                 padding: '6px 12px',
@@ -853,7 +853,7 @@ Use line item codes directly and [t-1] for prior period references.
                             <div
                               key={item.code}
                               draggable
-                              onDragStart={(e) => handleDragStart(e, 'prior', `${item.code}[t-1]`)}
+                              onDragStart={(e) => handleDragStart(e, 'lineitem', `${item.code}[t-1]`)}
                               onClick={() => addToFormula(`${item.code}[t-1]`)}
                               style={{
                                 padding: '6px 12px',

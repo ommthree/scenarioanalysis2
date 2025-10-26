@@ -43,7 +43,7 @@ export default function LoadDamageCurves() {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
   const [selectedFileId, setSelectedFileId] = useState<number | null>(null)
   const [previewData, setPreviewData] = useState<CsvData | null>(null)
-  const [selectedXAxis, setSelectedXAxis] = useState<string>('')
+  const [_selectedXAxis, _setSelectedXAxis] = useState<string>('')
   const [selectedRows, setSelectedRows] = useState<number[]>([])
   const [selectedPendingFileIndex, setSelectedPendingFileIndex] = useState<number | null>(null)
 
@@ -111,7 +111,7 @@ export default function LoadDamageCurves() {
               break
             }
           }
-          setSelectedXAxis(xAxisCol)
+          _setSelectedXAxis(xAxisCol)
         }
       }
     } catch (error) {
@@ -226,7 +226,7 @@ export default function LoadDamageCurves() {
                 break
               }
             }
-            setSelectedXAxis(xAxisCol)
+            _setSelectedXAxis(xAxisCol)
           }
         }
       }
@@ -276,7 +276,7 @@ export default function LoadDamageCurves() {
             break
           }
         }
-        setSelectedXAxis(xAxisCol)
+        _setSelectedXAxis(xAxisCol)
         console.log('X-axis set to:', xAxisCol)
       }
     } else {

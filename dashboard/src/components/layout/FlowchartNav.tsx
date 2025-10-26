@@ -6,7 +6,6 @@ import {
   type Edge,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   MarkerType,
@@ -82,7 +81,7 @@ export default function FlowchartNav({ onNavigate }: FlowchartNavProps = {}) {
     onNavigate?.()
   }, [navigate, onNavigate])
 
-  const onNodeClickHandler = useCallback((event: any, node: any) => {
+  const onNodeClickHandler = useCallback((_event: any, node: any) => {
     if (node.data.onClick) {
       node.data.onClick()
     }

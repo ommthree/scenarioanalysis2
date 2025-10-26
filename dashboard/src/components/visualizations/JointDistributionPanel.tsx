@@ -1,6 +1,5 @@
 import Plot from 'react-plotly.js'
 import { Card, CardContent } from '@/components/ui/card'
-import { X } from 'lucide-react'
 
 interface JointDistributionPanelProps {
   variable1: string
@@ -20,7 +19,7 @@ export default function JointDistributionPanel({
   variable1,
   variable2,
   correlation,
-  onClose
+  onClose: _onClose
 }: JointDistributionPanelProps) {
   // Generate mesh grid for surface plot
   const generateSurfaceData = () => {
