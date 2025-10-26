@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, Sparkles, FileSpreadsheet } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface LineItem {
   code: string
@@ -34,8 +35,8 @@ const DefineFormulas: React.FC = () => {
 
   // Fetch templates on mount
   useEffect(() => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-    fetch(`http://localhost:3001/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`)
+    const dbPath = getDefaultDbPath()
+    fetch(apiUrl(`/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         console.log('Templates received:', data)
@@ -55,8 +56,8 @@ const DefineFormulas: React.FC = () => {
 
   // Fetch drivers on mount
   useEffect(() => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-    fetch(`http://localhost:3001/api/drivers?dbPath=${encodeURIComponent(dbPath)}`)
+    const dbPath = getDefaultDbPath()
+    fetch(apiUrl(`/api/drivers?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => setDrivers(data))
       .catch(err => console.error('Error fetching drivers:', err))
@@ -80,9 +81,9 @@ const DefineFormulas: React.FC = () => {
     }
 
     // Fetch full template with line items
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
       console.log('Full template loaded:', data)
 
@@ -172,9 +173,9 @@ const DefineFormulas: React.FC = () => {
     setSaveStatus('saving')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${selectedTemplate.template_code}`, {
+      const response = await fetch(apiUrl(`/api/statement-templates/${selectedTemplate.template_code}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -268,7 +269,7 @@ Please suggest an appropriate formula for this line item. ${formula && formula.t
 ${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so you MUST NOT use [t-1] or driver: references.' : ''}
 `
 
-      const response = await fetch('http://localhost:3001/api/ai/suggest-formula', {
+      const response = await fetch(apiUrl('/api/ai/suggest-formula'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ context })

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2, Save } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface LogEntry {
   timestamp: string
@@ -72,7 +73,7 @@ export default function PerformCalculation() {
     setRunStatus('running')
     setLogs([])
 
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
 
     addLog('info', `Starting calculation run: ${runName} (${verbosity} mode)`)
 
@@ -82,7 +83,7 @@ export default function PerformCalculation() {
 
     try {
       // Step 1: Ingest scenarios (this also cleans up old data)
-      const scenResponse = await fetch('http://localhost:3001/api/ingest/scenarios', {
+      const scenResponse = await fetch(apiUrl('/api/ingest/scenarios'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, verbosity })
@@ -117,7 +118,7 @@ export default function PerformCalculation() {
         addLog('info', 'Step 2: Ingesting statement data from staged files...')
       }
 
-      const stmtResponse = await fetch('http://localhost:3001/api/ingest/statements', {
+      const stmtResponse = await fetch(apiUrl('/api/ingest/statements'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, verbosity })
@@ -159,7 +160,7 @@ export default function PerformCalculation() {
       }
 
       // Call actual C++ calculation engine
-      const calcResponse = await fetch('http://localhost:3001/api/calculate', {
+      const calcResponse = await fetch(apiUrl('/api/calculate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath })
@@ -287,7 +288,7 @@ export default function PerformCalculation() {
 
   const handleSaveRun = async () => {
     setIsSaving(true)
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
 
     try {
       // Get the current run config
@@ -304,7 +305,7 @@ export default function PerformCalculation() {
       // Get description from config or use empty string
       const description = config.description || config.runDescription || ''
 
-      const response = await fetch('http://localhost:3001/api/runs/save', {
+      const response = await fetch(apiUrl('/api/runs/save'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

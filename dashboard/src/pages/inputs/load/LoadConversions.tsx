@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Shuffle, FolderOpen, Check, X, FileText, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface CsvData {
   headers: string[]
@@ -41,8 +42,8 @@ export default function LoadConversions() {
 
   const fetchStagedFiles = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/conversion?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/conversion?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success) {
@@ -56,8 +57,8 @@ export default function LoadConversions() {
   const handleDeleteStagedFile = async (fileId: number, event: React.MouseEvent) => {
     event.stopPropagation()
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
       const result = await response.json()
@@ -78,8 +79,8 @@ export default function LoadConversions() {
     setSelectedFileId(fileId)
     setSelectedPendingFileIndex(null)
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success && result.csvText) {
@@ -171,14 +172,14 @@ export default function LoadConversions() {
     setLoadMessage('')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       for (const fileData of conversionFiles) {
         const formData = new FormData()
         formData.append('file', fileData.file)
         formData.append('dbPath', dbPath)
 
-        const response = await fetch('http://localhost:3001/api/conversion/load', {
+        const response = await fetch(apiUrl('/api/conversion/load'), {
           method: 'POST',
           body: formData
         })

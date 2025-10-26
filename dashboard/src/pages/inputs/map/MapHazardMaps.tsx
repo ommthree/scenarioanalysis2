@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles, CheckCircle2, Circle } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface PhysicalPeril {
   peril_id: number
@@ -68,11 +69,11 @@ export default function MapHazardMaps() {
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+  const dbPath = getDefaultDbPath()
 
   // Fetch available staged hazard map files
   useEffect(() => {
-    fetch(`http://localhost:3001/api/staged-files/hazard_map?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/staged-files/hazard_map?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -84,7 +85,7 @@ export default function MapHazardMaps() {
 
   // Fetch physical perils (hazard types defined in scenarios)
   useEffect(() => {
-    fetch(`http://localhost:3001/api/physical-perils?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/physical-perils?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         setPhysicalPerils(data || [])
@@ -94,7 +95,7 @@ export default function MapHazardMaps() {
 
   // Fetch scenarios for linking
   useEffect(() => {
-    fetch(`http://localhost:3001/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -126,7 +127,7 @@ export default function MapHazardMaps() {
 
         console.log('Auto-save payload:', payload)
 
-        const response = await fetch('http://localhost:3001/api/hazard-maps/save-hazard-map-mapping', {
+        const response = await fetch(apiUrl('/api/hazard-maps/save-hazard-map-mapping'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -172,7 +173,7 @@ export default function MapHazardMaps() {
     try {
       // Load saved mapping if it exists
       try {
-        const mappingResponse = await fetch(`http://localhost:3001/api/hazard-maps/get-hazard-map-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`)
+        const mappingResponse = await fetch(apiUrl(`/api/hazard-maps/get-hazard-map-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`))
         const mappingResult = await mappingResponse.json()
 
         if (mappingResult.success && mappingResult.mapping) {
@@ -201,7 +202,7 @@ export default function MapHazardMaps() {
             // Load existing scenario mappings
             try {
               const scenarioResponse = await fetch(
-                `http://localhost:3001/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${mapping.mappingId}`
+                apiUrl(`/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${mapping.mappingId}`)
               )
               const scenarioData = await scenarioResponse.json()
               if (scenarioData.success && scenarioData.scenarios) {
@@ -220,7 +221,7 @@ export default function MapHazardMaps() {
       setTimeout(() => setIsLoadingMapping(false), 100)
 
       // Load CSV preview from staged file
-      const url = `http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}&limit=5`
+      const url = apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}&limit=5`)
       console.log('Fetching:', url)
 
       const response = await fetch(url)
@@ -336,7 +337,7 @@ Rules:
 - Variance columns typically contain numeric variance/uncertainty values
 - Column names may include words like "intensity", "variance", "period", "m", etc.`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -387,7 +388,7 @@ Rules:
       const intensityColumns = getIntensityColumns()
       const varianceColumns = getVarianceColumns()
 
-      const response = await fetch('http://localhost:3001/api/hazard-maps/save-hazard-map-mapping', {
+      const response = await fetch(apiUrl('/api/hazard-maps/save-hazard-map-mapping'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -415,7 +416,7 @@ Rules:
         // Load existing scenario mappings
         try {
           const scenarioResponse = await fetch(
-            `http://localhost:3001/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${result.mappingId}`
+            apiUrl(`/api/hazard-maps/get-scenarios?dbPath=${encodeURIComponent(dbPath)}&mappingId=${result.mappingId}`)
           )
           const scenarioData = await scenarioResponse.json()
           if (scenarioData.success && scenarioData.scenarios) {
@@ -469,7 +470,7 @@ Rules:
     // Auto-save scenario selection
     if (currentMappingId) {
       try {
-        await fetch('http://localhost:3001/api/hazard-maps/save-scenario-mappings', {
+        await fetch(apiUrl('/api/hazard-maps/save-scenario-mappings'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -490,7 +491,7 @@ Rules:
     _setScenarioSaveStatus('saving')
 
     try {
-      const response = await fetch('http://localhost:3001/api/hazard-maps/save-scenario-mappings', {
+      const response = await fetch(apiUrl('/api/hazard-maps/save-scenario-mappings'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

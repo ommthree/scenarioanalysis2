@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface Peril {
   peril_id: number
@@ -61,11 +62,11 @@ const MapDamageCurves: React.FC = () => {
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+  const dbPath = getDefaultDbPath()
 
   // Fetch available staging tables (use damage_curve file type)
   useEffect(() => {
-    fetch(`http://localhost:3001/api/damage-curves/staging-tables?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/damage-curves/staging-tables?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -77,7 +78,7 @@ const MapDamageCurves: React.FC = () => {
 
   // Fetch perils (physical risk drivers from driver table)
   useEffect(() => {
-    fetch(`http://localhost:3001/api/perils?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/perils?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         if (!data || data.length === 0) {
@@ -115,7 +116,7 @@ const MapDamageCurves: React.FC = () => {
 
         console.log('Auto-save payload:', payload)
 
-        await fetch('http://localhost:3001/api/damage-curves/save-damage-curve-mapping', {
+        await fetch(apiUrl('/api/damage-curves/save-damage-curve-mapping'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -137,7 +138,7 @@ const MapDamageCurves: React.FC = () => {
 
     const extractUniquePerils = async () => {
       try {
-        const response = await fetch(`http://localhost:3001/api/staged-files/${selectedFileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+        const response = await fetch(apiUrl(`/api/staged-files/${selectedFileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
         const result = await response.json()
 
         if (result.success && result.csvText) {
@@ -179,7 +180,7 @@ const MapDamageCurves: React.FC = () => {
 
     const extractUniqueValueTypes = async () => {
       try {
-        const response = await fetch(`http://localhost:3001/api/staged-files/${selectedFileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+        const response = await fetch(apiUrl(`/api/staged-files/${selectedFileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
         const result = await response.json()
 
         if (result.success && result.csvText) {
@@ -235,7 +236,7 @@ const MapDamageCurves: React.FC = () => {
     try {
       // Load saved mapping if it exists
       try {
-        const mappingResponse = await fetch(`http://localhost:3001/api/damage-curves/get-damage-curve-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`)
+        const mappingResponse = await fetch(apiUrl(`/api/damage-curves/get-damage-curve-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`))
         const mappingResult = await mappingResponse.json()
 
         if (mappingResult.success && mappingResult.mapping) {
@@ -257,7 +258,7 @@ const MapDamageCurves: React.FC = () => {
       }
 
       // Load CSV preview from staged_file.csv_content
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
       console.log('Preview response:', result)
 
@@ -370,7 +371,7 @@ Rules:
 - Value type column is optional and might be named value_type, asset_class, line_of_business, or similar (PPE/BI/INVENTORY)
 - If a column doesn't exist, use null`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -419,7 +420,7 @@ Rules:
 
     try {
       // Save mapping configuration
-      const response = await fetch('http://localhost:3001/api/damage-curves/save-damage-curve-mapping', {
+      const response = await fetch(apiUrl('/api/damage-curves/save-damage-curve-mapping'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -443,7 +444,7 @@ Rules:
 
       // After saving mapping, ingest damage curves into production table
       console.log('Mapping saved, now ingesting damage curves...')
-      const ingestResponse = await fetch('http://localhost:3001/api/damage-curves/ingest', {
+      const ingestResponse = await fetch(apiUrl('/api/damage-curves/ingest'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

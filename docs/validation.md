@@ -478,6 +478,49 @@ fetch(`${config.apiBaseUrl}/api/scenarios`)
 
 **Estimated Fix Time**: 4-6 hours
 
+**Status**: ✅ **RESOLVED**
+
+**Resolution Summary**:
+- Created centralized configuration system with environment variable support
+- Replaced all 180+ hardcoded values across 23 files
+- Added `.env` and `.env.example` files for environment-specific configuration
+- Zero hardcoded values remaining in application code
+
+**Changes Made**:
+
+1. **Created Configuration System** (`dashboard/src/config.ts`):
+   - Centralized `apiBaseUrl` and `defaultDbPath` configuration
+   - Added `apiUrl()` helper function for API endpoints
+   - Added `getDefaultDbPath()` helper with localStorage fallback
+   - Environment variable support via Vite's `import.meta.env`
+
+2. **Created Environment Files**:
+   - `.env` - Development configuration with current paths
+   - `.env.example` - Template for other developers
+
+3. **Replaced Hardcoded Values in 23 Files**:
+   - **Database Paths** (~60 replacements): `getDefaultDbPath()` instead of hardcoded path
+   - **API URLs** (~120 replacements): `apiUrl('/api/...')` instead of `http://localhost:3001/api/...`
+   - Added config imports to all modified files
+
+**Files Modified**:
+- Core: App.tsx, PerformCalculation.tsx, ViewResults.tsx
+- Definitions: DefineActions.tsx, DefineStatements.tsx, DefineEntities.tsx, DefineFormulas.tsx, DefineScenarios.tsx, DefineValidation.tsx
+- Data: Database.tsx, SavedCalcs.tsx
+- Load Inputs: LoadStatements.tsx, LoadScenarios.tsx, LoadLocations.tsx, LoadDamageCurves.tsx, LoadHazardMaps.tsx, LoadCorrelation.tsx, LoadConversions.tsx
+- Map Inputs: MapStatements.tsx, MapScenarios.tsx, MapLocations.tsx, MapDamageCurves.tsx, MapHazardMaps.tsx
+
+**Verification**:
+- ✅ `http://localhost:3001` only appears in config.ts (as default)
+- ✅ Database path only appears in config.ts (as default)
+- ✅ All application code uses config helpers
+
+**Benefits**:
+- **Portability**: Works on any developer machine with proper .env setup
+- **Flexibility**: Different configurations for dev/staging/production
+- **Docker-ready**: Can override settings via environment variables
+- **Maintainability**: Single source of truth for all configuration
+
 ---
 
 ### 6. Excessive Console Logging (269 instances)

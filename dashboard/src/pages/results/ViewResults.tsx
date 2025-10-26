@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { BarChart3, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface LineItem {
   code: string
@@ -52,8 +53,6 @@ export default function ViewResults() {
   const [driverData, setDriverData] = useState<Map<string, DriverContribution[]>>(new Map())
   const [loading, setLoading] = useState(true)
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
     loadScenarios()
@@ -75,8 +74,9 @@ export default function ViewResults() {
   }, [currentPeriod, currentEntity, periods])
 
   const loadScenarios = async () => {
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/results/scenarios?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/results/scenarios?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
 
       if (data.success && data.scenarios.length > 0) {
@@ -95,8 +95,9 @@ export default function ViewResults() {
   }
 
   const loadPeriods = async () => {
+    const dbPath = getDefaultDbPath()
     try {
-      let url = `http://localhost:3001/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`
+      let url = apiUrl(`/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`)
       if (currentScenario !== null) {
         url += `&scenarioId=${currentScenario}`
       }
@@ -142,8 +143,9 @@ export default function ViewResults() {
   }
 
   const loadEntities = async () => {
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/results/entities?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/results/entities?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
 
       if (data.success && data.entities.length > 0) {
@@ -165,8 +167,9 @@ export default function ViewResults() {
 
   const loadResultsForPeriod = async (period: number, entityId: number | null) => {
     setLoading(true)
+    const dbPath = getDefaultDbPath()
     try {
-      let url = `http://localhost:3001/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&period=${period}`
+      let url = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&period=${period}`)
       if (entityId !== null) {
         url += `&entityId=${entityId}`
       }
@@ -207,7 +210,7 @@ export default function ViewResults() {
           const newDriverData = new Map<string, DriverContribution[]>()
           for (const item of data.lineItems) {
             try {
-              let driverUrl = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`
+              let driverUrl = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`)
               if (currentScenario !== null) {
                 driverUrl += `&scenarioId=${currentScenario}`
               }
@@ -253,8 +256,9 @@ export default function ViewResults() {
   const loadDriverDecomposition = async (lineItemCode: string) => {
     if (!currentEntity) return false
 
+    const dbPath = getDefaultDbPath()
     try {
-      let url = `http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`
+      let url = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`)
       if (currentScenario !== null) {
         url += `&scenarioId=${currentScenario}`
       }

@@ -3,6 +3,7 @@ import { ArrowRight, Save, GripVertical, ChevronDown, ChevronRight, Building2, N
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { parse } from 'csv-parse/sync'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface LineItem {
   code: string
@@ -153,8 +154,8 @@ export default function MapStatements() {
 
   const loadTemplates = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch('http://localhost:3001/api/templates/list', {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/templates/list'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath })
@@ -170,8 +171,8 @@ export default function MapStatements() {
 
   const loadEntities = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch('http://localhost:3001/api/entities/list', {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/entities/list'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath })
@@ -199,8 +200,8 @@ export default function MapStatements() {
 
   const loadStagedFiles = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', apiType: string) => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${apiType}?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${apiType}?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
       if (result.success) {
         setStatementMappings(prev => ({
@@ -218,8 +219,8 @@ export default function MapStatements() {
 
   const loadStagingData = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', fileId: number) => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success && result.csvText) {
@@ -253,7 +254,7 @@ export default function MapStatements() {
     if (!selectedCompany || templates.length === 0) return
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       // Only reset state when restoring all types (e.g., on company change)
       // When restoring a specific type (after file selection), don't reset - just update if mapping exists
@@ -291,10 +292,10 @@ export default function MapStatements() {
       const types: Array<'pnl' | 'bs' | 'carbon' | 'cf'> = targetStatementType ? [targetStatementType] : ['pnl', 'bs', 'cf', 'carbon']
       for (const type of types) {
         const response = await fetch(
-          `http://localhost:3001/api/statements/get-all-mappings?${new URLSearchParams({
+          apiUrl(`/api/statements/get-all-mappings?${new URLSearchParams({
             dbPath,
             statementType: type
-          })}`
+          })}`)
         )
         const result = await response.json()
 
@@ -696,7 +697,7 @@ Rules for row_mappings:
 Respond with ONLY the JSON object, no other text`
 
       // Use backend proxy to avoid CORS issues
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1348,7 +1349,7 @@ Respond with ONLY the JSON object, no other text`
     setSaveMessage('')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       // Save each statement type's mappings
       for (const [statementType, mapping] of Object.entries(statementMappings)) {
@@ -1363,7 +1364,7 @@ Respond with ONLY the JSON object, no other text`
               'cf': 'cashflow'
             }
             const fileType = fileTypeMap[statementType] || statementType
-            const filesResponse = await fetch(`http://localhost:3001/api/staged-files/${fileType}?dbPath=${encodeURIComponent(dbPath)}`)
+            const filesResponse = await fetch(apiUrl(`/api/staged-files/${fileType}?dbPath=${encodeURIComponent(dbPath)}`))
             const filesResult = await filesResponse.json()
             if (filesResult.success && filesResult.files && filesResult.files.length > 0) {
               csvFileName = filesResult.files[0].file_name
@@ -1372,7 +1373,7 @@ Respond with ONLY the JSON object, no other text`
             console.error(`Failed to fetch staged file for ${statementType}:`, err)
           }
 
-          const response = await fetch('http://localhost:3001/api/statements/save-hierarchical-mapping', {
+          const response = await fetch(apiUrl('/api/statements/save-hierarchical-mapping'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1394,7 +1395,7 @@ Respond with ONLY the JSON object, no other text`
           // Also save the mapped data to result tables
           // Using default scenario_id=1 and period_id=1 for now
           try {
-            const dataResponse = await fetch('http://localhost:3001/api/statements/save-mapped-data', {
+            const dataResponse = await fetch(apiUrl('/api/statements/save-mapped-data'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

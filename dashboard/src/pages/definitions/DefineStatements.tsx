@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface LineItem {
   code: string
@@ -47,8 +48,6 @@ export default function DefineStatements() {
   const [saveMessage, setSaveMessage] = useState('')
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(true)
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-
   const sections = {
     profit_and_loss: 'Profit & Loss',
     balance_sheet: 'Balance Sheet',
@@ -63,8 +62,9 @@ export default function DefineStatements() {
 
   const loadTemplates = async () => {
     setIsLoadingTemplates(true)
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`))
       if (response.ok) {
         const data = await response.json()
         setTemplates(data)
@@ -78,8 +78,9 @@ export default function DefineStatements() {
 
   // Load a specific template with line items
   const loadTemplate = async (code: string) => {
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${code}?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates/${code}?dbPath=${encodeURIComponent(dbPath)}`))
       if (response.ok) {
         const data = await response.json()
         setTemplateMetadata({
@@ -213,6 +214,8 @@ export default function DefineStatements() {
     setIsSaving(true)
     setSaveMessage('')
 
+    const dbPath = getDefaultDbPath()
+
     try {
       // Force statement_type to 'unified' - all templates must be unified
       const templateToSave = {
@@ -220,7 +223,7 @@ export default function DefineStatements() {
         statement_type: 'unified'
       }
 
-      const response = await fetch('http://localhost:3001/api/statement-templates', {
+      const response = await fetch(apiUrl('/api/statement-templates'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -250,8 +253,9 @@ export default function DefineStatements() {
   const handleDelete = async (code: string) => {
     if (!confirm(`Delete template "${code}"?`)) return
 
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${code}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const response = await fetch(apiUrl(`/api/statement-templates/${code}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
 

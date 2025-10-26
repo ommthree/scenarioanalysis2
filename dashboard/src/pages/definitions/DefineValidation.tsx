@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, Plus, Sparkles, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface LineItem {
   code: string
@@ -51,8 +52,8 @@ const DefineValidation: React.FC = () => {
 
   // Fetch templates on mount
   useEffect(() => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-    fetch(`http://localhost:3001/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`)
+    const dbPath = getDefaultDbPath()
+    fetch(apiUrl(`/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         const mappedTemplates = data.map((t: any) => ({
@@ -69,8 +70,8 @@ const DefineValidation: React.FC = () => {
 
   // Fetch validation rules
   useEffect(() => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-    fetch(`http://localhost:3001/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`)
+    const dbPath = getDefaultDbPath()
+    fetch(apiUrl(`/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => setRules(data))
       .catch(err => console.error('Error fetching validation rules:', err))
@@ -82,9 +83,9 @@ const DefineValidation: React.FC = () => {
       return
     }
 
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
 
       const mappedTemplate = {
@@ -119,7 +120,7 @@ const DefineValidation: React.FC = () => {
       // If rule is currently inactive but is relevant, keep it inactive (user choice)
       if (rule.is_active && !isRelevant) {
         try {
-          await fetch(`http://localhost:3001/api/validation-rules/${rule.rule_id}`, {
+          await fetch(apiUrl(`/api/validation-rules/${rule.rule_id}`), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -138,7 +139,7 @@ const DefineValidation: React.FC = () => {
     }
 
     // Refresh rules list
-    const rulesResponse = await fetch(`http://localhost:3001/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`)
+    const rulesResponse = await fetch(apiUrl(`/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`))
     const updatedRules = await rulesResponse.json()
     setRules(updatedRules)
   }
@@ -228,12 +229,12 @@ const DefineValidation: React.FC = () => {
     setSaveStatus('saving')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       const method = isCreatingNew ? 'POST' : 'PUT'
       const url = isCreatingNew
-        ? 'http://localhost:3001/api/validation-rules'
-        : `http://localhost:3001/api/validation-rules/${selectedRule?.rule_id}`
+        ? apiUrl('/api/validation-rules')
+        : apiUrl(`/api/validation-rules/${selectedRule?.rule_id}`)
 
       const response = await fetch(url, {
         method,
@@ -254,7 +255,7 @@ const DefineValidation: React.FC = () => {
       if (!response.ok) throw new Error('Failed to save validation rule')
 
       // Refresh rules list
-      const rulesResponse = await fetch(`http://localhost:3001/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`)
+      const rulesResponse = await fetch(apiUrl(`/api/validation-rules?dbPath=${encodeURIComponent(dbPath)}`))
       const updatedRules = await rulesResponse.json()
       setRules(updatedRules)
 
@@ -352,7 +353,7 @@ Validation formula guidelines:
 Use line item codes directly and [t-1] for prior period references.
 `
 
-      const response = await fetch('http://localhost:3001/api/ai/suggest-formula', {
+      const response = await fetch(apiUrl('/api/ai/suggest-formula'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ context })

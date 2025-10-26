@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import LocationMap from '@/components/visualizations/LocationMap'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface CsvData {
   headers: string[]
@@ -49,8 +50,8 @@ export default function LoadLocations() {
 
   const fetchStagedFiles = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/location?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/location?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success) {
@@ -63,8 +64,8 @@ export default function LoadLocations() {
 
   const handleDeleteStagedFile = async (fileId: number) => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
       const result = await response.json()
@@ -147,7 +148,7 @@ export default function LoadLocations() {
     setLoadMessage('')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
       const fileCount = locationFiles.length
 
       // Upload each file separately
@@ -158,7 +159,7 @@ export default function LoadLocations() {
         formData.append('dbPath', dbPath)
         formData.append('file', locationFile.file)
 
-        const response = await fetch('http://localhost:3001/api/locations/load', {
+        const response = await fetch(apiUrl('/api/locations/load'), {
           method: 'POST',
           body: formData
         })
@@ -348,8 +349,8 @@ export default function LoadLocations() {
                           setSelectedStagedFile(file)
                           // Fetch and preview the staged file
                           try {
-                            const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-                            const response = await fetch(`http://localhost:3001/api/staged-files/${file.file_id}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+                            const dbPath = getDefaultDbPath()
+                            const response = await fetch(apiUrl(`/api/staged-files/${file.file_id}/preview?dbPath=${encodeURIComponent(dbPath)}`))
                             const result = await response.json()
 
                             if (result.success && result.csvText) {

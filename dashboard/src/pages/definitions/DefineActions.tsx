@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Save, AlertCircle, Plus, Sparkles, Download, Upload, Trash2, X, Edit2, FileSpreadsheet } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface ManagementAction {
   action_id?: number
@@ -89,9 +90,9 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
 
 
   const fetchActions = async () => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/management-actions?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/management-actions?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
       setActions(data)
 
@@ -102,14 +103,14 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       for (const action of data) {
         try {
           // Fetch transformations
-          const transResponse = await fetch(`http://localhost:3001/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath)}`)
+          const transResponse = await fetch(apiUrl(`/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath)}`))
           if (transResponse.ok) {
             const trans = await transResponse.json()
             transformationsMap.set(action.action_code, trans)
           }
 
           // Fetch triggers
-          const triggerResponse = await fetch(`http://localhost:3001/api/action-triggers?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath)}`)
+          const triggerResponse = await fetch(apiUrl(`/api/action-triggers?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath)}`))
           if (triggerResponse.ok) {
             const triggers = await triggerResponse.json()
             if (triggers.length > 0 && triggers[0].condition_formula) {
@@ -129,9 +130,9 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   }
 
   const fetchTemplates = async () => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
       const unifiedTemplates = data.filter((t: any) => t.statement_type === 'unified')
       setTemplates(unifiedTemplates.map((t: any) => ({
@@ -145,9 +146,9 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   }
 
   const fetchDrivers = async () => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/drivers?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/drivers?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
       setDrivers(data)
     } catch (err) {
@@ -161,9 +162,9 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       return
     }
 
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
       setSelectedTemplate({
         template_code: data.code,
@@ -181,9 +182,9 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       return
     }
 
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/statement-templates/${templateCode}?dbPath=${encodeURIComponent(dbPath)}`))
       const data = await response.json()
       const template = {
         template_code: data.code,
@@ -239,7 +240,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       // If action is currently active but not relevant, deactivate it
       if (action.is_active && !isRelevant) {
         try {
-          await fetch(`http://localhost:3001/api/management-actions/${action.action_code}`, {
+          await fetch(apiUrl(`/api/management-actions/${action.action_code}`), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -350,7 +351,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
 
     // Load transformations
     try {
-      const transResponse = await fetch(`http://localhost:3001/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`)
+      const transResponse = await fetch(apiUrl(`/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`))
       if (transResponse.ok) {
         const transformations = await transResponse.json()
         setFinancialTransformations(transformations.filter((t: Transformation) => t.type !== 'carbon_formula_override'))
@@ -367,7 +368,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
 
     // Load triggers
     try {
-      const triggerResponse = await fetch(`http://localhost:3001/api/action-triggers?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`)
+      const triggerResponse = await fetch(apiUrl(`/api/action-triggers?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`))
       if (triggerResponse.ok) {
         const triggers = await triggerResponse.json()
         if (triggers.length > 0) {
@@ -443,13 +444,13 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     setSaveStatus('saving')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       // Save action metadata
       const method = isCreatingNew ? 'POST' : 'PUT'
       const url = isCreatingNew
-        ? 'http://localhost:3001/api/management-actions'
-        : `http://localhost:3001/api/management-actions/${selectedAction?.action_code}`
+        ? apiUrl('/api/management-actions')
+        : apiUrl(`/api/management-actions/${selectedAction?.action_code}`)
 
       const response = await fetch(url, {
         method,
@@ -468,7 +469,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       if (!response.ok) throw new Error('Failed to save action')
 
       // Save transformations
-      const saveTransformationsResponse = await fetch('http://localhost:3001/api/action-transformations/save', {
+      const saveTransformationsResponse = await fetch(apiUrl('/api/action-transformations/save'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -481,7 +482,7 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       if (!saveTransformationsResponse.ok) throw new Error('Failed to save transformations')
 
       // Save trigger
-      const saveTriggerResponse = await fetch('http://localhost:3001/api/action-triggers/save', {
+      const saveTriggerResponse = await fetch(apiUrl('/api/action-triggers/save'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -523,8 +524,8 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     }
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/management-actions/${selectedAction.action_code}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/management-actions/${selectedAction.action_code}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
 
@@ -543,8 +544,8 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     if (!selectedAction) return
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/management-actions/${selectedAction.action_code}/export?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/management-actions/${selectedAction.action_code}/export?dbPath=${encodeURIComponent(dbPath)}`))
 
       if (!response.ok) throw new Error('Failed to export action')
 
@@ -570,10 +571,10 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
       formData.append('dbPath', dbPath)
 
-      const response = await fetch('http://localhost:3001/api/management-actions/import', {
+      const response = await fetch(apiUrl('/api/management-actions/import'), {
         method: 'POST',
         body: formData
       })
@@ -697,7 +698,7 @@ CARBON_FORMULA: <formula>
 ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional trigger, so provide a trigger condition formula.' : 'This action does not use conditional triggers, so set TRIGGER_CONDITION to N/A.'}
 `
 
-      const response = await fetch('http://localhost:3001/api/ai/suggest-formula', {
+      const response = await fetch(apiUrl('/api/ai/suggest-formula'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ context })

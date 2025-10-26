@@ -3,6 +3,7 @@ import { TrendingUp, FolderOpen, Check, X, FileText, Database as DatabaseIcon, T
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { apiUrl, getDefaultDbPath } from '@/config'
 import {
   LineChart,
   Line,
@@ -54,8 +55,8 @@ export default function LoadScenarios() {
 
   const fetchStagedFiles = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/scenario?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/scenario?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success) {
@@ -69,8 +70,8 @@ export default function LoadScenarios() {
   const handleDeleteStagedFile = async (fileId: number, event: React.MouseEvent) => {
     event.stopPropagation()
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
       const result = await response.json()
@@ -91,8 +92,8 @@ export default function LoadScenarios() {
     setSelectedFileId(fileId)
     setSelectedRows([]) // Clear row selections when switching files
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success && result.csvText) {
@@ -273,7 +274,7 @@ export default function LoadScenarios() {
     setLoadMessage('')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       // Create form data with all files
       const formData = new FormData()
@@ -285,7 +286,7 @@ export default function LoadScenarios() {
         }
       })
 
-      const response = await fetch('http://localhost:3001/api/scenarios/load-batch', {
+      const response = await fetch(apiUrl('/api/scenarios/load-batch'), {
         method: 'POST',
         body: formData
       })

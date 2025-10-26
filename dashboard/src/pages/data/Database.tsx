@@ -3,6 +3,7 @@ import { Database as DatabaseIcon, Check, X, FolderOpen, Save, RotateCcw, Clock,
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface Backup {
   filename: string
@@ -12,7 +13,7 @@ interface Backup {
 }
 
 export default function Database() {
-  const [dbPath, setDbPath] = useState(localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db')
+  const [dbPath, setDbPath] = useState(getDefaultDbPath())
   const [isSaved, setIsSaved] = useState(false)
   const [isValid, setIsValid] = useState<boolean | null>(null)
   const [isChecking, setIsChecking] = useState(false)
@@ -48,7 +49,7 @@ export default function Database() {
   const loadBackups = async () => {
     setIsLoadingBackups(true)
     try {
-      const response = await fetch(`http://localhost:3001/api/database/backups?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/database/backups?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
       if (result.success) {
         setBackups(result.backups || [])
@@ -112,7 +113,7 @@ export default function Database() {
   const handleCreateBackup = async () => {
     setIsCreatingBackup(true)
     try {
-      const response = await fetch('http://localhost:3001/api/database/backup', {
+      const response = await fetch(apiUrl('/api/database/backup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath })
@@ -137,7 +138,7 @@ export default function Database() {
     }
 
     try {
-      const response = await fetch('http://localhost:3001/api/database/restore', {
+      const response = await fetch(apiUrl('/api/database/restore'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, backupPath })
@@ -160,7 +161,7 @@ export default function Database() {
     }
 
     try {
-      const response = await fetch('http://localhost:3001/api/database/backup', {
+      const response = await fetch(apiUrl('/api/database/backup'), {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ backupPath })

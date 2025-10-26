@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { useState } from 'react'
+import { getDefaultDbPath } from '@/config'
 import Layout from './components/layout/Layout'
 import Home from './pages/data/Home'
 import Dashboard from './pages/data/Dashboard'
@@ -30,7 +31,7 @@ import Explore from './pages/results/Explore'
 
 function App() {
   const [dbPath, _setDbPath] = useState<string | null>(() => {
-    return localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+    return getDefaultDbPath()
   })
   const [showDbSelector, _setShowDbSelector] = useState(false)
 

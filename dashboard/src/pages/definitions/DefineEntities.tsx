@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface Entity {
   entity_id?: number
@@ -43,8 +44,8 @@ export default function DefineEntities() {
 
   const loadEntities = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch('http://localhost:3001/api/entities/list', {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/entities/list'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath })
@@ -89,8 +90,8 @@ export default function DefineEntities() {
 
   const handleSave = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch('http://localhost:3001/api/entities/save', {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/entities/save'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, entity: formData })
@@ -115,8 +116,8 @@ export default function DefineEntities() {
     if (!confirm('Are you sure you want to delete this entity?')) return
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch('http://localhost:3001/api/entities/delete', {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/entities/delete'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, entityId })

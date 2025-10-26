@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, Trash2, FolderOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface SavedRun {
   run_id: number
@@ -18,13 +19,12 @@ export default function SavedCalcs() {
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-
   const loadSavedRuns = async () => {
     setLoading(true)
     setError(null)
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/runs/list?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(apiUrl(`/api/runs/list?dbPath=${encodeURIComponent(dbPath)}`))
 
       if (!response.ok) {
         throw new Error('Failed to load saved runs')
@@ -49,8 +49,9 @@ export default function SavedCalcs() {
       return
     }
 
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch('http://localhost:3001/api/runs/restore', {
+      const response = await fetch(apiUrl('/api/runs/restore'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, runId })
@@ -81,8 +82,9 @@ export default function SavedCalcs() {
       return
     }
 
+    const dbPath = getDefaultDbPath()
     try {
-      const response = await fetch(`http://localhost:3001/api/runs/${runId}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const response = await fetch(apiUrl(`/api/runs/${runId}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
 

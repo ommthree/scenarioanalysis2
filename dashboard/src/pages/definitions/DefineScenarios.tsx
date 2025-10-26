@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, Plus, Trash2, Upload, Download } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface Driver {
   driver_id?: number
@@ -20,8 +21,8 @@ const DefineScenarios: React.FC = () => {
 
   // Fetch drivers on mount
   useEffect(() => {
-    const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-    fetch(`http://localhost:3001/api/drivers?dbPath=${encodeURIComponent(dbPath)}`)
+    const dbPath = getDefaultDbPath()
+    fetch(apiUrl(`/api/drivers?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         const financial = data.filter((d: Driver) => d.category === 'financial')
@@ -82,12 +83,12 @@ const DefineScenarios: React.FC = () => {
     console.log('Starting save...')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
       const allDrivers = [...financialDrivers, ...physicalDrivers, ...fxDrivers]
 
       console.log('Saving drivers:', allDrivers.length, 'drivers to', dbPath)
 
-      const response = await fetch('http://localhost:3001/api/drivers', {
+      const response = await fetch(apiUrl('/api/drivers'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dbPath, drivers: allDrivers })

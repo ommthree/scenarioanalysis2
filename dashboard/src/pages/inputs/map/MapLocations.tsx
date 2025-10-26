@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileText, Move, Sparkles } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface TableInfo {
   tableName: string
@@ -60,11 +61,11 @@ const MapLocations: React.FC = () => {
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+  const dbPath = getDefaultDbPath()
 
   // Fetch available staging tables
   useEffect(() => {
-    fetch(`http://localhost:3001/api/locations/staging-tables?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/locations/staging-tables?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -76,7 +77,7 @@ const MapLocations: React.FC = () => {
 
   // Fetch entities
   useEffect(() => {
-    fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/entities?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         setEntities(Array.isArray(data) ? data : [])
@@ -103,7 +104,7 @@ const MapLocations: React.FC = () => {
         }
 
         console.log('Extracting unique entities from:', tableInfo.tableName)
-        const response = await fetch(`http://localhost:3001/api/locations/staging-full?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}`)
+        const response = await fetch(apiUrl(`/api/locations/staging-full?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}`))
         const result = await response.json()
 
         if (result.success && result.data) {
@@ -169,7 +170,7 @@ const MapLocations: React.FC = () => {
 
         console.log('Auto-save payload:', payload)
 
-        await fetch('http://localhost:3001/api/locations/save-location-mapping', {
+        await fetch(apiUrl('/api/locations/save-location-mapping'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -206,7 +207,7 @@ const MapLocations: React.FC = () => {
     try {
       // Load saved mapping if it exists
       try {
-        const mappingResponse = await fetch(`http://localhost:3001/api/locations/get-location-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`)
+        const mappingResponse = await fetch(apiUrl(`/api/locations/get-location-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`))
         const mappingResult = await mappingResponse.json()
 
         console.log('Mapping fetch result:', mappingResult)
@@ -245,7 +246,7 @@ const MapLocations: React.FC = () => {
         return
       }
 
-      const url = `http://localhost:3001/api/locations/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`
+      const url = apiUrl(`/api/locations/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`)
       console.log('Fetching:', url)
 
       const response = await fetch(url)
@@ -361,7 +362,7 @@ Rules:
 - Unit might be named like "unit", "units", "measurement"
 - Value columns are typically years, quarters, or metrics`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -451,7 +452,7 @@ Rules:
 - Use the exact entity_id values from the Available Entities list
 - Use the exact csv_entity_value strings from the CSV Entity Values list`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -498,7 +499,7 @@ Rules:
       const valueColumns = getValueColumns()
       console.log('Manual save valueColumns:', valueColumns)
 
-      const response = await fetch('http://localhost:3001/api/locations/save-location-mapping', {
+      const response = await fetch(apiUrl('/api/locations/save-location-mapping'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -523,7 +524,7 @@ Rules:
 
       // After saving mapping, ingest locations into production table
       console.log('Mapping saved, now ingesting locations...')
-      const ingestResponse = await fetch('http://localhost:3001/api/locations/ingest', {
+      const ingestResponse = await fetch(apiUrl('/api/locations/ingest'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

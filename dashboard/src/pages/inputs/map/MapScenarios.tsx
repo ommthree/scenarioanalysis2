@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Save, AlertCircle, GripVertical, FileSpreadsheet, Move, Sparkles } from 'lucide-react'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface Driver {
   driver_id: number
@@ -55,11 +56,11 @@ const MapScenarios: React.FC = () => {
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
-  const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+  const dbPath = getDefaultDbPath()
 
   // Fetch available staging tables
   useEffect(() => {
-    fetch(`http://localhost:3001/api/scenarios/staging-tables?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/scenarios/staging-tables?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -71,7 +72,7 @@ const MapScenarios: React.FC = () => {
 
   // Fetch drivers
   useEffect(() => {
-    fetch(`http://localhost:3001/api/drivers?dbPath=${encodeURIComponent(dbPath)}`)
+    fetch(apiUrl(`/api/drivers?dbPath=${encodeURIComponent(dbPath)}`))
       .then(res => res.json())
       .then(data => {
         setDrivers(data || [])
@@ -107,7 +108,7 @@ const MapScenarios: React.FC = () => {
 
         console.log('Auto-save payload:', payload)
 
-        await fetch('http://localhost:3001/api/scenarios/save-scenario-mapping', {
+        await fetch(apiUrl('/api/scenarios/save-scenario-mapping'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -135,7 +136,7 @@ const MapScenarios: React.FC = () => {
       // Load saved mapping if it exists
       let mappingLoaded = false
       try {
-        const mappingResponse = await fetch(`http://localhost:3001/api/scenarios/get-scenario-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`)
+        const mappingResponse = await fetch(apiUrl(`/api/scenarios/get-scenario-mapping?dbPath=${encodeURIComponent(dbPath)}&fileId=${fileId}`))
         const mappingResult = await mappingResponse.json()
 
         if (mappingResult.success && mappingResult.mapping) {
@@ -181,7 +182,7 @@ const MapScenarios: React.FC = () => {
         return
       }
 
-      const url = `http://localhost:3001/api/scenarios/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`
+      const url = apiUrl(`/api/scenarios/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`)
       console.log('Fetching:', url)
 
       const response = await fetch(url)
@@ -283,7 +284,7 @@ Rules:
 - Variable column might be named like "variable", "driver", "indicator"
 - If there are multiple value columns, identify the first and last one`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -374,7 +375,7 @@ Rules:
 - Not all rows need to be mapped
 - Use the exact driver codes from the Available Drivers list`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
@@ -426,7 +427,7 @@ Rules:
       console.log('variableMappings:', variableMappings)
       console.log('========================')
 
-      const response = await fetch('http://localhost:3001/api/scenarios/save-scenario-mapping', {
+      const response = await fetch(apiUrl('/api/scenarios/save-scenario-mapping'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

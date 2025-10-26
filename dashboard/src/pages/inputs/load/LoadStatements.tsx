@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { apiUrl, getDefaultDbPath } from '@/config'
 
 interface CsvData {
   headers: string[]
@@ -47,8 +48,8 @@ export default function LoadStatements() {
 
   const fetchStagedFiles = async () => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${statementType}?dbPath=${encodeURIComponent(dbPath)}`)
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${statementType}?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
 
       if (result.success) {
@@ -61,8 +62,8 @@ export default function LoadStatements() {
 
   const handleDeleteStagedFile = async (fileId: number) => {
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-      const response = await fetch(`http://localhost:3001/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`, {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}?dbPath=${encodeURIComponent(dbPath)}`), {
         method: 'DELETE'
       })
       const result = await response.json()
@@ -128,7 +129,7 @@ export default function LoadStatements() {
     setLoadMessage('')
 
     try {
-      const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+      const dbPath = getDefaultDbPath()
 
       // Create form data
       const formData = new FormData()
@@ -137,7 +138,7 @@ export default function LoadStatements() {
       formData.append('dbPath', dbPath)
 
       // Call API
-      const response = await fetch('http://localhost:3001/api/statements/load', {
+      const response = await fetch(apiUrl('/api/statements/load'), {
         method: 'POST',
         body: formData
       })
@@ -154,7 +155,7 @@ export default function LoadStatements() {
           // Read CSV file content
           const csvText = await csvFile.text()
 
-          await fetch('http://localhost:3001/api/staged-files', {
+          await fetch(apiUrl('/api/staged-files'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -297,8 +298,8 @@ export default function LoadStatements() {
                         onClick={async () => {
                           // Fetch and preview the staged file
                           try {
-                            const dbPath = localStorage.getItem('lastDatabasePath') || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
-                            const response = await fetch(`http://localhost:3001/api/staged-files/${file.file_id}/preview?dbPath=${encodeURIComponent(dbPath)}`)
+                            const dbPath = getDefaultDbPath()
+                            const response = await fetch(apiUrl(`/api/staged-files/${file.file_id}/preview?dbPath=${encodeURIComponent(dbPath)}`))
                             const result = await response.json()
 
                             if (result.success && result.csvText) {
