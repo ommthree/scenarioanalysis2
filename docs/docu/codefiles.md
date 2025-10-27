@@ -1,8 +1,15 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-10-26
+**Last Updated:** 2025-10-27
 **Total Files:** 79 (27 C++ source, 28 C++ headers, 49 TypeScript/React, 4 JavaScript server, 2 config/utility files)
 **Status:** Production - Unified Engine Architecture with Validation & Logging System
+
+**Recent Changes (2025-10-27):**
+- ✅ Fixed `scenario_mapping` schema - Added `template_code` field (Session 7)
+- ✅ Updated POST `/api/scenarios/save-scenario-mapping` - Accept and save `templateCode` parameter
+- ✅ Updated POST `/api/scenario-mappings/save` - Accept and save `templateCode` parameter
+- ✅ Fixed scenario ingestion - Resolve template_id from template_code (no hardcoded defaults)
+- ✅ Both mapping endpoints now query active template if `templateCode` not provided
 
 **Recent Changes (2025-10-26):**
 - ✅ Added `server/validation_service.js` - Pre-flight data completeness checks (Issue #12, #14)
@@ -1218,7 +1225,8 @@ All UI components are from shadcn/ui library, customized for this project:
 
 **Scenario Mapping:**
 - `POST /api/ingest-scenarios` — Copy staging → scenario table
-- `POST /api/save-scenario-mapping` — Save column mapping
+- `POST /api/save-scenario-mapping` — Save column mapping (accepts `templateCode`, queries active template if not provided)
+- `POST /api/scenario-mappings/save` — Save scenario mapping (accepts `templateCode`, queries active template if not provided)
 
 **Location Mapping:**
 - `POST /api/ingest-locations` — Copy staging_location → location

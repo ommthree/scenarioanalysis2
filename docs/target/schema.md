@@ -962,9 +962,14 @@ Optional: Delete file → DROP staging table
 | `variable_mappings` | TEXT | DEFAULT '{}' | JSON: {csv_driver_name: db_driver_code} |
 | `scenario_column` | TEXT | | CSV column name for scenario |
 | `units_column` | TEXT | | CSV column name for units |
+| `template_code` | TEXT | | Statement template code for scenario creation (e.g., 'TEST_UNIFIED_L2') |
+| `created_at` | TEXT | DEFAULT datetime('now') | Timestamp when mapping created |
+| `last_updated` | TEXT | DEFAULT datetime('now') | Timestamp when mapping last modified |
 
 **Indexes:**
 - `idx_scenario_mapping_file` on `file_id`
+
+**Note:** The `template_code` field was added to align with `statement_mapping` schema. When scenarios are ingested, the system queries `statement_template` table to resolve `template_code` → `template_id`, ensuring scenarios reference valid templates. If `template_code` is NULL, the system falls back to the active template (`is_active = 1`).
 
 **Example `variable_mappings`:**
 ```json

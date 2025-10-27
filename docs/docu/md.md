@@ -170,6 +170,17 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-10-27 (Session 7 - Template Assignment Fix):**
+- Fixed TEMPLATE_NOT_FOUND validation errors blocking all calculations
+- Added template_code column to scenario_mapping table (matching statement_mapping schema)
+- Updated POST /api/scenarios/save-scenario-mapping to accept and save templateCode
+- Updated POST /api/scenario-mappings/save to accept and save templateCode
+- Fixed scenario ingestion to query template_id from statement_template using template_code
+- Added UPDATE statement to always fix template_id after scenario INSERT OR IGNORE
+- Fixed all scenarios with statement_template_id = 1 to use 11178 (TEST_UNIFIED_L2)
+- Deleted orphaned staging tables (staging_statement_carbon, staging_statement_cashflow)
+- Both endpoints now query active template if templateCode not provided
+
 **2025-10-26 (Session 6 - Validation UI Polish):**
 - Polished ValidationPanel UX with collapsible design
 - Made panel expandable/collapsible with chevron icons
