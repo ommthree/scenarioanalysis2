@@ -2339,6 +2339,53 @@ app.get('/api/scenarios/staging-preview', (req, res) => {
 })
 
 /**
+ * Get unique currencies from staging table
+ * GET /api/scenarios/get-currencies
+ * Query params: dbPath, tableName
+ */
+app.get('/api/scenarios/get-currencies', (req, res) => {
+  try {
+    const { dbPath, tableName } = req.query
+
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Invalid database path' })
+    }
+
+    if (!tableName) {
+      return res.status(400).json({ error: 'Table name is required' })
+    }
+
+    // Validate table name
+    try {
+      security.validateTableName(tableName, 'staging_scenario_')
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get unique values from Units column
+    db.all(`SELECT DISTINCT ${security.quoteIdentifier('Units')} as currency FROM ${security.quoteIdentifier(tableName)} WHERE ${security.quoteIdentifier('Units')} IS NOT NULL ORDER BY currency`, [], (err, rows) => {
+      db.close()
+
+      if (err) {
+        return res.status(500).json({ error: 'Failed to get currencies: ' + err.message })
+      }
+
+      const currencies = rows.map(row => row.currency).filter(c => c && c.trim() !== '')
+      res.json({ success: true, currencies })
+    })
+  } catch (error) {
+    console.error('Get currencies error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
  * Save scenario mapping
  * POST /api/scenarios/save-mapping
  * Body: { dbPath, tableName, mappings }
@@ -2717,7 +2764,7 @@ app.post('/api/scenarios/save-file-config', express.json(), (req, res) => {
  */
 app.post('/api/scenarios/save-scenario-mapping', express.json(), (req, res) => {
   try {
-    const { dbPath, fileId, scenarioColumn, unitsColumn, driverColumn, valueColumns, variableMappings } = req.body
+    const { dbPath, fileId, scenarioColumn, unitsColumn, driverColumn, valueColumns, variableMappings, templateCode } = req.body
 
     console.log('=== SAVE SCENARIO MAPPING RECEIVED ===')
     console.log('fileId:', fileId)
@@ -2729,6 +2776,7 @@ app.post('/api/scenarios/save-scenario-mapping', express.json(), (req, res) => {
     console.log('valueColumns isArray:', Array.isArray(valueColumns))
     console.log('valueColumns length:', valueColumns?.length)
     console.log('variableMappings count:', variableMappings?.length)
+    console.log('templateCode:', templateCode)
     console.log('=====================================')
 
     if (!dbPath || !fs.existsSync(dbPath)) {
@@ -2739,35 +2787,62 @@ app.post('/api/scenarios/save-scenario-mapping', express.json(), (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' })
     }
 
+    // Get active template if not provided
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
       }
     })
 
-    const valueColumnsJson = JSON.stringify(valueColumns)
-    const variableMappingsJson = JSON.stringify(variableMappings)
-
-    db.run(
-      `INSERT OR REPLACE INTO scenario_mapping
-       (file_id, scenario_column, units_column, driver_column, value_columns, variable_mappings, last_updated)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-      [fileId, scenarioColumn, unitsColumn, driverColumn, valueColumnsJson, variableMappingsJson],
-      function(err) {
-        db.close()
-
-        if (err) {
-          console.error('Error saving scenario mapping:', err)
-          return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
-        }
-
-        res.json({
-          success: true,
-          message: 'Scenario mapping saved successfully',
-          mappingId: this.lastID
-        })
+    // If templateCode not provided, fetch the active template
+    const resolveTemplateCode = (callback) => {
+      if (templateCode) {
+        callback(null, templateCode)
+      } else {
+        db.get(
+          'SELECT code FROM statement_template WHERE is_active = 1 LIMIT 1',
+          [],
+          (err, row) => {
+            if (err) {
+              callback(err)
+            } else {
+              callback(null, row?.code || null)
+            }
+          }
+        )
       }
-    )
+    }
+
+    resolveTemplateCode((err, finalTemplateCode) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to resolve template: ' + err.message })
+      }
+
+      const valueColumnsJson = JSON.stringify(valueColumns)
+      const variableMappingsJson = JSON.stringify(variableMappings)
+
+      db.run(
+        `INSERT OR REPLACE INTO scenario_mapping
+         (file_id, scenario_column, units_column, driver_column, value_columns, variable_mappings, template_code, last_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        [fileId, scenarioColumn, unitsColumn, driverColumn, valueColumnsJson, variableMappingsJson, finalTemplateCode],
+        function(err) {
+          db.close()
+
+          if (err) {
+            console.error('Error saving scenario mapping:', err)
+            return res.status(500).json({ error: 'Failed to save mapping: ' + err.message })
+          }
+
+          res.json({
+            success: true,
+            message: 'Scenario mapping saved successfully',
+            mappingId: this.lastID
+          })
+        }
+      )
+    })
   } catch (error) {
     console.error('Save scenario mapping error:', error)
     res.status(500).json({ error: error.message })
@@ -4315,7 +4390,7 @@ app.get('/api/damage-curves/get-damage-curve-mapping', (req, res) => {
  */
 app.post('/api/scenario-mappings/save', express.json(), (req, res) => {
   try {
-    const { dbPath, fileId, driverColumn, valueColumns, variableMappings } = req.body
+    const { dbPath, fileId, driverColumn, valueColumns, variableMappings, templateCode } = req.body
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -4334,29 +4409,56 @@ app.post('/api/scenario-mappings/save', express.json(), (req, res) => {
     const valueColumnsJson = JSON.stringify(valueColumns)
     const variableMappingsJson = JSON.stringify(variableMappings)
 
-    db.run(
-      `INSERT INTO scenario_mapping (file_id, driver_column, value_columns, variable_mappings)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(file_id) DO UPDATE SET
-         driver_column = excluded.driver_column,
-         value_columns = excluded.value_columns,
-         variable_mappings = excluded.variable_mappings,
-         last_updated = datetime('now')`,
-      [fileId, driverColumn, valueColumnsJson, variableMappingsJson],
-      function(err) {
-        db.close()
-
-        if (err) {
-          return res.status(500).json({ error: 'Failed to save scenario mapping: ' + err.message })
-        }
-
-        res.json({
-          success: true,
-          message: `Scenario mapping saved for file ${fileId}`,
-          mappingId: this.lastID
-        })
+    // If templateCode not provided, fetch the active template
+    const resolveTemplateCode = (callback) => {
+      if (templateCode) {
+        callback(null, templateCode)
+      } else {
+        db.get(
+          'SELECT code FROM statement_template WHERE is_active = 1 LIMIT 1',
+          [],
+          (err, row) => {
+            if (err) {
+              callback(err)
+            } else {
+              callback(null, row?.code || null)
+            }
+          }
+        )
       }
-    )
+    }
+
+    resolveTemplateCode((err, finalTemplateCode) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to resolve template: ' + err.message })
+      }
+
+      db.run(
+        `INSERT INTO scenario_mapping (file_id, driver_column, value_columns, variable_mappings, template_code)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(file_id) DO UPDATE SET
+           driver_column = excluded.driver_column,
+           value_columns = excluded.value_columns,
+           variable_mappings = excluded.variable_mappings,
+           template_code = excluded.template_code,
+           last_updated = datetime('now')`,
+        [fileId, driverColumn, valueColumnsJson, variableMappingsJson, finalTemplateCode],
+        function(err) {
+          db.close()
+
+          if (err) {
+            return res.status(500).json({ error: 'Failed to save scenario mapping: ' + err.message })
+          }
+
+          res.json({
+            success: true,
+            message: `Scenario mapping saved for file ${fileId}`,
+            mappingId: this.lastID
+          })
+        }
+      )
+    })
   } catch (error) {
     console.error('Save scenario mapping error:', error)
     res.status(500).json({ error: error.message })
@@ -5734,7 +5836,38 @@ app.post('/api/ingest/statements', async (req, res) => {
               logDebug('Column mapping structure from statement_mapping:', columnMapping)
               const hierarchicalMappings = columnMapping.hierarchical_mappings || []
               logVerbose(`Processing ${hierarchicalMappings.length} hierarchical mapping(s)`)
-              logVerbose(`These will be inserted as opening balance (period_id = 0) in scenario_drivers table`)
+
+              // Determine target staging table based on statement_type
+              const statementType = mapping.statement_type
+              let stagingTable
+              switch (statementType) {
+                case 'pnl':
+                  stagingTable = 'staging_statement_pnl'
+                  break
+                case 'bs':
+                case 'balance_sheet':
+                  stagingTable = 'staging_statement_balance_sheet'
+                  break
+                case 'cashflow':
+                case 'cf':
+                  stagingTable = 'staging_statement_cashflow'
+                  break
+                case 'carbon':
+                  stagingTable = 'staging_statement_carbon'
+                  break
+                default:
+                  throw new Error(`Unknown statement type: ${statementType}`)
+              }
+
+              logVerbose(`Statement type: ${statementType} → Target table: ${stagingTable}`)
+
+              // Clear existing data in staging table
+              await new Promise((res, rej) => {
+                db.run(`DELETE FROM ${stagingTable}`, [], (err) => {
+                  if (err) rej(err)
+                  else res()
+                })
+              })
 
               for (const hm of hierarchicalMappings) {
                 const csvRow = csvData[hm.csv_row_index]
@@ -5744,44 +5877,21 @@ app.post('/api/ingest/statements', async (req, res) => {
                 }
 
                 const value = parseFloat(csvRow.Value || csvRow.value || 0)
-                const entityId = hm.entity_path[hm.entity_path.length - 1]
 
-                // Insert opening balance for ALL existing scenarios
-                // Get all scenario IDs to insert opening balance for each
-                const scenarioIds = await new Promise((res, rej) => {
-                  db.all(`SELECT scenario_id FROM scenario`, [], (err, rows) => {
-                    if (err) rej(err)
-                    else res(rows.map(r => r.scenario_id))
-                  })
+                logDebug(`Inserting into ${stagingTable}:`, {
+                  source_csv_row: hm.csv_row_index,
+                  source_csv_value: csvRow.Value || csvRow.value,
+                  parsed_value: value,
+                  line_item_code: hm.line_item_code
                 })
 
-                // Insert for each scenario
-                for (const scenarioId of scenarioIds) {
-                  logDebug(`Inserting into scenario_drivers table:`, {
-                    source_csv_row: hm.csv_row_index,
-                    source_csv_value: csvRow.Value || csvRow.value,
-                    parsed_value: value,
-                    entity_path_from_mapping: hm.entity_path,
-                    line_item_from_mapping: hm.line_item_code,
-                    insert_to_table: 'scenario_drivers',
-                    entity_id: entityId,
-                    scenario_id: scenarioId,
-                    period_id: 0,
-                    driver_code: hm.line_item_code,
-                    value: value,
-                    unit_code: 'USD'
-                  })
-
-                  await new Promise((res, rej) => {
-                    db.run(
-                      `INSERT OR REPLACE INTO scenario_drivers
-                       (scenario_id, period_id, driver_code, value, unit_code)
-                       VALUES (?, 0, ?, ?, 'USD')`,
-                      [scenarioId, hm.line_item_code, value],
-                      (err) => (err ? rej(err) : (totalInserted++, res()))
-                    )
-                  })
-                }
+                await new Promise((res, rej) => {
+                  db.run(
+                    `INSERT INTO ${stagingTable} (line_item, value) VALUES (?, ?)`,
+                    [hm.line_item_code, value.toString()],
+                    (err) => (err ? rej(err) : (totalInserted++, res()))
+                  )
+                })
               }
               logVerbose(`Completed processing file: ${mapping.csv_file_name}`)
             } catch (err) {
@@ -5793,7 +5903,7 @@ app.post('/api/ingest/statements', async (req, res) => {
           if (errors.length > 0) {
             reject(new Error(errors.join('; ')))
           } else {
-            logVerbose(`Statement ingestion complete. Inserted ${totalInserted} driver values into scenario_drivers table`)
+            logVerbose(`Statement ingestion complete. Inserted ${totalInserted} values into staging tables`)
             resolve({ inserted: totalInserted, mappings: mappings.length })
           }
         }
@@ -5857,6 +5967,9 @@ app.post('/api/ingest/scenarios', async (req, res) => {
         })
         db.run('DELETE FROM scenario_drivers', (err) => {
           if (err) console.error('Failed to clear scenario_drivers:', err)
+        })
+        db.run('DELETE FROM fx_rate', (err) => {
+          if (err) console.error('Failed to clear fx_rate:', err)
         })
         db.run('DELETE FROM statement_result', (err) => {
           if (err) console.error('Failed to clear statement_result:', err)
@@ -5995,24 +6108,62 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                 // Use file_id in code to ensure one scenario per file (no duplicates)
                 const scenarioCode = `SCENARIO_${scenarioName}_FILE${mapping.file_id}`
                 logVerbose(`Creating/reusing scenario: ${scenarioName} (code: ${scenarioCode})`)
+                logVerbose(`[DIAGNOSTIC] About to look up template. mapping = ${JSON.stringify(mapping)}`)
+
+                // Get template_id from statement_mapping's template_code
+                logDebug(`[TEMPLATE_LOOKUP] mapping.template_code = ${mapping.template_code}`)
+                const templateId = await new Promise((res, rej) => {
+                  db.get(
+                    'SELECT template_id FROM statement_template WHERE code = ?',
+                    [mapping.template_code],
+                    (err, row) => {
+                      if (err) {
+                        logDebug(`[TEMPLATE_LOOKUP] ERROR: ${err.message}`)
+                        rej(err)
+                      } else {
+                        const id = row?.template_id || 1
+                        logDebug(`[TEMPLATE_LOOKUP] Query result: ${JSON.stringify(row)}, resolved templateId = ${id}`)
+                        res(id)
+                      }
+                    }
+                  )
+                })
 
                 // Create scenario record (if not exists)
                 await new Promise((res, rej) => {
                   db.run(
                     `INSERT OR IGNORE INTO scenario
                      (code, name, description, json_drivers, statement_template_id, tax_strategy_id)
-                     VALUES (?, ?, ?, '[]', 1, 1)`,
-                    [scenarioCode, scenarioName, `Imported from ${mapping.file_id}`],
+                     VALUES (?, ?, ?, '[]', ?, 1)`,
+                    [scenarioCode, scenarioName, `Imported from ${mapping.file_id}`, templateId],
                     function(err) {
                       if (err) rej(err)
                       else {
                         if (this.changes > 0) {
                           scenariosCreated++
-                          logDebug(`Inserted new scenario into scenario table`)
+                          logDebug(`Inserted new scenario into scenario table with template_id ${templateId}`)
                         } else {
                           logDebug(`Reusing existing scenario with code: ${scenarioCode}`)
                         }
                         res(this.lastID)
+                      }
+                    }
+                  )
+                })
+
+                // Always update template_id in case it was wrong from previous ingestion
+                logDebug(`[TEMPLATE_UPDATE] Updating scenario ${scenarioCode} to template_id ${templateId}`)
+                await new Promise((res, rej) => {
+                  db.run(
+                    `UPDATE scenario SET statement_template_id = ? WHERE code = ?`,
+                    [templateId, scenarioCode],
+                    function(err) {
+                      if (err) {
+                        logDebug(`[TEMPLATE_UPDATE] ERROR: ${err.message}`)
+                        rej(err)
+                      } else {
+                        logDebug(`[TEMPLATE_UPDATE] SUCCESS: ${this.changes} row(s) updated`)
+                        res()
                       }
                     }
                   )
@@ -6099,6 +6250,66 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                     })
                   }
                 }
+
+                // Populate fx_rate table from FX drivers (category = 'fx')
+                logVerbose(`Populating FX rates from FX drivers for scenario: ${scenarioName}`)
+                const baseCurrency = await new Promise((res, rej) => {
+                  db.get(
+                    `SELECT base_currency FROM scenario WHERE scenario_id = ?`,
+                    [scenarioId],
+                    (err, row) => (err ? rej(err) : res(row?.base_currency || 'CHF'))
+                  )
+                })
+
+                logDebug(`Base currency for scenario ${scenarioId}: ${baseCurrency}`)
+
+                // Get all FX drivers from scenario_drivers that match drivers with category='fx'
+                const fxDrivers = await new Promise((res, rej) => {
+                  db.all(
+                    `SELECT sd.scenario_id, sd.period_id, sd.driver_code, sd.value, d.code as currency_code
+                     FROM scenario_drivers sd
+                     JOIN driver d ON sd.driver_code = d.code
+                     WHERE sd.scenario_id = ? AND d.category = 'fx'
+                     ORDER BY sd.period_id, sd.driver_code`,
+                    [scenarioId],
+                    (err, rows) => (err ? rej(err) : res(rows))
+                  )
+                })
+
+                logVerbose(`Found ${fxDrivers.length} FX driver value(s) for scenario ${scenarioId}`)
+
+                let fxRatesInserted = 0
+                for (const fxDriver of fxDrivers) {
+                  // The value in scenario_drivers is the exchange rate from base_currency to foreign currency
+                  // For example: CHF base, USD driver with value 0.91 means 1 CHF = 0.91 USD
+                  // But fx_rate table expects: 1 USD = X CHF, so we need to invert
+                  const rate = 1 / fxDriver.value  // Invert to get from_currency to base_currency
+
+                  await new Promise((res, rej) => {
+                    db.run(
+                      `INSERT OR REPLACE INTO fx_rate
+                       (scenario_id, period_id, from_currency, to_currency, rate, rate_type)
+                       VALUES (?, ?, ?, ?, ?, 'average')`,
+                      [fxDriver.scenario_id, fxDriver.period_id, fxDriver.currency_code, baseCurrency, rate],
+                      (err) => {
+                        if (err) {
+                          logDebug(`Error inserting FX rate: ${err.message}`)
+                          rej(err)
+                        } else {
+                          fxRatesInserted++
+                          res()
+                        }
+                      }
+                    )
+                  })
+                }
+
+                if (fxRatesInserted > 0) {
+                  logVerbose(`  → Inserted ${fxRatesInserted} FX rate(s) into fx_rate table`)
+                } else {
+                  logVerbose(`  → No FX rates to insert (no drivers with category='fx')`)
+                }
+
                 logVerbose(`Completed scenario: ${scenarioName}`)
                 logVerbose(`  → Inserted ${variableMappings.length} drivers × ${periodColumns.length} periods = ${variableMappings.length * periodColumns.length} values`)
               }
