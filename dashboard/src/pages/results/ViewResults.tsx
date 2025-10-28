@@ -53,11 +53,22 @@ export default function ViewResults() {
   const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set())
   const [driverData, setDriverData] = useState<Map<string, DriverContribution[]>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [lastRunMode, setLastRunMode] = useState<{ stochasticMode: boolean; whatIfMode: boolean } | null>(null)
 
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
     loadScenarios()
     loadEntities()
+
+    // Load last run mode from localStorage
+    const saved = localStorage.getItem('lastRunMode')
+    if (saved) {
+      try {
+        setLastRunMode(JSON.parse(saved))
+      } catch (err) {
+        logger.error('Failed to load last run mode:', err)
+      }
+    }
   }, [])
 
   // Reload periods when scenario changes
@@ -382,6 +393,32 @@ export default function ViewResults() {
           <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#ffffff' }}>
             View Results
           </h1>
+          {lastRunMode?.stochasticMode && (
+            <span style={{
+              padding: '4px 10px',
+              backgroundColor: 'rgba(59, 130, 246, 0.2)',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: '12px',
+              color: '#3b82f6',
+              fontSize: '12px',
+              fontWeight: '600'
+            }}>
+              STOCHASTIC
+            </span>
+          )}
+          {lastRunMode?.whatIfMode && (
+            <span style={{
+              padding: '4px 10px',
+              backgroundColor: 'rgba(16, 185, 129, 0.2)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: '12px',
+              color: '#10b981',
+              fontSize: '12px',
+              fontWeight: '600'
+            }}>
+              WHAT-IF
+            </span>
+          )}
         </div>
         <p style={{ color: '#94a3b8', fontSize: '16px' }}>
           Financial statement results by period

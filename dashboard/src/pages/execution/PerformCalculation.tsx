@@ -34,6 +34,8 @@ export default function PerformCalculation() {
   const [isSaving, setIsSaving] = useState(false)
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
   const [isValidating, setIsValidating] = useState(false)
+  const [stochasticMode, setStochasticMode] = useState(false)
+  const [whatIfMode, setWhatIfMode] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Load run definition, previous logs, and validation result on mount
@@ -43,6 +45,8 @@ export default function PerformCalculation() {
       try {
         const data = JSON.parse(saved)
         setRunName(data.runName || 'Unnamed Run')
+        setStochasticMode(data.stochasticMode || false)
+        setWhatIfMode(data.whatIfMode || false)
       } catch (err) {
         setRunName('Unnamed Run')
       }
@@ -273,6 +277,40 @@ export default function PerformCalculation() {
         addLog('info', 'Step 3: Running multi-period scenario calculations...')
       }
 
+      // If what-if mode, generate combinations
+      if (whatIfMode) {
+        const combosResponse = await fetch(apiUrl('/api/whatif/combinations'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dbPath })
+        })
+
+        if (!combosResponse.ok) {
+          throw new Error('Failed to generate what-if combinations')
+        }
+
+        const combosResult = await combosResponse.json()
+
+        if (combosResult.success && combosResult.combinations) {
+          const combos = combosResult.combinations
+          const numRuns = combos.length
+
+          if (verbosity !== 'quiet') {
+            addLog('info', `What-If Mode: Running ${numRuns} combinations (2^${Math.log2(numRuns)} action permutations)`)
+          }
+
+          if (verbosity === 'verbose' || verbosity === 'debug') {
+            combos.forEach((combo: any, idx: number) => {
+              if (combo.action_codes.length === 0) {
+                addLog('info', `  Run ${idx + 1}/${numRuns}: BASE (no actions)`)
+              } else {
+                addLog('info', `  Run ${idx + 1}/${numRuns}: ${combo.action_codes.join(' + ')}`)
+              }
+            })
+          }
+        }
+      }
+
       if (verbosity === 'debug') {
         addLog('info', 'Processing line item formulas and dependencies...')
         addLog('info', 'Applying validation rules...')
@@ -283,7 +321,7 @@ export default function PerformCalculation() {
       const calcResponse = await fetch(apiUrl('/api/calculate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath })
+        body: JSON.stringify({ dbPath, whatIfMode })
       })
 
       if (!calcResponse.ok) {
@@ -324,6 +362,12 @@ export default function PerformCalculation() {
       addLog('success', '✓ All steps completed successfully!')
       setRunStatus('success')
       setIsRunning(false)
+
+      // Save post-run flags
+      localStorage.setItem('lastRunMode', JSON.stringify({
+        stochasticMode,
+        whatIfMode
+      }))
 
     } catch (err) {
       addLog('error', `Calculation failed: ${err}`)
@@ -477,9 +521,37 @@ export default function PerformCalculation() {
         <CardContent style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>
-                {runName}
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', margin: 0 }}>
+                  {runName}
+                </h3>
+                {stochasticMode && (
+                  <span style={{
+                    padding: '4px 10px',
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    borderRadius: '12px',
+                    color: '#3b82f6',
+                    fontSize: '12px',
+                    fontWeight: '600'
+                  }}>
+                    STOCHASTIC
+                  </span>
+                )}
+                {whatIfMode && (
+                  <span style={{
+                    padding: '4px 10px',
+                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    borderRadius: '12px',
+                    color: '#10b981',
+                    fontSize: '12px',
+                    fontWeight: '600'
+                  }}>
+                    WHAT-IF
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {getStatusIcon()}
                 <span style={{ color: '#94a3b8', fontSize: '14px' }}>

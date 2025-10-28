@@ -24,6 +24,7 @@ import * as security from './security.js'
 import StagingService from './staging_service.js'
 import ValidationService from './validation_service.js'
 import LoggingService from './logging_service.js'
+import WhatIfService from './whatif_service.js'
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
@@ -6833,6 +6834,38 @@ app.post('/api/validate-scenario', (req, res) => {
       db.close()
       res.status(500).json({ error: error.message })
     })
+})
+
+/**
+ * Generate what-if combinations
+ */
+app.post('/api/whatif/combinations', async (req, res) => {
+  const { dbPath } = req.body
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      return res.status(500).json({ error: `Database error: ${err.message}` })
+    }
+  })
+
+  try {
+    const whatifService = new WhatIfService(db)
+    const combinations = await whatifService.generateCombinations()
+
+    db.close()
+    res.json({ success: true, combinations })
+  } catch (err) {
+    db.close()
+    res.status(500).json({ error: `Failed to generate combinations: ${err.message}` })
+  }
 })
 
 /**
