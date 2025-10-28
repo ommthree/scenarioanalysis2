@@ -6585,7 +6585,7 @@ app.get('/api/results/periods', (req, res) => {
  * GET /api/results/statement?dbPath=...&period=1&entityId=...&scenarioId=...
  */
 app.get('/api/results/statement', (req, res) => {
-  const { dbPath, period, entityId, scenarioId } = req.query
+  const { dbPath, period, entityId, scenarioId, whatIfCombination } = req.query
 
   if (!dbPath || !period) {
     return res.status(400).json({ error: 'Database path and period are required' })
@@ -6636,35 +6636,37 @@ app.get('/api/results/statement', (req, res) => {
       // Now query statement_result for calculated values
       // If entityId is provided, filter by that entity; otherwise get latest entity
       let query, params
+      const whatIfFilter = whatIfCombination ? ' AND what_if_combination = ?' : ''
+
       if (scenarioId) {
         // Use specific scenario
         if (entityId) {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ? AND entity_id = ? AND scenario_id = ?
+                   WHERE period_id = ? AND entity_id = ? AND scenario_id = ?${whatIfFilter}
                    LIMIT 100`
-          params = [period, entityId, scenarioId]
+          params = whatIfCombination ? [period, entityId, scenarioId, whatIfCombination] : [period, entityId, scenarioId]
         } else {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ? AND scenario_id = ?
-                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ? AND scenario_id = ?)
+                   WHERE period_id = ? AND scenario_id = ?${whatIfFilter}
+                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ? AND scenario_id = ?${whatIfFilter})
                    LIMIT 100`
-          params = [period, scenarioId, period, scenarioId]
+          params = whatIfCombination ? [period, scenarioId, whatIfCombination, period, scenarioId, whatIfCombination] : [period, scenarioId, period, scenarioId]
         }
       } else {
         // Default to latest scenario
         if (entityId) {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ? AND entity_id = ?
+                   WHERE period_id = ? AND entity_id = ?${whatIfFilter}
                    AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
                    LIMIT 100`
-          params = [period, entityId]
+          params = whatIfCombination ? [period, entityId, whatIfCombination] : [period, entityId]
         } else {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ?
+                   WHERE period_id = ?${whatIfFilter}
                    AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
-                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ?)
+                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ?${whatIfFilter})
                    LIMIT 100`
-          params = [period, period]
+          params = whatIfCombination ? [period, whatIfCombination, period, whatIfCombination] : [period, period]
         }
       }
 
@@ -6760,7 +6762,7 @@ app.get('/api/results/entities', (req, res) => {
  * GET /api/results/driver-decomposition?dbPath=...&period=1&entityId=...&lineItemCode=...
  */
 app.get('/api/results/driver-decomposition', (req, res) => {
-  const { dbPath, period, entityId, lineItemCode, scenarioId } = req.query
+  const { dbPath, period, entityId, lineItemCode, scenarioId, whatIfCombination } = req.query
 
   if (!dbPath || !period || !entityId || !lineItemCode) {
     return res.status(400).json({ error: 'Database path, period, entityId, and lineItemCode are required' })
@@ -6773,20 +6775,22 @@ app.get('/api/results/driver-decomposition', (req, res) => {
   })
 
   let query, params
+  const whatIfFilter = whatIfCombination ? ' AND what_if_combination = ?' : ''
+
   if (scenarioId) {
     query = `SELECT driver_code, value
              FROM statement_result_by_driver
-             WHERE period_id = ? AND entity_id = ? AND line_item_code = ? AND scenario_id = ?
+             WHERE period_id = ? AND entity_id = ? AND line_item_code = ? AND scenario_id = ?${whatIfFilter}
              ORDER BY driver_code`
-    params = [period, entityId, lineItemCode, scenarioId]
+    params = whatIfCombination ? [period, entityId, lineItemCode, scenarioId, whatIfCombination] : [period, entityId, lineItemCode, scenarioId]
   } else {
     // Default to latest scenario for backward compatibility
     query = `SELECT driver_code, value
              FROM statement_result_by_driver
-             WHERE period_id = ? AND entity_id = ? AND line_item_code = ?
+             WHERE period_id = ? AND entity_id = ? AND line_item_code = ?${whatIfFilter}
              AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result_by_driver)
              ORDER BY driver_code`
-    params = [period, entityId, lineItemCode]
+    params = whatIfCombination ? [period, entityId, lineItemCode, whatIfCombination] : [period, entityId, lineItemCode]
   }
 
   db.all(query, params, (err, rows) => {
@@ -6872,7 +6876,7 @@ app.post('/api/whatif/combinations', async (req, res) => {
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
 app.post('/api/calculate', async (req, res) => {
-  const { dbPath, scenarioIds, skipValidation = false } = req.body
+  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination } = req.body
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
@@ -6942,9 +6946,14 @@ app.post('/api/calculate', async (req, res) => {
 
   // Run the calculation
   const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
-  logger.info('Launching C++ calculation engine', { binary: calculationBinary })
+  logger.info('Launching C++ calculation engine', { binary: calculationBinary, whatIfCombination })
 
-  exec(`"${calculationBinary}" "${dbPath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+  // Conditionally add --whatif-combination parameter if in what-if mode
+  const command = whatIfCombination
+    ? `"${calculationBinary}" "${dbPath}" --whatif-combination "${whatIfCombination}"`
+    : `"${calculationBinary}" "${dbPath}"`
+
+  exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
     // Merge C++ logs
     if (stdout) {
       logger.mergeCppLogs(stdout)

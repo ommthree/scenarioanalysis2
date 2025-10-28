@@ -277,7 +277,7 @@ export default function PerformCalculation() {
         addLog('info', 'Step 3: Running multi-period scenario calculations...')
       }
 
-      // If what-if mode, generate combinations
+      // If what-if mode, generate combinations and loop
       if (whatIfMode) {
         const combosResponse = await fetch(apiUrl('/api/whatif/combinations'), {
           method: 'POST',
@@ -308,55 +308,123 @@ export default function PerformCalculation() {
               }
             })
           }
-        }
-      }
 
-      if (verbosity === 'debug') {
-        addLog('info', 'Processing line item formulas and dependencies...')
-        addLog('info', 'Applying validation rules...')
-        addLog('info', 'Executing management actions...')
-      }
+          // Loop over all combinations
+          for (let i = 0; i < combos.length; i++) {
+            const combo = combos[i]
 
-      // Call actual C++ calculation engine
-      const calcResponse = await fetch(apiUrl('/api/calculate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath, whatIfMode })
-      })
+            if (verbosity !== 'quiet') {
+              if (combo.action_codes.length === 0) {
+                addLog('info', `Running combination ${i + 1}/${numRuns}: BASE (no actions)`)
+              } else {
+                addLog('info', `Running combination ${i + 1}/${numRuns}: ${combo.action_codes.join(' + ')}`)
+              }
+            }
 
-      if (!calcResponse.ok) {
-        const errorText = await calcResponse.text()
-        if (verbosity !== 'quiet') {
-          addLog('error', `API request failed: ${calcResponse.status} ${calcResponse.statusText}`)
-          addLog('error', errorText)
-        }
-        throw new Error(`API request failed: ${calcResponse.status}`)
-      }
+            if (verbosity === 'debug') {
+              addLog('info', 'Processing line item formulas and dependencies...')
+              addLog('info', 'Applying validation rules...')
+              addLog('info', 'Executing management actions...')
+            }
 
-      const calcResult = await calcResponse.json()
+            // Call actual C++ calculation engine for this combination
+            const calcResponse = await fetch(apiUrl('/api/calculate'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                dbPath,
+                whatIfCombination: combo.combination
+              })
+            })
 
-      if (!calcResult.success) {
-        if (verbosity !== 'quiet') {
-          addLog('error', 'Calculation engine failed')
-          if (calcResult.stderr) {
-            const errorLines = calcResult.stderr.split('\n').filter((line: string) => line.trim())
-            errorLines.forEach((line: string) => addLog('error', line))
+            if (!calcResponse.ok) {
+              const errorText = await calcResponse.text()
+              if (verbosity !== 'quiet') {
+                addLog('error', `API request failed: ${calcResponse.status} ${calcResponse.statusText}`)
+                addLog('error', errorText)
+              }
+              throw new Error(`API request failed: ${calcResponse.status}`)
+            }
+
+            const calcResult = await calcResponse.json()
+
+            if (!calcResult.success) {
+              if (verbosity !== 'quiet') {
+                addLog('error', 'Calculation engine failed')
+                if (calcResult.stderr) {
+                  const errorLines = calcResult.stderr.split('\n').filter((line: string) => line.trim())
+                  errorLines.forEach((line: string) => addLog('error', line))
+                }
+                if (calcResult.error) {
+                  addLog('error', calcResult.error)
+                }
+              }
+              throw new Error(calcResult.error || 'Calculation failed')
+            }
+
+            if ((verbosity === 'debug' || verbosity === 'verbose') && calcResult.output) {
+              const outputLines = calcResult.output.split('\n').filter((line: string) => line.trim())
+              outputLines.forEach((line: string) => addLog('info', line))
+            }
+
+            if (verbosity === 'debug' || verbosity === 'verbose') {
+              addLog('success', `✓ Combination ${i + 1}/${numRuns} completed successfully`)
+            }
           }
-          if (calcResult.error) {
-            addLog('error', calcResult.error)
+
+          if (verbosity !== 'quiet') {
+            addLog('success', `✓ All ${numRuns} what-if combinations completed`)
           }
         }
-        throw new Error(calcResult.error || 'Calculation failed')
-      }
+      } else {
+        // Normal mode - single calculation run
+        if (verbosity === 'debug') {
+          addLog('info', 'Processing line item formulas and dependencies...')
+          addLog('info', 'Applying validation rules...')
+          addLog('info', 'Executing management actions...')
+        }
 
-      if ((verbosity === 'debug' || verbosity === 'verbose') && calcResult.output) {
-        const outputLines = calcResult.output.split('\n').filter((line: string) => line.trim())
-        outputLines.forEach((line: string) => addLog('info', line))
-      }
+        // Call actual C++ calculation engine
+        const calcResponse = await fetch(apiUrl('/api/calculate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dbPath })
+        })
 
-      if (verbosity === 'debug' || verbosity === 'verbose') {
-        addLog('success', '✓ Calculation engine completed successfully')
-        addLog('info', 'Results stored in database')
+        if (!calcResponse.ok) {
+          const errorText = await calcResponse.text()
+          if (verbosity !== 'quiet') {
+            addLog('error', `API request failed: ${calcResponse.status} ${calcResponse.statusText}`)
+            addLog('error', errorText)
+          }
+          throw new Error(`API request failed: ${calcResponse.status}`)
+        }
+
+        const calcResult = await calcResponse.json()
+
+        if (!calcResult.success) {
+          if (verbosity !== 'quiet') {
+            addLog('error', 'Calculation engine failed')
+            if (calcResult.stderr) {
+              const errorLines = calcResult.stderr.split('\n').filter((line: string) => line.trim())
+              errorLines.forEach((line: string) => addLog('error', line))
+            }
+            if (calcResult.error) {
+              addLog('error', calcResult.error)
+            }
+          }
+          throw new Error(calcResult.error || 'Calculation failed')
+        }
+
+        if ((verbosity === 'debug' || verbosity === 'verbose') && calcResult.output) {
+          const outputLines = calcResult.output.split('\n').filter((line: string) => line.trim())
+          outputLines.forEach((line: string) => addLog('info', line))
+        }
+
+        if (verbosity === 'debug' || verbosity === 'verbose') {
+          addLog('success', '✓ Calculation engine completed successfully')
+          addLog('info', 'Results stored in database')
+        }
       }
 
       addLog('success', '✓ All steps completed successfully!')

@@ -40,6 +40,16 @@ interface Scenario {
   num_periods: number
 }
 
+interface ManagementAction {
+  action_id: number
+  action_code: string
+  action_name: string
+  action_category: string
+  description: string
+  is_active: number
+  is_mac_relevant: number
+}
+
 export default function ViewResults() {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [currentScenario, setCurrentScenario] = useState<number | null>(null)
@@ -54,6 +64,12 @@ export default function ViewResults() {
   const [driverData, setDriverData] = useState<Map<string, DriverContribution[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [lastRunMode, setLastRunMode] = useState<{ stochasticMode: boolean; whatIfMode: boolean } | null>(null)
+
+  // What-if mode controls
+  const [displayMode, setDisplayMode] = useState<'absolute' | 'delta'>('absolute')
+  const [displayedActions, setDisplayedActions] = useState<Set<string>>(new Set())
+  const [baseCaseActions, setBaseCaseActions] = useState<Set<string>>(new Set())
+  const [managementActions, setManagementActions] = useState<ManagementAction[]>([])
 
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
@@ -70,6 +86,20 @@ export default function ViewResults() {
       }
     }
   }, [])
+
+  // Load management actions when in what-if mode
+  useEffect(() => {
+    if (lastRunMode?.whatIfMode) {
+      loadManagementActions()
+    }
+  }, [lastRunMode])
+
+  // Reload results when what-if controls change
+  useEffect(() => {
+    if (lastRunMode?.whatIfMode && currentEntity !== null) {
+      loadResultsForPeriod(currentPeriod, currentEntity)
+    }
+  }, [displayedActions, baseCaseActions, displayMode])
 
   // Reload periods when scenario changes
   useEffect(() => {
@@ -124,6 +154,30 @@ export default function ViewResults() {
     } catch (error) {
       logger.error('Error loading periods:', error)
     }
+  }
+
+  const loadManagementActions = async () => {
+    const dbPath = getDefaultDbPath()
+    try {
+      const response = await fetch(apiUrl(`/api/management-actions?dbPath=${encodeURIComponent(dbPath)}`))
+      const data = await response.json()
+
+      if (data && Array.isArray(data)) {
+        setManagementActions(data)
+      }
+    } catch (error) {
+      logger.error('Error loading management actions:', error)
+    }
+  }
+
+  // Build what-if combination string from selected actions
+  const buildWhatIfCombination = (selectedActions: Set<string>): string => {
+    if (selectedActions.size === 0) {
+      return 'BASE'
+    }
+    // Sort action codes alphabetically for consistent combination strings
+    const sortedActions = Array.from(selectedActions).sort()
+    return sortedActions.join('+')
   }
 
   const buildTree = (flatEntities: Entity[]): Entity[] => {
@@ -181,61 +235,87 @@ export default function ViewResults() {
     setLoading(true)
     const dbPath = getDefaultDbPath()
     try {
-      let url = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&period=${period}`)
+      let baseUrl = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&period=${period}`)
       if (entityId !== null) {
-        url += `&entityId=${entityId}`
+        baseUrl += `&entityId=${entityId}`
       }
       if (currentScenario !== null) {
-        url += `&scenarioId=${currentScenario}`
+        baseUrl += `&scenarioId=${currentScenario}`
       }
 
-      const response = await fetch(url)
-      const data = await response.json()
+      // In what-if mode, handle absolute vs delta display
+      if (lastRunMode?.whatIfMode) {
+        if (displayMode === 'absolute') {
+          // Absolute mode: fetch one combination
+          const whatIfCombination = buildWhatIfCombination(displayedActions)
+          const url = baseUrl + `&whatIfCombination=${encodeURIComponent(whatIfCombination)}`
 
-      // Debug: Log line items to check sign_convention
-      logger.debug('[ViewResults] Received line items:', data.lineItems?.map((li: LineItem) => ({ code: li.code, sign_convention: li.sign_convention, value: li.value })))
+          const response = await fetch(url)
+          const data = await response.json()
 
-      if (data.success) {
-        // Group line items by section
-        const sectionMap = new Map<string, LineItem[]>()
+          // Debug: Log line items to check sign_convention
+          logger.debug('[ViewResults] Received line items:', data.lineItems?.map((li: LineItem) => ({ code: li.code, sign_convention: li.sign_convention, value: li.value })))
 
-        data.lineItems.forEach((item: LineItem) => {
-          if (!sectionMap.has(item.section)) {
-            sectionMap.set(item.section, [])
-          }
-          sectionMap.get(item.section)!.push(item)
-        })
-
-        // Convert to array of sections
-        const sectionsArray: Section[] = Array.from(sectionMap.entries()).map(([name, items]) => ({
-          name,
-          items
-        }))
-
-        setSections(sectionsArray)
-
-        // Expand all sections by default
-        setExpandedSections(new Set(sectionsArray.map(s => s.name)))
-
-        // Load driver data for all line items to know which are expandable
-        if (entityId !== null) {
-          const newDriverData = new Map<string, DriverContribution[]>()
-          for (const item of data.lineItems) {
-            try {
-              let driverUrl = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`)
-              if (currentScenario !== null) {
-                driverUrl += `&scenarioId=${currentScenario}`
-              }
-              const driverResponse = await fetch(driverUrl)
-              const driverData = await driverResponse.json()
-              if (driverData.success) {
-                newDriverData.set(item.code, driverData.drivers || [])
-              }
-            } catch (error) {
-              logger.error(`Error loading drivers for ${item.code}:`, error)
+          if (data.success) {
+            processSectionsData(data.lineItems)
+            if (entityId !== null) {
+              await loadDriverDataAbsolute(dbPath, period, entityId, data.lineItems, displayedActions)
             }
           }
-          setDriverData(newDriverData)
+        } else {
+          // Delta mode: fetch both combinations and calculate A - B
+          const displayedCombination = buildWhatIfCombination(displayedActions)
+          const baseCaseCombination = buildWhatIfCombination(baseCaseActions)
+
+          const urlA = baseUrl + `&whatIfCombination=${encodeURIComponent(displayedCombination)}`
+          const urlB = baseUrl + `&whatIfCombination=${encodeURIComponent(baseCaseCombination)}`
+
+          // Fetch both in parallel
+          const [responseA, responseB] = await Promise.all([
+            fetch(urlA),
+            fetch(urlB)
+          ])
+
+          const [dataA, dataB] = await Promise.all([
+            responseA.json(),
+            responseB.json()
+          ])
+
+          if (dataA.success && dataB.success) {
+            // Build lookup map for base case values
+            const baseCaseMap = new Map<string, number>()
+            dataB.lineItems.forEach((item: LineItem) => {
+              baseCaseMap.set(item.code, item.value)
+            })
+
+            // Calculate delta: A - B for each line item
+            const deltaLineItems = dataA.lineItems.map((item: LineItem) => {
+              const baseValue = baseCaseMap.get(item.code) || 0
+              return {
+                ...item,
+                value: item.value - baseValue
+              }
+            })
+
+            processSectionsData(deltaLineItems)
+            if (entityId !== null) {
+              await loadDriverDataDelta(dbPath, period, entityId, dataA.lineItems, displayedActions, baseCaseActions)
+            }
+          }
+        }
+      } else {
+        // Normal mode (no what-if): fetch without filtering
+        const response = await fetch(baseUrl)
+        const data = await response.json()
+
+        // Debug: Log line items to check sign_convention
+        logger.debug('[ViewResults] Received line items:', data.lineItems?.map((li: LineItem) => ({ code: li.code, sign_convention: li.sign_convention, value: li.value })))
+
+        if (data.success) {
+          processSectionsData(data.lineItems)
+          if (entityId !== null) {
+            await loadDriverDataAbsolute(dbPath, period, entityId, data.lineItems, new Set())
+          }
         }
       }
     } catch (error) {
@@ -243,6 +323,121 @@ export default function ViewResults() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Helper: Process line items into sections
+  const processSectionsData = (lineItems: LineItem[]) => {
+    const sectionMap = new Map<string, LineItem[]>()
+
+    lineItems.forEach((item: LineItem) => {
+      if (!sectionMap.has(item.section)) {
+        sectionMap.set(item.section, [])
+      }
+      sectionMap.get(item.section)!.push(item)
+    })
+
+    // Convert to array of sections
+    const sectionsArray: Section[] = Array.from(sectionMap.entries()).map(([name, items]) => ({
+      name,
+      items
+    }))
+
+    setSections(sectionsArray)
+
+    // Expand all sections by default
+    setExpandedSections(new Set(sectionsArray.map(s => s.name)))
+  }
+
+  // Helper: Load driver data in absolute mode
+  const loadDriverDataAbsolute = async (
+    dbPath: string,
+    period: number,
+    entityId: number,
+    lineItems: LineItem[],
+    selectedActions: Set<string>
+  ) => {
+    const newDriverData = new Map<string, DriverContribution[]>()
+    for (const item of lineItems) {
+      try {
+        let driverUrl = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`)
+        if (currentScenario !== null) {
+          driverUrl += `&scenarioId=${currentScenario}`
+        }
+        // In what-if mode, filter by the selected combination
+        if (lastRunMode?.whatIfMode) {
+          const whatIfCombination = buildWhatIfCombination(selectedActions)
+          driverUrl += `&whatIfCombination=${encodeURIComponent(whatIfCombination)}`
+        }
+        const driverResponse = await fetch(driverUrl)
+        const driverData = await driverResponse.json()
+        if (driverData.success) {
+          newDriverData.set(item.code, driverData.drivers || [])
+        }
+      } catch (error) {
+        logger.error(`Error loading drivers for ${item.code}:`, error)
+      }
+    }
+    setDriverData(newDriverData)
+  }
+
+  // Helper: Load driver data in delta mode (A - B)
+  const loadDriverDataDelta = async (
+    dbPath: string,
+    period: number,
+    entityId: number,
+    lineItems: LineItem[],
+    displayedActions: Set<string>,
+    baseCaseActions: Set<string>
+  ) => {
+    const newDriverData = new Map<string, DriverContribution[]>()
+
+    const displayedCombination = buildWhatIfCombination(displayedActions)
+    const baseCaseCombination = buildWhatIfCombination(baseCaseActions)
+
+    for (const item of lineItems) {
+      try {
+        let driverUrlBase = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${period}&entityId=${entityId}&lineItemCode=${item.code}`)
+        if (currentScenario !== null) {
+          driverUrlBase += `&scenarioId=${currentScenario}`
+        }
+
+        const driverUrlA = driverUrlBase + `&whatIfCombination=${encodeURIComponent(displayedCombination)}`
+        const driverUrlB = driverUrlBase + `&whatIfCombination=${encodeURIComponent(baseCaseCombination)}`
+
+        // Fetch both in parallel
+        const [responseA, responseB] = await Promise.all([
+          fetch(driverUrlA),
+          fetch(driverUrlB)
+        ])
+
+        const [dataA, dataB] = await Promise.all([
+          responseA.json(),
+          responseB.json()
+        ])
+
+        if (dataA.success && dataB.success) {
+          // Build lookup map for base case driver values
+          const baseCaseDriverMap = new Map<string, number>()
+          dataB.drivers.forEach((driver: DriverContribution) => {
+            baseCaseDriverMap.set(driver.driver_code, driver.value)
+          })
+
+          // Calculate delta: A - B for each driver
+          const deltaDrivers = dataA.drivers.map((driver: DriverContribution) => {
+            const baseValue = baseCaseDriverMap.get(driver.driver_code) || 0
+            return {
+              ...driver,
+              value: driver.value - baseValue
+            }
+          })
+
+          newDriverData.set(item.code, deltaDrivers)
+        }
+      } catch (error) {
+        logger.error(`Error loading drivers for ${item.code}:`, error)
+      }
+    }
+    setDriverData(newDriverData)
   }
 
   const toggleSection = (sectionName: string) => {
@@ -270,17 +465,75 @@ export default function ViewResults() {
 
     const dbPath = getDefaultDbPath()
     try {
-      let url = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`)
+      let baseUrl = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&period=${currentPeriod}&entityId=${currentEntity}&lineItemCode=${lineItemCode}`)
       if (currentScenario !== null) {
-        url += `&scenarioId=${currentScenario}`
+        baseUrl += `&scenarioId=${currentScenario}`
       }
-      const response = await fetch(url)
-      const data = await response.json()
 
-      if (data.success) {
-        // Store the result even if empty, so we know we've checked
-        setDriverData(prev => new Map(prev).set(lineItemCode, data.drivers || []))
-        return data.drivers && data.drivers.length > 0
+      // In what-if mode, handle absolute vs delta display
+      if (lastRunMode?.whatIfMode) {
+        if (displayMode === 'absolute') {
+          // Absolute mode: fetch one combination
+          const whatIfCombination = buildWhatIfCombination(displayedActions)
+          const url = baseUrl + `&whatIfCombination=${encodeURIComponent(whatIfCombination)}`
+
+          const response = await fetch(url)
+          const data = await response.json()
+
+          if (data.success) {
+            // Store the result even if empty, so we know we've checked
+            setDriverData(prev => new Map(prev).set(lineItemCode, data.drivers || []))
+            return data.drivers && data.drivers.length > 0
+          }
+        } else {
+          // Delta mode: fetch both combinations and calculate A - B
+          const displayedCombination = buildWhatIfCombination(displayedActions)
+          const baseCaseCombination = buildWhatIfCombination(baseCaseActions)
+
+          const urlA = baseUrl + `&whatIfCombination=${encodeURIComponent(displayedCombination)}`
+          const urlB = baseUrl + `&whatIfCombination=${encodeURIComponent(baseCaseCombination)}`
+
+          // Fetch both in parallel
+          const [responseA, responseB] = await Promise.all([
+            fetch(urlA),
+            fetch(urlB)
+          ])
+
+          const [dataA, dataB] = await Promise.all([
+            responseA.json(),
+            responseB.json()
+          ])
+
+          if (dataA.success && dataB.success) {
+            // Build lookup map for base case driver values
+            const baseCaseDriverMap = new Map<string, number>()
+            dataB.drivers?.forEach((driver: DriverContribution) => {
+              baseCaseDriverMap.set(driver.driver_code, driver.value)
+            })
+
+            // Calculate delta: A - B for each driver
+            const deltaDrivers = dataA.drivers?.map((driver: DriverContribution) => {
+              const baseValue = baseCaseDriverMap.get(driver.driver_code) || 0
+              return {
+                ...driver,
+                value: driver.value - baseValue
+              }
+            }) || []
+
+            setDriverData(prev => new Map(prev).set(lineItemCode, deltaDrivers))
+            return deltaDrivers.length > 0
+          }
+        }
+      } else {
+        // Normal mode (no what-if): fetch without filtering
+        const response = await fetch(baseUrl)
+        const data = await response.json()
+
+        if (data.success) {
+          // Store the result even if empty, so we know we've checked
+          setDriverData(prev => new Map(prev).set(lineItemCode, data.drivers || []))
+          return data.drivers && data.drivers.length > 0
+        }
       }
       return false
     } catch (error) {
@@ -424,6 +677,139 @@ export default function ViewResults() {
           Financial statement results by period
         </p>
       </div>
+
+      {/* What-If Mode Controls */}
+      {lastRunMode?.whatIfMode && managementActions.length > 0 && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          marginBottom: '16px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Absolute vs Delta Toggle Switch */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                  Absolute
+                </label>
+                <div
+                  onClick={() => setDisplayMode(displayMode === 'absolute' ? 'delta' : 'absolute')}
+                  style={{
+                    position: 'relative',
+                    width: '52px',
+                    height: '28px',
+                    backgroundColor: displayMode === 'delta' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(71, 85, 105, 0.5)',
+                    border: `1px solid ${displayMode === 'delta' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(71, 85, 105, 0.6)'}`,
+                    borderRadius: '14px',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  {/* Toggle knob */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '2px',
+                      left: displayMode === 'absolute' ? '2px' : '24px',
+                      width: '22px',
+                      height: '22px',
+                      backgroundColor: displayMode === 'delta' ? '#10b981' : '#94a3b8',
+                      borderRadius: '50%',
+                      transition: 'all 0.3s ease',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                    }}
+                  />
+                </div>
+                <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                  Delta
+                </label>
+              </div>
+
+              {/* Displayed Run Action Toggles - Blue Theme */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                  Displayed run:
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginLeft: '16px' }}>
+                  {managementActions.map((action) => (
+                    <button
+                      key={action.action_code}
+                      onClick={() => {
+                        const newSet = new Set(displayedActions)
+                        if (newSet.has(action.action_code)) {
+                          newSet.delete(action.action_code)
+                        } else {
+                          newSet.add(action.action_code)
+                        }
+                        setDisplayedActions(newSet)
+                      }}
+                      style={{
+                        padding: '6px 14px',
+                        backgroundColor: displayedActions.has(action.action_code)
+                          ? 'rgba(59, 130, 246, 0.2)'
+                          : 'rgba(30, 41, 59, 0.8)',
+                        border: `1px solid ${displayedActions.has(action.action_code)
+                          ? 'rgba(59, 130, 246, 0.5)'
+                          : 'rgba(59, 130, 246, 0.3)'}`,
+                        borderRadius: '6px',
+                        color: displayedActions.has(action.action_code) ? '#3b82f6' : '#94a3b8',
+                        fontSize: '13px',
+                        fontWeight: displayedActions.has(action.action_code) ? '600' : '400',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {action.action_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Base Case Action Toggles (only in Delta mode) - Purple Theme */}
+              {displayMode === 'delta' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                    Base case:
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginLeft: '16px' }}>
+                    {managementActions.map((action) => (
+                      <button
+                        key={action.action_code}
+                        onClick={() => {
+                          const newSet = new Set(baseCaseActions)
+                          if (newSet.has(action.action_code)) {
+                            newSet.delete(action.action_code)
+                          } else {
+                            newSet.add(action.action_code)
+                          }
+                          setBaseCaseActions(newSet)
+                        }}
+                        style={{
+                          padding: '6px 14px',
+                          backgroundColor: baseCaseActions.has(action.action_code)
+                            ? 'rgba(168, 85, 247, 0.2)'
+                            : 'rgba(30, 41, 59, 0.8)',
+                          border: `1px solid ${baseCaseActions.has(action.action_code)
+                            ? 'rgba(168, 85, 247, 0.5)'
+                            : 'rgba(168, 85, 247, 0.3)'}`,
+                          borderRadius: '6px',
+                          color: baseCaseActions.has(action.action_code) ? '#a855f7' : '#94a3b8',
+                          fontSize: '13px',
+                          fontWeight: baseCaseActions.has(action.action_code) ? '600' : '400',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {action.action_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Scenario Selector */}
       {scenarios.length > 0 && (

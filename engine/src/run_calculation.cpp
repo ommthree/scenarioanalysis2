@@ -353,12 +353,26 @@ bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <database_path>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <database_path> [--whatif-combination <combination>]" << std::endl;
         return 1;
     }
 
     std::string db_path = argv[1];
+    std::string whatif_combination = "";  // Empty means not in what-if mode
+
+    // Parse optional --whatif-combination argument
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--whatif-combination" && i + 1 < argc) {
+            whatif_combination = argv[i + 1];
+            i++; // Skip next arg since we consumed it
+        }
+    }
+
     std::cout << "Starting calculation engine for database: " << db_path << std::endl;
+    if (!whatif_combination.empty()) {
+        std::cout << "What-If Mode: " << whatif_combination << std::endl;
+    }
 
     try {
         // Connect to database
@@ -622,12 +636,13 @@ int main(int argc, char* argv[]) {
                             insert_params["line_item_code"] = line_item_code;
                             insert_params["value"] = value_pair.first;
                             insert_params["is_populated"] = value_pair.second ? 1 : 0;
+                            insert_params["what_if_combination"] = whatif_combination;
 
                             try {
                                 db->execute_update(
                                     "INSERT OR REPLACE INTO statement_result "
-                                    "(entity_id, scenario_id, period_id, line_item_code, value, is_populated) "
-                                    "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :value, :is_populated)",
+                                    "(entity_id, scenario_id, period_id, line_item_code, value, is_populated, what_if_combination) "
+                                    "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :value, :is_populated, :what_if_combination)",
                                     insert_params
                                 );
                                 saved_count++;
@@ -851,12 +866,13 @@ int main(int argc, char* argv[]) {
                         insert_params["line_item_code"] = line_item_code;
                         insert_params["value"] = value_pair.first;
                         insert_params["is_populated"] = value_pair.second ? 1 : 0;
+                        insert_params["what_if_combination"] = whatif_combination;
 
                         try {
                             db->execute_update(
                                 "INSERT OR REPLACE INTO statement_result "
-                                "(entity_id, scenario_id, period_id, line_item_code, value, is_populated) "
-                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :value, :is_populated)",
+                                "(entity_id, scenario_id, period_id, line_item_code, value, is_populated, what_if_combination) "
+                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :value, :is_populated, :what_if_combination)",
                                 insert_params
                             );
                             saved_count++;
@@ -882,12 +898,13 @@ int main(int argc, char* argv[]) {
                         driver_params["line_item_code"] = line_item_code;
                         driver_params["driver_code"] = driver_code;
                         driver_params["value"] = value;
+                        driver_params["what_if_combination"] = whatif_combination;
 
                         try {
                             db->execute_update(
                                 "INSERT OR REPLACE INTO statement_result_by_driver "
-                                "(entity_id, scenario_id, period_id, line_item_code, driver_code, value) "
-                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :driver_code, :value)",
+                                "(entity_id, scenario_id, period_id, line_item_code, driver_code, value, what_if_combination) "
+                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :driver_code, :value, :what_if_combination)",
                                 driver_params
                             );
                             driver_saved_count++;
