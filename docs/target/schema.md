@@ -1,6 +1,6 @@
 # Database Schema Documentation
 
-**Last Updated:** 2025-10-26
+**Last Updated:** 2025-10-29
 **Schema Version:** 1.0.0
 **Database Engine:** SQLite 3.42+ with JSON1 extension
 **Production Database:** `/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db`
@@ -317,7 +317,7 @@ This database supports a unified financial modeling engine with:
 | `action_category` | TEXT | CHECK IN ('ENERGY', 'PROCESS', 'TRANSPORT', 'SUPPLY_CHAIN', 'OFFSETS', 'OTHER') | Action classification |
 | `description` | TEXT | | Detailed action description |
 | `is_active` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Active status |
-| `is_mac_relevant` | INTEGER | DEFAULT 0, CHECK IN (0,1) | Appears on MAC curve |
+| `is_mac_relevant` | INTEGER | DEFAULT 0, CHECK IN (0,1) | Appears on MAC curve (used for filtering) |
 
 **Indexes:**
 - `idx_action_code` on `action_code`
@@ -325,7 +325,8 @@ This database supports a unified financial modeling engine with:
 
 **Notes:**
 - Actions can modify formulas, add costs, reduce emissions
-- MAC-relevant actions appear on Marginal Abatement Cost curves
+- `is_mac_relevant = 1` marks actions for MAC curve analysis (Session 10)
+- MAC curves calculate cost per tonne CO₂ reduced ($/tCO₂e) for prioritizing actions
 
 ---
 
@@ -628,8 +629,9 @@ This database supports a unified financial modeling engine with:
 | `line_item_code` | TEXT | NOT NULL | Line item identifier |
 | `value` | NUMERIC | NOT NULL | Calculated value |
 | `is_populated` | INTEGER | DEFAULT 1, CHECK IN (0,1) | Data availability flag |
+| `what_if_combination` | TEXT | DEFAULT '' | What-if combination label (e.g., "BASE", "DISC_SPEND_CUT+HIRING_FREEZE") |
 
-**Unique Constraint:** `(scenario_id, period_id, entity_id, line_item_code)`
+**Unique Constraint:** `(scenario_id, period_id, entity_id, line_item_code, what_if_combination)`
 
 **Indexes:**
 - `idx_statement_result_lookup` on `scenario_id, period_id, entity_id`
@@ -639,6 +641,13 @@ This database supports a unified financial modeling engine with:
 - Replaces separate pl_result, bs_result, cf_result tables
 - Simpler schema enables unified queries across statement types
 - Sparse data support via is_populated flag
+- **What-If Mode (Session 9):** The `what_if_combination` field stores which management actions were active for this calculation
+  - "BASE" = no actions applied
+  - "ACTION1" = only ACTION1 applied
+  - "ACTION1+ACTION2" = both actions applied (sorted alphabetically, joined with '+')
+  - Used to compare different action scenarios (delta mode: A - B)
+  - System generates all 2^n combinations and runs each through calculation engine
+  - Frontend filters by this field to display specific combinations or calculate deltas
 
 ---
 
@@ -654,6 +663,7 @@ This database supports a unified financial modeling engine with:
 | `line_item_code` | TEXT | NOT NULL | Line item identifier |
 | `driver_code` | TEXT | NOT NULL | Driver that contributed |
 | `value` | NUMERIC | NOT NULL | Driver's contribution to line item |
+| `what_if_combination` | TEXT | DEFAULT '' | What-if combination label (matches statement_result) |
 
 **Indexes:**
 - `idx_result_by_driver_lookup` on `scenario_id, period_id, entity_id, line_item_code`
@@ -663,6 +673,10 @@ This database supports a unified financial modeling engine with:
 - Enables "show me how drivers contributed to REVENUE" drill-down
 - Powers dashboard chevron drill-down feature
 - Each row shows one driver's contribution to a line item's total value
+- **What-If Mode (Session 9):** Driver decompositions are calculated separately for each action combination
+  - Allows comparing how different actions affect individual driver contributions
+  - Delta mode shows (Driver_A - Driver_B) for each driver across two combinations
+  - `what_if_combination` field must match between statement_result and statement_result_by_driver for consistency
 
 ---
 
@@ -1174,7 +1188,7 @@ WHERE rate > 0;
 1. `scenario_drivers` - Explicit driver storage
 2. `statement_result_by_driver` - Driver decomposition
 3. `unit_definition` - Unit conversion system
-4. `management_action` - Action catalog
+4. `management_action` - Action catalog (added `is_mac_relevant` field in Session 10)
 5. `action_trigger` - Action triggers
 6. `action_transformation` - Formula transformations
 7. `scenario_action` - Actions per scenario
@@ -1182,14 +1196,27 @@ WHERE rate > 0;
 9. `saved_runs` - Calculation snapshots
 10. `hazard_map_scenario` - Hazard map data
 11. `hazard_map_mapping` - Hazard map config
+12. `staging_metadata` - Unified staging architecture (Session 4)
 
-**Modified Tables:**
+**Modified Tables (2025-10-29):**
+- `statement_result` - Added `what_if_combination` field for action scenario labeling (Session 9)
+- `statement_result_by_driver` - Added `what_if_combination` field for decomposition matching (Session 9)
+- `management_action` - Added `is_mac_relevant` field for MAC curve filtering (Session 10)
+
+**Modified Tables (2025-10-27):**
+- `scenario_mapping` - Added `template_code`, `created_at`, `last_updated` fields (Session 7)
+
+**Modified Tables (2025-10-10):**
 - `scenario` - Added statement_template_id, tax_strategy_id, base_currency, enable_lineage_tracking
 - `entity` - Added base_currency
 - `statement_template` - Added 'unified', 'carbon' types
 - `staged_file` - Added csv_content
 
 **Architecture Changes:**
+- **Session 10 (2025-10-29):** MAC curve analysis with period range selector and cost-effectiveness filtering
+- **Session 9 (2025-10-28):** What-If Mode with 2^n action combination calculations and delta comparison
+- **Session 7 (2025-10-27):** Template assignment via scenario_mapping.template_code field
+- **Session 4 (2025-10-26):** Unified staging architecture with staging_metadata and dynamic tables
 - Unified engine replaces separate pl_engine, bs_engine, cf_engine
 - Single statement_result table replaces separate result tables
 - Driver decomposition support added
@@ -1285,6 +1312,6 @@ Mapping Tables:
 
 ---
 
-**Last Reviewed:** 2025-10-26
+**Last Reviewed:** 2025-10-29
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

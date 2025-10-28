@@ -1,6 +1,6 @@
 # Markdown Documentation Index
 
-**Last Updated:** 2025-10-28
+**Last Updated:** 2025-10-29
 **Total Active Documents:** 7
 **Total Archived Documents:** 7
 
@@ -170,6 +170,22 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-10-29 (Session 10 - MAC Curve Analysis):**
+- Implemented MAC (Marginal Abatement Cost) curve for decarbonization strategy optimization
+- Orange-themed MAC mode toggle switch (only visible in what-if mode)
+- Dual-handle period range selector with single-bar slider and visual orange highlight
+- Fixed positioning at bottom of results page (no floating/sticky behavior)
+- Backend endpoint GET /api/results/mac-curve (index.js:6845-6984)
+- Queries MAC-relevant actions (is_mac_relevant = 1 from management_action table)
+- Calculates ΔCarbon and ΔCost over selected period range vs BASE case
+- MAC = ΔCost / ΔCarbon ($/tCO₂e) - negative MAC = profitable action
+- Filters: Skips BASE, multi-action combos, non-MAC-relevant actions, zero carbon impact
+- Results sorted by MAC ascending (best cost-effectiveness first)
+- Color-coded table: Green (profitable), orange (moderate cost), red (expensive)
+- Sign convention: Positive abatement = reduction, Positive cost = income loss
+- Example results: WASTE_ENERGY (-$20/ton), HVAC_UPGRADE (-$15/ton), GREEN_SUPPLY ($10.67/ton)
+- Frontend integration in ViewResults.tsx (lines 732-1510)
+
 **2025-10-27 (Session 7 - Template Assignment Fix):**
 - Fixed TEMPLATE_NOT_FOUND validation errors blocking all calculations
 - Added template_code column to scenario_mapping table (matching statement_mapping schema)
@@ -199,6 +215,22 @@ Archived Background (docs/archive/):
 - Updated PerformCalculation.tsx with validation workflow and UI feedback
 - Prevents silent calculation failures with clear, actionable error messages
 - All CRITICAL/HIGH/MEDIUM architectural issues now resolved
+
+**2025-10-28 (Session 9 - What-If Mode Complete Implementation):**
+- Completed What-If Mode Phases 1-3: Full end-to-end what-if analysis functionality
+- Phase 1: Calculation loop over 2^n action combinations with labeled storage
+- Phase 2: Delta mode UI with Absolute/Delta toggle and action selection controls
+- Phase 3: Dynamic action toggling in C++ engine based on combination string
+- Frontend: Toggle switch, blue "Displayed run" buttons, purple "Base case" buttons
+- Frontend: Delta calculation (A - B) for line items and driver decompositions
+- Frontend: Parallel fetching for performance, reactive updates on control changes
+- Backend: whatIfCombination parameter for filtering results by combination
+- Backend: Calculation loop passes combination to C++ engine for each iteration
+- C++ Engine: parse_whatif_combination() parses combination strings
+- C++ Engine: get_active_actions() overrides is_active flag based on combination
+- C++ Engine: Each iteration calculates with correct actions enabled/disabled
+- Database: what_if_combination field in statement_result and statement_result_by_driver
+- Result: Each combination produces different calculations, meaningful delta comparisons
 
 **2025-10-28 (Session 8 - Driver Decomposition Baseline Fix):**
 - Fixed driver decomposition to use period 1 as baseline (not period 0)
@@ -240,6 +272,6 @@ Archived Background (docs/archive/):
 
 ---
 
-**Last Reviewed:** 2025-10-26
+**Last Reviewed:** 2025-10-28
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

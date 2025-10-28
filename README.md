@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-27 (Session 7 - Template Assignment Fix)
+**Last Updated:** 2025-10-29 (Session 10 - MAC Curve Analysis Complete)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with recent security & quality improvements
+**Status:** Production-ready with What-If Mode and MAC curve analysis for decarbonization strategy optimization
 
 ---
 
@@ -233,6 +233,86 @@ See `docs/validation.md` for complete details and `docs/arch_improve.md` for fut
 
 ---
 
+## 🔬 What-If Mode (Session 9 - Complete)
+
+**Feature:** Compare different combinations of management actions to find optimal strategies.
+
+### How It Works
+
+1. **Calculation Phase** (`PerformCalculation.tsx`):
+   - System generates all 2^n combinations of management actions
+   - Example with 3 actions: BASE, ACTION1, ACTION2, ACTION1+ACTION2 (8 combinations total)
+   - Each combination runs through the C++ engine with specific actions enabled/disabled
+   - Results stored in database with `what_if_combination` label
+
+2. **Analysis Phase** (`ViewResults.tsx`):
+   - **Absolute Mode:** View results for a single action combination
+   - **Delta Mode:** Compare two combinations (A - B) to see the impact
+   - Color-coded action buttons: Blue (displayed run), Purple (base case)
+   - Parallel fetching for performance
+   - Delta calculations for both line items and driver decompositions
+
+### Example Use Cases
+
+- **Cost Reduction:** Compare "HIRING_FREEZE" vs "HIRING_FREEZE+CAPEX_CUT" to see combined impact
+- **Revenue Growth:** Compare "BASE" vs "NEW_PRODUCT_LAUNCH" to quantify opportunity
+- **Scenario Planning:** Compare all combinations to find Pareto-optimal strategies
+
+### Technical Details
+
+- **Frontend:** `ViewResults.tsx` with Absolute/Delta toggle (lines 68-304)
+- **Backend:** API endpoints accept `whatIfCombination` parameter for filtering
+- **C++ Engine:** `parse_whatif_combination()` and `get_active_actions()` with override logic
+- **Database:** `what_if_combination` field in `statement_result` and `statement_result_by_driver`
+
+---
+
+## 💰 MAC Curve Analysis (Session 10 - Complete)
+
+**Feature:** Marginal Abatement Cost (MAC) curves for prioritizing decarbonization actions by cost-effectiveness.
+
+### How It Works
+
+1. **MAC Mode Toggle** (orange-themed, only visible in what-if mode):
+   - Appears next to Absolute/Delta controls in ViewResults.tsx
+   - Enables MAC curve calculation and display
+
+2. **Period Range Selector**:
+   - Dual-handle slider at bottom of results page
+   - Select start and end periods for MAC calculation
+   - Visual orange highlight shows selected range
+
+3. **MAC Calculation** (backend endpoint: `GET /api/results/mac-curve`):
+   - For each MAC-relevant action (where `is_mac_relevant = 1`):
+     - Compare single-action case vs BASE case
+     - Calculate ΔCarbon = Base Carbon - Action Carbon (over selected periods)
+     - Calculate ΔCost = Base Net Income - Action Net Income (over selected periods)
+     - Calculate MAC = ΔCost / ΔCarbon ($/tCO₂e)
+   - Filter: Skips BASE, multi-action combinations, non-MAC-relevant actions, zero carbon impact
+   - Sort by MAC ascending (best cost-effectiveness first)
+
+4. **Results Display**:
+   - Table with columns: Action | Carbon Abatement (tCO₂e) | Cost Impact ($) | MAC ($/tCO₂e)
+   - Color-coded: Green (profitable, MAC < 0), Orange (moderate cost, 0-50), Red (expensive, >50)
+   - Sign convention: Positive abatement = reduction (good), Positive cost = income loss (expense)
+
+### Example Use Cases
+
+- **Decarbonization Strategy:** Prioritize actions by MAC to maximize carbon reduction per dollar
+- **Budget Optimization:** Identify profitable actions (negative MAC) first
+- **Scenario Comparison:** Compare MAC curves across different scenarios (RCP 2.6 vs RCP 8.5)
+- **Net Zero Planning:** Find least-cost pathway to emissions targets
+
+### Technical Details
+
+- **Frontend:** `ViewResults.tsx` MAC mode toggle and period selector (lines 732-1510)
+- **Backend:** `GET /api/results/mac-curve` endpoint (index.js:6845-6984)
+- **Database:** Uses `management_action.is_mac_relevant` field for filtering
+- **Calculation:** MAC = (Base Income - Action Income) / (Base Carbon - Action Carbon)
+- **Period Range:** Sums ΔCarbon and ΔCost over selected periods only
+
+---
+
 ## 📝 Development Workflow
 
 ### Making Changes to C++ Code
@@ -314,6 +394,6 @@ See `docs/docu/md.md` for complete documentation index including:
 
 ---
 
-**Last Updated:** 2025-10-26
+**Last Updated:** 2025-10-29
 **Maintainer:** Development Team
 **For Questions:** Refer to documentation files listed above first
