@@ -18,7 +18,8 @@ const VALID_STATEMENT_TYPES = [
   'pnl',
   'cash_flow',
   'income_statement',
-  'profit_loss'
+  'profit_loss',
+  'carbon'
 ]
 
 // Valid data types for staging
