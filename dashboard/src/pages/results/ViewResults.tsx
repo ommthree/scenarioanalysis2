@@ -71,6 +71,21 @@ export default function ViewResults() {
   const [baseCaseActions, setBaseCaseActions] = useState<Set<string>>(new Set())
   const [managementActions, setManagementActions] = useState<ManagementAction[]>([])
 
+  // MAC mode controls
+  const [macModeActive, setMacModeActive] = useState(false)
+  const [macStartPeriod, setMacStartPeriod] = useState(1)
+  const [macEndPeriod, setMacEndPeriod] = useState(1)
+
+  // MAC results data
+  interface MacResult {
+    action: string
+    carbonAbatement: number
+    cost: number
+    mac: number | null
+  }
+  const [macResults, setMacResults] = useState<MacResult[]>([])
+  const [macLoading, setMacLoading] = useState(false)
+
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
     loadScenarios()
@@ -114,6 +129,13 @@ export default function ViewResults() {
       loadResultsForPeriod(currentPeriod, currentEntity)
     }
   }, [currentPeriod, currentEntity, periods])
+
+  // Load MAC curve data when MAC mode is active
+  useEffect(() => {
+    if (macModeActive && currentScenario !== null && currentEntity !== null && periods.length > 0) {
+      loadMacCurve()
+    }
+  }, [macModeActive, macStartPeriod, macEndPeriod, currentScenario, currentEntity])
 
   const loadScenarios = async () => {
     const dbPath = getDefaultDbPath()
@@ -167,6 +189,31 @@ export default function ViewResults() {
       }
     } catch (error) {
       logger.error('Error loading management actions:', error)
+    }
+  }
+
+  const loadMacCurve = async () => {
+    if (currentScenario === null || currentEntity === null) return
+
+    setMacLoading(true)
+    const dbPath = getDefaultDbPath()
+
+    try {
+      const url = apiUrl(`/api/results/mac-curve?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&entityId=${currentEntity}&startPeriod=${macStartPeriod}&endPeriod=${macEndPeriod}`)
+      const response = await fetch(url)
+      const data = await response.json()
+
+      if (data.success && data.macCurve) {
+        setMacResults(data.macCurve)
+      } else {
+        logger.error('Failed to load MAC curve:', data.error)
+        setMacResults([])
+      }
+    } catch (error) {
+      logger.error('Error loading MAC curve:', error)
+      setMacResults([])
+    } finally {
+      setMacLoading(false)
     }
   }
 
@@ -723,6 +770,41 @@ export default function ViewResults() {
                 <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
                   Delta
                 </label>
+
+                {/* MAC Mode Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginLeft: '40px', paddingLeft: '40px', borderLeft: '1px solid rgba(71, 85, 105, 0.5)' }}>
+                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                    MAC Mode
+                  </label>
+                  <div
+                    onClick={() => setMacModeActive(!macModeActive)}
+                    style={{
+                      position: 'relative',
+                      width: '52px',
+                      height: '28px',
+                      backgroundColor: macModeActive ? 'rgba(249, 115, 22, 0.3)' : 'rgba(71, 85, 105, 0.5)',
+                      border: `1px solid ${macModeActive ? 'rgba(249, 115, 22, 0.5)' : 'rgba(71, 85, 105, 0.6)'}`,
+                      borderRadius: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    {/* Toggle knob */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        left: macModeActive ? '24px' : '2px',
+                        width: '22px',
+                        height: '22px',
+                        backgroundColor: macModeActive ? '#f97316' : '#94a3b8',
+                        borderRadius: '50%',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Displayed Run Action Toggles - Blue Theme */}
@@ -1105,6 +1187,324 @@ export default function ViewResults() {
                 )}
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* MAC Period Selector Panel (only visible in What-If mode when MAC mode is active) */}
+      {lastRunMode?.whatIfMode && macModeActive && periods.length > 0 && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(249, 115, 22, 0.5)',
+          marginTop: '24px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <BarChart3 size={20} style={{ color: '#f97316' }} />
+                <label style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                  MAC Curve Period Range
+                </label>
+              </div>
+
+              {/* Combined Period Range Selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    Start: P{macStartPeriod}
+                  </label>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    End: P{macEndPeriod}
+                  </label>
+                </div>
+
+                {/* Dual-handle range slider container */}
+                <div style={{ position: 'relative', width: '100%', height: '40px' }}>
+                  {/* Background track */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '17px',
+                    left: 0,
+                    right: 0,
+                    height: '6px',
+                    backgroundColor: 'rgba(71, 85, 105, 0.5)',
+                    borderRadius: '3px'
+                  }} />
+
+                  {/* Active range highlight */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '17px',
+                    left: `${((macStartPeriod - periods[0]) / (periods[periods.length - 1] - periods[0])) * 100}%`,
+                    width: `${((macEndPeriod - macStartPeriod) / (periods[periods.length - 1] - periods[0])) * 100}%`,
+                    height: '6px',
+                    backgroundColor: '#f97316',
+                    borderRadius: '3px'
+                  }} />
+
+                  {/* Start Period Slider */}
+                  <input
+                    type="range"
+                    min={periods[0]}
+                    max={periods[periods.length - 1]}
+                    value={macStartPeriod}
+                    onChange={(e) => {
+                      const newStart = parseInt(e.target.value)
+                      setMacStartPeriod(newStart)
+                      if (newStart > macEndPeriod) {
+                        setMacEndPeriod(newStart)
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      top: 0,
+                      left: 0,
+                      height: '40px',
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      background: 'transparent',
+                      pointerEvents: 'all',
+                      cursor: 'pointer',
+                      zIndex: macStartPeriod >= macEndPeriod - 1 ? 5 : 4
+                    } as React.CSSProperties}
+                  />
+
+                  {/* End Period Slider */}
+                  <input
+                    type="range"
+                    min={periods[0]}
+                    max={periods[periods.length - 1]}
+                    value={macEndPeriod}
+                    onChange={(e) => {
+                      const newEnd = parseInt(e.target.value)
+                      setMacEndPeriod(newEnd)
+                      if (newEnd < macStartPeriod) {
+                        setMacStartPeriod(newEnd)
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      top: 0,
+                      left: 0,
+                      height: '40px',
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      background: 'transparent',
+                      pointerEvents: 'all',
+                      cursor: 'pointer',
+                      zIndex: 3
+                    } as React.CSSProperties}
+                  />
+                </div>
+
+                <style>{`
+                  input[type="range"]::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #f97316;
+                    border: 2px solid #fff;
+                    cursor: pointer;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                  }
+
+                  input[type="range"]::-moz-range-thumb {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #f97316;
+                    border: 2px solid #fff;
+                    cursor: pointer;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                  }
+                `}</style>
+              </div>
+
+              <div style={{
+                fontSize: '12px',
+                color: '#64748b',
+                textAlign: 'center',
+                paddingTop: '8px',
+                borderTop: '1px solid rgba(71, 85, 105, 0.3)'
+              }}>
+                MAC curve will be calculated for {macEndPeriod - macStartPeriod + 1} periods (P{macStartPeriod} to P{macEndPeriod})
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* MAC Results Table (only visible in What-If mode when MAC mode is active) */}
+      {lastRunMode?.whatIfMode && macModeActive && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(249, 115, 22, 0.5)',
+          marginTop: '24px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <BarChart3 size={20} style={{ color: '#f97316' }} />
+                <label style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                  Marginal Abatement Cost (MAC) Curve
+                </label>
+              </div>
+
+              {macLoading ? (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: '40px',
+                  color: '#94a3b8',
+                  fontSize: '14px'
+                }}>
+                  Loading MAC curve...
+                </div>
+              ) : macResults.length === 0 ? (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: '40px',
+                  color: '#94a3b8',
+                  fontSize: '14px'
+                }}>
+                  No single-action results available. Run calculations with individual actions enabled.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: '13px'
+                  }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid rgba(249, 115, 22, 0.5)' }}>
+                        <th style={{
+                          textAlign: 'left',
+                          padding: '12px 16px',
+                          color: '#f97316',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Action
+                        </th>
+                        <th style={{
+                          textAlign: 'right',
+                          padding: '12px 16px',
+                          color: '#f97316',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Carbon Abatement (tCO₂e)
+                        </th>
+                        <th style={{
+                          textAlign: 'right',
+                          padding: '12px 16px',
+                          color: '#f97316',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Cost ($)
+                        </th>
+                        <th style={{
+                          textAlign: 'right',
+                          padding: '12px 16px',
+                          color: '#f97316',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          MAC ($/tCO₂e)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {macResults.map((result, index) => (
+                        <tr
+                          key={result.action}
+                          style={{
+                            borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+                            backgroundColor: index % 2 === 0 ? 'rgba(15, 23, 42, 0.5)' : 'transparent',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(249, 115, 22, 0.1)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = index % 2 === 0 ? 'rgba(15, 23, 42, 0.5)' : 'transparent'
+                          }}
+                        >
+                          <td style={{
+                            padding: '12px 16px',
+                            color: '#fff',
+                            fontWeight: '600'
+                          }}>
+                            {result.action}
+                          </td>
+                          <td style={{
+                            padding: '12px 16px',
+                            color: result.carbonAbatement > 0 ? '#10b981' : result.carbonAbatement < 0 ? '#ef4444' : '#94a3b8',
+                            textAlign: 'right',
+                            fontFamily: 'monospace'
+                          }}>
+                            {result.carbonAbatement.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{
+                            padding: '12px 16px',
+                            color: result.cost > 0 ? '#ef4444' : result.cost < 0 ? '#10b981' : '#94a3b8',
+                            textAlign: 'right',
+                            fontFamily: 'monospace'
+                          }}>
+                            {result.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{
+                            padding: '12px 16px',
+                            color: result.mac === null ? '#64748b' : result.mac < 0 ? '#10b981' : '#f97316',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            fontWeight: '700'
+                          }}>
+                            {result.mac === null ? 'N/A' : result.mac.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div style={{
+                fontSize: '12px',
+                color: '#64748b',
+                textAlign: 'left',
+                paddingTop: '8px',
+                borderTop: '1px solid rgba(71, 85, 105, 0.3)',
+                lineHeight: '1.6'
+              }}>
+                <strong style={{ color: '#94a3b8' }}>Interpretation:</strong>
+                <br />
+                • <strong style={{ color: '#10b981' }}>Positive Carbon Abatement</strong> = Carbon reduction (good)
+                <br />
+                • <strong style={{ color: '#ef4444' }}>Positive Cost</strong> = Income loss (expense)
+                <br />
+                • <strong style={{ color: '#f97316' }}>Lower MAC</strong> = More cost-effective carbon reduction
+                <br />
+                • <strong style={{ color: '#10b981' }}>Negative MAC</strong> = Carbon reduction + income gain (best)
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

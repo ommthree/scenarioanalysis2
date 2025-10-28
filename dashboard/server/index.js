@@ -6843,6 +6843,147 @@ app.post('/api/validate-scenario', (req, res) => {
 })
 
 /**
+ * Calculate MAC curve for what-if scenario
+ * GET /api/results/mac-curve
+ * Query params: dbPath, scenarioId, entityId, startPeriod, endPeriod
+ */
+app.get('/api/results/mac-curve', (req, res) => {
+  const { dbPath, scenarioId, entityId, startPeriod, endPeriod } = req.query
+
+  if (!dbPath || !scenarioId || !entityId || !startPeriod || !endPeriod) {
+    return res.status(400).json({ error: 'Missing required parameters' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // First, get the list of MAC-relevant action codes
+  const macActionsQuery = `
+    SELECT action_code
+    FROM management_action
+    WHERE is_mac_relevant = 1
+  `
+
+  db.all(macActionsQuery, [], (err, macActions) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: 'Failed to query MAC-relevant actions: ' + err.message })
+    }
+
+    const macActionCodes = new Set(macActions.map(a => a.action_code))
+
+    const sql = `
+      SELECT
+        sr.what_if_combination,
+        sr.period_id,
+        sr.line_item_code,
+        sr.value
+      FROM statement_result sr
+      WHERE sr.scenario_id = ?
+        AND sr.entity_id = ?
+        AND sr.period_id BETWEEN ? AND ?
+        AND sr.line_item_code IN ('SCOPE1_EMISSIONS', 'SCOPE2_EMISSIONS', 'SCOPE3_EMISSIONS', 'NET_INCOME')
+      ORDER BY sr.what_if_combination, sr.period_id, sr.line_item_code
+    `
+
+    db.all(sql, [scenarioId, entityId, startPeriod, endPeriod], (err, rows) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: 'Database query failed: ' + err.message })
+    }
+
+    // Group by combination
+    const combinationData = {}
+    rows.forEach(row => {
+      const combo = row.what_if_combination || ''
+      if (!combinationData[combo]) {
+        combinationData[combo] = {
+          scope1: 0,
+          scope2: 0,
+          scope3: 0,
+          netIncome: 0
+        }
+      }
+
+      // Sum up values across periods
+      if (row.line_item_code === 'SCOPE1_EMISSIONS') {
+        combinationData[combo].scope1 += row.value
+      } else if (row.line_item_code === 'SCOPE2_EMISSIONS') {
+        combinationData[combo].scope2 += row.value
+      } else if (row.line_item_code === 'SCOPE3_EMISSIONS') {
+        combinationData[combo].scope3 += row.value
+      } else if (row.line_item_code === 'NET_INCOME') {
+        combinationData[combo].netIncome += row.value
+      }
+    })
+
+    // Find base case (no actions = empty combination)
+    const baseCase = combinationData[''] || combinationData['BASE'] || combinationData['NONE'] || null
+    if (!baseCase) {
+      db.close()
+      return res.status(400).json({ error: 'Base case (no actions) not found in results' })
+    }
+
+    const baseTotalCarbon = baseCase.scope1 + baseCase.scope2 + baseCase.scope3
+    const baseNetIncome = baseCase.netIncome
+
+    // Calculate MAC for each single-action combination
+    const macResults = []
+    Object.keys(combinationData).forEach(combo => {
+      if (!combo || combo === '' || combo === 'BASE' || combo === 'NONE') return // Skip base case
+
+      // Check if this is a single-action combination (no + signs)
+      if (combo.includes('+')) return // Skip multi-action combinations
+
+      // Check if this action is MAC-relevant
+      if (!macActionCodes.has(combo)) return // Skip non-MAC-relevant actions
+
+      const data = combinationData[combo]
+      const totalCarbon = data.scope1 + data.scope2 + data.scope3
+      const netIncome = data.netIncome
+
+      // Calculate deltas (positive = reduction/cost)
+      const carbonAbatement = baseTotalCarbon - totalCarbon  // Positive = carbon reduced
+      const cost = baseNetIncome - netIncome  // Positive = income reduced (cost)
+
+      // Skip actions with zero carbon impact (can't calculate meaningful MAC)
+      if (carbonAbatement === 0) return
+
+      // Calculate MAC (cost per unit of carbon abatement)
+      const mac = cost / carbonAbatement
+
+      macResults.push({
+        action: combo,
+        carbonAbatement,
+        cost,
+        mac
+      })
+    })
+
+    // Sort by MAC (ascending - lowest cost per tCO2e first)
+    macResults.sort((a, b) => a.mac - b.mac)
+
+    db.close()
+    res.json({
+      success: true,
+      baseCase: {
+        totalCarbon: baseTotalCarbon,
+        netIncome: baseNetIncome
+      },
+      macCurve: macResults
+    })
+  })
+  })
+})
+
+/**
  * Generate what-if combinations
  */
 app.post('/api/whatif/combinations', async (req, res) => {
