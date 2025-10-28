@@ -6038,18 +6038,20 @@ app.post('/api/ingest/statements', async (req, res) => {
                 }
 
                 const value = parseFloat(csvRow.Value || csvRow.value || 0)
+                const units = csvRow.units || csvRow.Units || csvRow.currency || csvRow.Currency || null
 
                 logDebug(`Inserting into ${stagingTable}:`, {
                   source_csv_row: hm.csv_row_index,
                   source_csv_value: csvRow.Value || csvRow.value,
                   parsed_value: value,
+                  units: units,
                   line_item_code: hm.line_item_code
                 })
 
                 await new Promise((res, rej) => {
                   db.run(
-                    `INSERT INTO ${stagingTable} (line_item, value) VALUES (?, ?)`,
-                    [hm.line_item_code, value.toString()],
+                    `INSERT INTO ${stagingTable} (line_item, units, value) VALUES (?, ?, ?)`,
+                    [hm.line_item_code, units, value.toString()],
                     (err) => (err ? rej(err) : (totalInserted++, res()))
                   )
                 })
