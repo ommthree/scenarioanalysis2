@@ -37,31 +37,32 @@ class ValidationService {
     // 2. Check periods exist
     const periodCount = await this.dbGet('SELECT COUNT(*) as count FROM period', [])
     if (periodCount.count === 0) {
-      errors.push({ code: 'NO_PERIODS', message: 'No periods defined. Add periods before running calculation.', severity: 'error' })
+      errors.push({ code: 'NO_PERIODS', message: `[${scenario.code}] No periods defined. Add periods before running calculation.`, severity: 'error' })
     } else {
       info.push({ code: 'PERIODS_FOUND', message: `${periodCount.count} period(s) configured`, severity: 'info' })
     }
 
     // 3. Check entities exist
-    const entityCount = await this.dbGet('SELECT COUNT(*) as count FROM entity WHERE is_active = 1', [])
-    if (entityCount.count === 0) {
-      errors.push({ code: 'NO_ENTITIES', message: 'No active entities defined. Add entities before running calculation.', severity: 'error' })
+    const entities = await this.dbAll('SELECT entity_id, name FROM entity WHERE is_active = 1', [])
+    if (entities.length === 0) {
+      errors.push({ code: 'NO_ENTITIES', message: `[${scenario.code}] No active entities defined. Add entities before running calculation.`, severity: 'error' })
     } else {
-      info.push({ code: 'ENTITIES_FOUND', message: `${entityCount.count} active entit${entityCount.count === 1 ? 'y' : 'ies'} configured`, severity: 'info' })
+      const entityNames = entities.map(e => e.name).join(', ')
+      info.push({ code: 'ENTITIES_FOUND', message: `${entities.length} active entit${entities.length === 1 ? 'y' : 'ies'}: ${entityNames}`, severity: 'info' })
     }
 
     // 4. Check statement template
     if (!scenario.statement_template_id) {
-      errors.push({ code: 'NO_TEMPLATE', message: 'Scenario has no statement template assigned', severity: 'error' })
+      errors.push({ code: 'NO_TEMPLATE', message: `[${scenario.code}] Scenario has no statement template assigned`, severity: 'error' })
     } else {
       const template = await this.dbGet(
         'SELECT * FROM statement_template WHERE template_id = ?',
         [scenario.statement_template_id]
       )
       if (!template) {
-        errors.push({ code: 'TEMPLATE_NOT_FOUND', message: `Statement template ${scenario.statement_template_id} not found`, severity: 'error' })
+        errors.push({ code: 'TEMPLATE_NOT_FOUND', message: `[${scenario.code}] Statement template ${scenario.statement_template_id} not found`, severity: 'error' })
       } else {
-        info.push({ code: 'TEMPLATE_FOUND', message: `Using template: ${template.name}`, severity: 'info' })
+        info.push({ code: 'TEMPLATE_FOUND', message: `Using template: ${template.code} (${template.statement_type})`, severity: 'info' })
       }
     }
 
@@ -71,7 +72,7 @@ class ValidationService {
       [scenarioId]
     )
     if (driverCount.count === 0) {
-      warnings.push({ code: 'NO_DRIVERS', message: 'No driver data loaded for this scenario. Calculation will use base values only.', severity: 'warning' })
+      warnings.push({ code: 'NO_DRIVERS', message: `[${scenario.code}] No driver data loaded for this scenario. Calculation will use base values only.`, severity: 'warning' })
     } else {
       info.push({ code: 'DRIVERS_FOUND', message: `${driverCount.count} driver(s) configured`, severity: 'info' })
     }
@@ -83,7 +84,7 @@ class ValidationService {
         [scenarioId]
       )
       if (fxCount.count === 0) {
-        warnings.push({ code: 'NO_FX_RATES', message: `Base currency is ${scenario.base_currency} but no FX rates defined. Multi-currency calculations may fail.`, severity: 'warning' })
+        warnings.push({ code: 'NO_FX_RATES', message: `[${scenario.code}] Base currency is ${scenario.base_currency} but no FX rates defined. Multi-currency calculations may fail.`, severity: 'warning' })
       } else {
         info.push({ code: 'FX_RATES_FOUND', message: `${fxCount.count} FX rate(s) available`, severity: 'info' })
       }
@@ -95,22 +96,27 @@ class ValidationService {
       info.push({ code: 'LOCATIONS_FOUND', message: `${locationCount.count} location(s) for physical risk analysis`, severity: 'info' })
 
       // Check damage curves
-      const damageCurveCount = await this.dbGet('SELECT COUNT(DISTINCT archetype) as count FROM damage_curve', [])
-      if (damageCurveCount.count === 0) {
-        warnings.push({ code: 'NO_DAMAGE_CURVES', message: 'Locations exist but no damage curves defined. Physical risk calculation will be skipped.', severity: 'warning' })
+      const damageCurves = await this.dbAll('SELECT DISTINCT archetype FROM damage_curve', [])
+      if (damageCurves.length === 0) {
+        warnings.push({ code: 'NO_DAMAGE_CURVES', message: `[${scenario.code}] ${locationCount.count} location(s) exist but no damage curves defined. Physical risk calculation will be skipped.`, severity: 'warning' })
       } else {
-        info.push({ code: 'DAMAGE_CURVES_FOUND', message: `${damageCurveCount.count} damage curve archetype(s) available`, severity: 'info' })
+        const archetypes = damageCurves.map(dc => dc.archetype).join(', ')
+        info.push({ code: 'DAMAGE_CURVES_FOUND', message: `${damageCurves.length} damage curve archetype(s): ${archetypes}`, severity: 'info' })
       }
 
-      // Check hazard maps
-      const hazardMapCount = await this.dbGet(
-        'SELECT COUNT(*) as count FROM hazard_map_scenario WHERE scenario_id = ?',
-        [scenarioId]
+      // Check hazard maps (linked by scenario_code, not scenario_id)
+      const hazardMaps = await this.dbAll(
+        `SELECT hms.mapping_id, hmm.peril_type
+         FROM hazard_map_scenario hms
+         LEFT JOIN hazard_map_mapping hmm ON hms.mapping_id = hmm.mapping_id
+         WHERE hms.scenario_code = ?`,
+        [scenario.code]
       )
-      if (hazardMapCount.count === 0) {
-        warnings.push({ code: 'NO_HAZARD_MAPS', message: 'Locations exist but no hazard maps linked to this scenario. Physical risk calculation will be skipped.', severity: 'warning' })
+      if (hazardMaps.length === 0) {
+        warnings.push({ code: 'NO_HAZARD_MAPS', message: `[${scenario.code}] ${locationCount.count} location(s) exist but no hazard maps linked to this scenario. Physical risk calculation will be skipped.`, severity: 'warning' })
       } else {
-        info.push({ code: 'HAZARD_MAPS_FOUND', message: `${hazardMapCount.count} hazard map(s) linked to scenario`, severity: 'info' })
+        const perilTypes = hazardMaps.map(hm => hm.peril_type || `mapping_${hm.mapping_id}`).join(', ')
+        info.push({ code: 'HAZARD_MAPS_FOUND', message: `${hazardMaps.length} hazard map(s): ${perilTypes}`, severity: 'info' })
       }
     }
 
@@ -124,15 +130,32 @@ class ValidationService {
     }
 
     // 9. Check for orphaned staging tables (data quality issue)
+    // Three staging systems exist:
+    // 1. Timestamped tables (location, hazard_map) tracked in staging_metadata
+    // 2. Numbered scenario tables (staging_scenario_N) tracked in staged_file
+    // 3. Fixed-name staging tables used by C++ engine (staging_statement_balance_sheet, etc.)
     const orphanedCount = await this.dbGet(`
       SELECT COUNT(*) as count FROM sqlite_master
-      WHERE type = 'table' AND name LIKE 'staging_%'
-      AND name NOT IN (SELECT staging_table_name FROM staging_metadata WHERE deleted_at IS NULL)
+      WHERE type = 'table'
+      AND name LIKE 'staging_%'
+      AND name != 'staging_metadata'
+      AND name NOT IN (
+        'staging_statement_balance_sheet',
+        'staging_statement_pnl',
+        'staging_damage_curve',
+        'staging_hazard_map',
+        'staging_location'
+      )
+      AND name NOT IN (
+        SELECT staging_table_name FROM staging_metadata WHERE deleted_at IS NULL
+        UNION
+        SELECT 'staging_scenario_' || file_id FROM staged_file WHERE file_type = 'scenario'
+      )
     `, [])
     if (orphanedCount.count > 0) {
       warnings.push({
         code: 'ORPHANED_STAGING_TABLES',
-        message: `${orphanedCount.count} orphaned staging table(s) found. Consider running cleanup: POST /api/staging/cleanup`,
+        message: `[System] ${orphanedCount.count} orphaned staging table(s) found. Consider running cleanup: POST /api/staging/cleanup`,
         severity: 'warning'
       })
     }

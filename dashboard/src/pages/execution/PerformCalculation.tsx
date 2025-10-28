@@ -36,7 +36,7 @@ export default function PerformCalculation() {
   const [isValidating, setIsValidating] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // Load run definition and previous logs on mount
+  // Load run definition, previous logs, and validation result on mount
   useEffect(() => {
     const saved = localStorage.getItem('runDefinition')
     if (saved) {
@@ -59,6 +59,17 @@ export default function PerformCalculation() {
         logger.error('Failed to load saved logs:', err)
       }
     }
+
+    // Load previous validation result
+    const savedValidation = localStorage.getItem('validationResult')
+    if (savedValidation) {
+      try {
+        const parsedValidation = JSON.parse(savedValidation)
+        setValidationResult(parsedValidation)
+      } catch (err) {
+        logger.error('Failed to load saved validation result:', err)
+      }
+    }
   }, [])
 
   // Auto-scroll to bottom when new logs are added
@@ -75,6 +86,13 @@ export default function PerformCalculation() {
       }))
     }
   }, [logs, runStatus])
+
+  // Save validation result to localStorage whenever it changes
+  useEffect(() => {
+    if (validationResult) {
+      localStorage.setItem('validationResult', JSON.stringify(validationResult))
+    }
+  }, [validationResult])
 
   const addLog = (level: LogEntry['level'], message: string) => {
     const entry: LogEntry = {
@@ -165,7 +183,6 @@ export default function PerformCalculation() {
     setIsRunning(true)
     setRunStatus('running')
     setLogs([])
-    setValidationResult(null)
 
     const dbPath = getDefaultDbPath()
 
@@ -558,6 +575,19 @@ export default function PerformCalculation() {
         </CardContent>
       </Card>
 
+      {/* Validation Panel */}
+      {validationResult && (
+        <div style={{ marginBottom: '24px' }}>
+          <ValidationPanel
+            result={validationResult}
+            onDismiss={() => {
+              setValidationResult(null)
+              localStorage.removeItem('validationResult')
+            }}
+          />
+        </div>
+      )}
+
       {/* Log Panel */}
       <Card style={{
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
@@ -650,16 +680,6 @@ export default function PerformCalculation() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Validation Panel */}
-      {validationResult && (
-        <div style={{ marginTop: '24px' }}>
-          <ValidationPanel
-            result={validationResult}
-            onDismiss={() => setValidationResult(null)}
-          />
-        </div>
-      )}
     </div>
   )
 }

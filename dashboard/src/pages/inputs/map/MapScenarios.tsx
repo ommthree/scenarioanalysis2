@@ -49,6 +49,10 @@ const MapScenarios: React.FC = () => {
   // Variable mappings: maps driver_code to csv_row_index
   const [variableMappings, setVariableMappings] = useState<Array<{csv_row_index: number, driver_code: string}>>([])
 
+  // Base currency selection
+  const [availableCurrencies, setAvailableCurrencies] = useState<string[]>([])
+  const [selectedCurrency, setSelectedCurrency] = useState<string>('CHF')
+
   // AI Mapping state
   const [aiMappingInProgress, setAiMappingInProgress] = useState(false)
   const [aiMappingMessage, setAiMappingMessage] = useState('')
@@ -199,6 +203,20 @@ const MapScenarios: React.FC = () => {
           )
           logger.debug('Columns:', cols)
           setCsvColumns(cols)
+        }
+
+        // Fetch unique currencies from staging table
+        try {
+          const currencyResponse = await fetch(apiUrl(`/api/scenarios/get-currencies?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}`))
+          const currencyResult = await currencyResponse.json()
+          if (currencyResult.success && currencyResult.currencies) {
+            setAvailableCurrencies(currencyResult.currencies)
+            if (currencyResult.currencies.length > 0 && !selectedCurrency) {
+              setSelectedCurrency(currencyResult.currencies[0])
+            }
+          }
+        } catch (error) {
+          logger.error('Error fetching currencies:', error)
         }
       } else {
         logger.error('Failed to load data:', result)
@@ -935,6 +953,78 @@ Rules:
               <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
                 Showing first 5 rows
               </p>
+            </div>
+          </Card>
+        )}
+
+        {/* Base Currency Selection */}
+        {selectedFileId && csvData.length > 0 && unitsColumn && availableCurrencies.length > 0 && (
+          <Card className="border-2" style={{
+            backgroundColor: 'rgba(30, 41, 59, 0.6)',
+            backdropFilter: 'blur(10px)',
+            borderColor: 'rgba(100, 116, 139, 0.3)',
+            marginBottom: '24px'
+          }}>
+            <div style={{ paddingTop: '12px', paddingBottom: '12px', paddingLeft: '24px', paddingRight: '24px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#ffffff', marginBottom: '8px' }}>
+                Select Base Currency
+              </h3>
+              <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '16px' }}>
+                Choose the base currency for this scenario. Currencies found in the {unitsColumn} column.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                {availableCurrencies.map((currency) => (
+                  <button
+                    key={currency}
+                    onClick={() => setSelectedCurrency(currency)}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      border: selectedCurrency === currency
+                        ? '2px solid rgba(59, 130, 246, 0.6)'
+                        : '2px solid rgba(71, 85, 105, 0.3)',
+                      backgroundColor: selectedCurrency === currency
+                        ? 'rgba(59, 130, 246, 0.15)'
+                        : 'rgba(30, 41, 59, 0.4)',
+                      color: selectedCurrency === currency ? '#3b82f6' : '#cbd5e1',
+                      fontSize: '14px',
+                      fontWeight: selectedCurrency === currency ? '600' : '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: selectedCurrency === currency
+                        ? '0 0 0 3px rgba(59, 130, 246, 0.1)'
+                        : 'none'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedCurrency !== currency) {
+                        e.currentTarget.style.borderColor = 'rgba(100, 116, 139, 0.5)'
+                        e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedCurrency !== currency) {
+                        e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                        e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.4)'
+                      }
+                    }}
+                  >
+                    {currency}
+                  </button>
+                ))}
+              </div>
+              {selectedCurrency && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '8px 12px',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  color: '#94a3b8'
+                }}>
+                  Selected: <span style={{ color: '#3b82f6', fontWeight: '600' }}>{selectedCurrency}</span>
+                </div>
+              )}
             </div>
           </Card>
         )}

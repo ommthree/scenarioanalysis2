@@ -34,10 +34,11 @@ using namespace finmodel::core;
 std::map<int, std::set<std::string>> triggered_actions_;
 
 /**
- * @brief Evaluate which actions are active for a given period
+ * @brief Evaluate which actions are active for a given period and entity
  * @param db Database connection
  * @param scenario_id Current scenario
  * @param period_id Current period
+ * @param entity_id Current entity
  * @param prior_values Values from previous period for conditional evaluation
  * @return Vector of active action codes
  */
@@ -45,21 +46,25 @@ std::vector<std::string> get_active_actions(
     std::shared_ptr<IDatabase> db,
     int scenario_id,
     int period_id,
+    const std::string& entity_id,
     const std::map<std::string, double>& prior_values
 ) {
     std::vector<std::string> active_actions;
 
-    // Query all active management actions
+    // Query all active management actions for this entity
+    // Actions are assigned to entities via action_entity table (scenario-independent)
     std::string sql = R"(
         SELECT ma.action_code, at.trigger_type, at.condition_formula as trigger_condition,
-               at.start_period, at.end_period
+               at.start_period, at.end_period, at.trigger_sticky, ae.entity_id
         FROM management_action ma
         LEFT JOIN action_trigger at ON ma.action_code = at.action_code
+        INNER JOIN action_entity ae ON ma.action_code = ae.action_code
+            AND ae.entity_id = :entity_id
         WHERE ma.is_active = 1
         ORDER BY ma.action_code
     )";
 
-    auto result = db->execute_query(sql, {});
+    auto result = db->execute_query(sql, {{"entity_id", entity_id}});
 
     while (result->next()) {
         std::string action_code = result->get_string("action_code");
@@ -70,32 +75,41 @@ std::vector<std::string> get_active_actions(
         bool is_active = false;
 
         if (trigger_type == "UNCONDITIONAL") {
-            is_active = (period_id >= start_period);
+            // UNCONDITIONAL: Always active unless outside period window
+            is_active = true;
+            // Only check start_period if it's explicitly set (not NULL/0)
+            if (start_period > 0 && period_id < start_period) {
+                is_active = false;
+            }
+            // Only check end_period if it's explicitly set (not NULL/0/-1)
             if (end_period > 0 && period_id > end_period) {
                 is_active = false;
             }
         } else if (trigger_type == "TIMED") {
-            is_active = (period_id >= start_period);
+            // TIMED: Active from start_period to end_period
+            is_active = (start_period > 0 && period_id >= start_period);
             if (end_period > 0 && period_id > end_period) {
                 is_active = false;
             }
         } else if (trigger_type == "CONDITIONAL") {
             std::string trigger_condition = result->is_null("trigger_condition") ? "" : result->get_string("trigger_condition");
+            bool is_sticky = result->is_null("trigger_sticky") ? false : (result->get_int("trigger_sticky") == 1);
 
             if (period_id < start_period) {
                 is_active = false;
             } else if (!trigger_condition.empty()) {
-                // Sticky trigger: once triggered, stays active until end_period
+                // Check if this is a sticky trigger
                 bool already_triggered = (triggered_actions_[scenario_id].find(action_code) != triggered_actions_[scenario_id].end());
 
-                if (already_triggered) {
+                if (is_sticky && already_triggered) {
+                    // Sticky trigger: once triggered, stays active until end_period
                     is_active = true;
                     if (end_period > 0 && period_id > end_period) {
                         is_active = false;
                         triggered_actions_[scenario_id].erase(action_code);
                     }
                 } else {
-                    // Evaluate condition using prior_values
+                    // Evaluate condition using prior_values (for both sticky and non-sticky)
                     // Simple evaluation: check if variable < threshold or variable > threshold
                     try {
                         // Parse condition like "NET_INCOME < 500000"
@@ -115,8 +129,11 @@ std::vector<std::string> get_active_actions(
                             if (it != prior_values.end()) {
                                 if (it->second <= threshold) {
                                     is_active = true;
-                                    triggered_actions_[scenario_id].insert(action_code);
-                                    std::cout << "  [ACTION] " << action_code << " triggered: "
+                                    if (is_sticky) {
+                                        triggered_actions_[scenario_id].insert(action_code);
+                                    }
+                                    std::cout << "  [ACTION] " << action_code << " triggered"
+                                              << (is_sticky ? " (sticky)" : " (non-sticky)") << ": "
                                               << var_name << "=" << it->second << " <= " << threshold << std::endl;
                                 }
                             }
@@ -131,8 +148,11 @@ std::vector<std::string> get_active_actions(
                             if (it != prior_values.end()) {
                                 if (it->second >= threshold) {
                                     is_active = true;
-                                    triggered_actions_[scenario_id].insert(action_code);
-                                    std::cout << "  [ACTION] " << action_code << " triggered: "
+                                    if (is_sticky) {
+                                        triggered_actions_[scenario_id].insert(action_code);
+                                    }
+                                    std::cout << "  [ACTION] " << action_code << " triggered"
+                                              << (is_sticky ? " (sticky)" : " (non-sticky)") << ": "
                                               << var_name << "=" << it->second << " >= " << threshold << std::endl;
                                 }
                             }
@@ -147,8 +167,11 @@ std::vector<std::string> get_active_actions(
                             if (it != prior_values.end()) {
                                 if (it->second < threshold) {
                                     is_active = true;
-                                    triggered_actions_[scenario_id].insert(action_code);
-                                    std::cout << "  [ACTION] " << action_code << " triggered: "
+                                    if (is_sticky) {
+                                        triggered_actions_[scenario_id].insert(action_code);
+                                    }
+                                    std::cout << "  [ACTION] " << action_code << " triggered"
+                                              << (is_sticky ? " (sticky)" : " (non-sticky)") << ": "
                                               << var_name << "=" << it->second << " < " << threshold << std::endl;
                                 }
                             }
@@ -163,8 +186,11 @@ std::vector<std::string> get_active_actions(
                             if (it != prior_values.end()) {
                                 if (it->second > threshold) {
                                     is_active = true;
-                                    triggered_actions_[scenario_id].insert(action_code);
-                                    std::cout << "  [ACTION] " << action_code << " triggered: "
+                                    if (is_sticky) {
+                                        triggered_actions_[scenario_id].insert(action_code);
+                                    }
+                                    std::cout << "  [ACTION] " << action_code << " triggered"
+                                              << (is_sticky ? " (sticky)" : " (non-sticky)") << ": "
                                               << var_name << "=" << it->second << " > " << threshold << std::endl;
                                 }
                             }
@@ -189,6 +215,9 @@ std::vector<std::string> get_active_actions(
  * @param db Database connection
  * @param base_template Base template to modify
  * @param action_codes List of active action codes
+ * @param scenario_id Scenario ID
+ * @param period_id Period ID
+ * @param entity_id Entity ID (for entity-specific templates)
  * @return Modified template code
  */
 std::string apply_action_transformations(
@@ -196,33 +225,43 @@ std::string apply_action_transformations(
     const std::string& base_template,
     const std::vector<std::string>& action_codes,
     int scenario_id,
-    int period_id
+    int period_id,
+    const std::string& entity_id = ""
 ) {
     if (action_codes.empty()) {
         return base_template;
     }
 
     // Create modified template code
-    std::string modified_template = base_template + "_S" + std::to_string(scenario_id) + "_P" + std::to_string(period_id);
+    // Format: BASE_S{scenario_id}_{entity_id}_{ACTION1}_{ACTION2}...
+    // Entity ID is included if provided (entity-specific actions)
+    std::string modified_template = base_template + "_S" + std::to_string(scenario_id);
+
+    if (!entity_id.empty()) {
+        modified_template += "_" + entity_id;
+    }
+
     for (const auto& action : action_codes) {
         modified_template += "_" + action;
     }
 
-    // Check if template already exists
-    auto check = db->execute_query(
-        "SELECT template_id FROM statement_template WHERE code = :code",
-        {{"code", modified_template}}
-    );
+    // Check if template already exists IN MEMORY (via calculate_single_line_item cache)
+    // If we've already created this combo, UnifiedEngine will have it cached
+    // So we just return the code and let the engine use its cached version
 
-    if (check->next()) {
-        return modified_template; // Already exists
+    // Load base template from database
+    auto base_tmpl = core::StatementTemplate::load_from_database(db.get(), base_template);
+    if (!base_tmpl) {
+        std::cerr << "ERROR: Failed to load base template: " << base_template << std::endl;
+        return base_template;
     }
 
-    // Use ActionEngine to properly clone and modify the template
-    auto action_engine = std::make_shared<ActionEngine>(db);
+    // Clone in-memory only (clone() returns unique_ptr, convert to shared_ptr for ActionEngine)
+    auto cloned_tmpl = base_tmpl->clone(modified_template);
+    auto new_tmpl = std::shared_ptr<core::StatementTemplate>(std::move(cloned_tmpl));
 
-    // Clone the base template
-    auto new_tmpl = action_engine->clone_template(base_template, modified_template);
+    // Use ActionEngine to apply transformations
+    auto action_engine = std::make_shared<ActionEngine>(db);
 
     // Load transformations and apply them
     std::vector<ManagementAction> actions_to_apply;
@@ -256,10 +295,9 @@ std::string apply_action_transformations(
             t.transformation_type = trans_result->get_string("type");
             t.new_formula = trans_result->get_string("new_formula");
 
-            if (t.transformation_type == "formula_override") {
-                action.financial_transformations.push_back(t);
-                std::cout << "    [TRANSFORM] " << t.line_item_code << " formula → " << t.new_formula << std::endl;
-            }
+            // Accept all transformation types: FORMULA, MULTIPLIER, DELTA, formula_override, carbon_formula_override
+            action.financial_transformations.push_back(t);
+            std::cout << "    [TRANSFORM] " << t.line_item_code << " [" << t.transformation_type << "] → " << t.new_formula << std::endl;
         }
 
         if (!action.financial_transformations.empty()) {
@@ -277,9 +315,10 @@ std::string apply_action_transformations(
         std::cout << "    [DEBUG] EXPENSES formula after transform: " << expenses_item->formula.value() << std::endl;
     }
 
-    // Save the modified template
+    // Save the modified template to database (TEMPORARILY - will be cleaned up after calculation)
+    // UnifiedEngine needs to load templates by code from the database
     new_tmpl->save_to_database(db.get());
-    std::cout << "    [DEBUG] Template saved to database" << std::endl;
+    std::cout << "    [DEBUG] Temporary template saved: " << modified_template << std::endl;
 
     return modified_template;
 }
@@ -413,19 +452,26 @@ int main(int argc, char* argv[]) {
             engine.clear_driver_contributions();
 
             // Get periods for this scenario
+            // Period 0 (opening balance) always runs first, even if not in scenario_drivers
+            // It loads from staging tables (staging_statement_pnl, staging_statement_balance_sheet)
+            std::vector<int> periods = {0};  // Start with period 0
+
             auto period_query = db->execute_query(
                 "SELECT DISTINCT period_id FROM scenario_drivers WHERE scenario_id = :sid ORDER BY period_id",
                 {{"sid", scenario_id}}
             );
 
-            std::vector<int> periods;
             while (period_query->next()) {
-                periods.push_back(period_query->get_int("period_id"));
+                int period_id = period_query->get_int("period_id");
+                // Only add non-zero periods (period 0 is already in the list)
+                if (period_id != 0) {
+                    periods.push_back(period_id);
+                }
             }
 
-            if (periods.empty()) {
-                std::cout << "No periods found for scenario " << scenario_id << std::endl;
-                continue;
+            if (periods.size() == 1) {
+                // Only period 0, no subsequent periods
+                std::cout << "Only opening balance period (period 0) found" << std::endl;
             }
 
             std::cout << "Processing " << periods.size() << " period(s)" << std::endl;
@@ -451,6 +497,9 @@ int main(int argc, char* argv[]) {
                 levels.push_back(all_entities);
                 std::cout << "Flat processing: " << all_entities.size() << " entities" << std::endl;
             }
+
+            // Track temporary templates created for this scenario (will be cleaned up at end)
+            std::set<std::string> temporary_templates;
 
             // Process each period
             for (int period_id : periods) {
@@ -620,20 +669,9 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                // Evaluate management actions for this period
-                std::vector<std::string> active_actions = get_active_actions(db, scenario_id, period_id, aggregate_prior_values);
-
-                // Apply action transformations to get period-specific template
-                std::string period_template_code = apply_action_transformations(db, template_code, active_actions, scenario_id, period_id);
-
-                if (!active_actions.empty()) {
-                    std::cout << "  Active actions (" << active_actions.size() << "): ";
-                    for (const auto& action : active_actions) {
-                        std::cout << action << " ";
-                    }
-                    std::cout << std::endl;
-                    std::cout << "  Using modified template: " << period_template_code << std::endl;
-                }
+                // Entity-specific action evaluation will happen inside the entity loop
+                // Collect all unique entity-specific templates that will be created
+                std::map<std::string, std::string> entity_template_map; // entity_id → template_code
 
                 // Process hierarchy level by level (leaf → parent → root)
                 size_t next_level_start_idx = 0; // Where parent level should start
@@ -659,6 +697,46 @@ int main(int argc, char* argv[]) {
                             engine.set_prior_period_values(prior_it->second);
                         }
 
+                        // Evaluate management actions for this entity
+                        std::string entity_template_code;
+                        auto template_it = entity_template_map.find(entity_id);
+
+                        if (template_it != entity_template_map.end()) {
+                            // Already created template for this entity
+                            entity_template_code = template_it->second;
+                        } else {
+                            // First time - evaluate actions and create template
+                            std::vector<std::string> entity_actions = get_active_actions(
+                                db, scenario_id, period_id, entity_id, aggregate_prior_values
+                            );
+
+                            if (!entity_actions.empty()) {
+                                std::cout << "\n      [ACTIONS for " << entity_id << "] ";
+                                for (const auto& action : entity_actions) {
+                                    std::cout << action << " ";
+                                }
+                                std::cout << std::endl;
+
+                                // Create entity-specific template
+                                entity_template_code = apply_action_transformations(
+                                    db, template_code, entity_actions, scenario_id, period_id, entity_id
+                                );
+
+                                // Track for cleanup
+                                if (entity_template_code != template_code) {
+                                    temporary_templates.insert(entity_template_code);
+                                }
+
+                                std::cout << "      [TEMPLATE] " << entity_template_code << std::endl;
+                            } else {
+                                // No actions - use base template
+                                entity_template_code = template_code;
+                            }
+
+                            // Cache for this entity
+                            entity_template_map[entity_id] = entity_template_code;
+                        }
+
                         // Walk through vector starting from start_idx
                         for (size_t line_item_idx = start_idx; line_item_idx < items_to_process.size(); ++line_item_idx) {
                             const auto& line_item = items_to_process[line_item_idx];
@@ -670,7 +748,7 @@ int main(int argc, char* argv[]) {
                                 scenario_id,
                                 period_id,
                                 line_item.code,
-                                period_template_code,
+                                entity_template_code,
                                 is_populated
                             );
 
@@ -820,6 +898,21 @@ int main(int argc, char* argv[]) {
                     }
 
                     std::cout << "✓ Saved " << driver_saved_count << " driver contributions" << std::endl;
+                }
+            }
+
+            // Cleanup: Delete temporary templates created for this scenario
+            if (!temporary_templates.empty()) {
+                std::cout << "\nCleaning up " << temporary_templates.size() << " temporary template(s)..." << std::endl;
+                for (const auto& temp_code : temporary_templates) {
+                    try {
+                        std::string delete_template_sql = "DELETE FROM statement_template WHERE code = :code";
+                        db->execute_update(delete_template_sql, {{"code", temp_code}});
+
+                        std::cout << "  ✓ Deleted: " << temp_code << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << "  ⚠ Failed to delete template " << temp_code << ": " << e.what() << std::endl;
+                    }
                 }
             }
 

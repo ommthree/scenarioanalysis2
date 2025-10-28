@@ -112,14 +112,14 @@ export default function ValidationPanel({ result, onDismiss }: ValidationPanelPr
             <>
               <CheckCircle2 style={{ width: '24px', height: '24px', color: '#10b981' }} />
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#10b981', margin: 0 }}>
-                Pre-Calculation Validation Passed
+                Pre-flight Checks Passed
               </h3>
             </>
           ) : (
             <>
               <XCircle style={{ width: '24px', height: '24px', color: '#ef4444' }} />
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#ef4444', margin: 0 }}>
-                Pre-Calculation Validation Failed
+                Pre-flight Checks Failed
               </h3>
             </>
           )}

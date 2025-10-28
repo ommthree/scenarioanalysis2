@@ -5166,6 +5166,7 @@ app.post('/api/scenario-actions', (req, res) => {
     dbPath,
     scenario_id,
     action_code,
+    entity_id,
     start_period,
     end_period,
     capex,
@@ -5196,12 +5197,12 @@ app.post('/api/scenario-actions', (req, res) => {
 
   db.run(
     `INSERT INTO scenario_action
-     (scenario_id, action_code, start_period, end_period, capex, opex_annual,
+     (scenario_id, action_code, entity_id, start_period, end_period, capex, opex_annual,
       emission_reduction_annual, financial_transformations, carbon_transformations, notes,
       trigger_type, trigger_condition, trigger_period, trigger_sticky)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      scenario_id, action_code, start_period, end_period, capex || 0, opex_annual || 0,
+      scenario_id, action_code, entity_id || null, start_period, end_period, capex || 0, opex_annual || 0,
       emission_reduction_annual || 0, financialJson, carbonJson, notes || '',
       trigger_type || 'UNCONDITIONAL', trigger_condition, trigger_period, trigger_sticky ? 1 : 0
     ],
@@ -5211,6 +5212,165 @@ app.post('/api/scenario-actions', (req, res) => {
         return res.status(500).json({ error: 'Failed to save scenario action: ' + err.message })
       }
       res.json({ success: true, scenario_action_id: this.lastID })
+    }
+  )
+})
+
+/**
+ * Get action-entity associations for an action
+ * GET /api/action-entities?dbPath=...&action_code=...
+ */
+app.get('/api/action-entities', (req, res) => {
+  const { dbPath, action_code } = req.query
+
+  if (!dbPath || !action_code) {
+    return res.status(400).json({ error: 'Missing required query parameters: dbPath, action_code' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT action_entity_id, action_code, entity_id, created_at
+     FROM action_entity
+     WHERE action_code = ?
+     ORDER BY entity_id`,
+    [action_code],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch action entities: ' + err.message })
+      }
+      res.json(rows || [])
+    }
+  )
+})
+
+/**
+ * Create action-entity association
+ * POST /api/action-entities
+ */
+app.post('/api/action-entities', express.json(), (req, res) => {
+  const { dbPath, action_code, entity_id } = req.body
+
+  if (!dbPath || !action_code || !entity_id) {
+    return res.status(400).json({ error: 'Missing required fields: dbPath, action_code, entity_id' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.run(
+    `INSERT INTO action_entity (action_code, entity_id) VALUES (?, ?)`,
+    [action_code, entity_id],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to create action-entity association: ' + err.message })
+      }
+      res.json({ success: true, action_entity_id: this.lastID })
+    }
+  )
+})
+
+/**
+ * Delete action-entity association
+ * DELETE /api/action-entities
+ */
+app.delete('/api/action-entities', express.json(), (req, res) => {
+  const { dbPath, action_code, entity_id } = req.body
+
+  if (!dbPath || !action_code || !entity_id) {
+    return res.status(400).json({ error: 'Missing required fields: dbPath, action_code, entity_id' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.run(
+    `DELETE FROM action_entity WHERE action_code = ? AND entity_id = ?`,
+    [action_code, entity_id],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to delete action-entity association: ' + err.message })
+      }
+      res.json({ success: true, deleted_count: this.changes })
+    }
+  )
+})
+
+/**
+ * Get scenario actions for an action code and scenario
+ * GET /api/scenario-actions?dbPath=...&action_code=...&scenario_id=...
+ */
+app.get('/api/scenario-actions', (req, res) => {
+  const { dbPath, action_code, scenario_id } = req.query
+
+  if (!dbPath || !action_code || !scenario_id) {
+    return res.status(400).json({ error: 'Missing required query parameters: dbPath, action_code, scenario_id' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.all(
+    `SELECT scenario_action_id, scenario_id, action_code, entity_id, start_period, end_period,
+            capex, opex_annual, emission_reduction_annual, notes, created_at,
+            trigger_type, trigger_condition, trigger_period, trigger_sticky
+     FROM scenario_action
+     WHERE action_code = ? AND scenario_id = ?
+     ORDER BY entity_id`,
+    [action_code, scenario_id],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch scenario actions: ' + err.message })
+      }
+      res.json(rows || [])
+    }
+  )
+})
+
+/**
+ * Delete a scenario action by scenario_action_id
+ * DELETE /api/scenario-actions/:id
+ */
+app.delete('/api/scenario-actions/:id', express.json(), (req, res) => {
+  const { id } = req.params
+  const { dbPath } = req.body
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'Missing dbPath in request body' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  db.run(
+    `DELETE FROM scenario_action WHERE scenario_action_id = ?`,
+    [id],
+    function(err) {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to delete scenario action: ' + err.message })
+      }
+      res.json({ success: true, deleted_count: this.changes })
     }
   )
 })

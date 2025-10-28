@@ -207,34 +207,40 @@ int ActionEngine::apply_actions_to_template(
 ) {
     int transformations_applied = 0;
 
+    // Group transformations by line item code
+    std::map<std::string, std::vector<Transformation>> transformations_by_line_item;
+
     for (const auto& action : actions) {
         // Check if action is active in this period
         if (!action.is_active_in_period(period_id)) {
             continue;
         }
 
-        // Apply financial transformations
+        // Collect financial transformations
         for (const auto& transformation : action.financial_transformations) {
-            if (apply_transformation(template_ptr, transformation.line_item_code, transformation)) {
-                transformations_applied++;
-            }
+            transformations_by_line_item[transformation.line_item_code].push_back(transformation);
         }
 
-        // Apply carbon transformations
+        // Collect carbon transformations
         for (const auto& transformation : action.carbon_transformations) {
-            if (apply_transformation(template_ptr, transformation.line_item_code, transformation)) {
-                transformations_applied++;
-            }
+            transformations_by_line_item[transformation.line_item_code].push_back(transformation);
+        }
+    }
+
+    // Apply transformations for each line item
+    for (const auto& [line_item_code, transformations] : transformations_by_line_item) {
+        if (apply_transformations_to_line_item(template_ptr, line_item_code, transformations)) {
+            transformations_applied += transformations.size();
         }
     }
 
     return transformations_applied;
 }
 
-bool ActionEngine::apply_transformation(
+bool ActionEngine::apply_transformations_to_line_item(
     std::shared_ptr<core::StatementTemplate> template_ptr,
     const std::string& line_item_code,
-    const Transformation& transformation
+    const std::vector<Transformation>& transformations
 ) {
     // Get the line item
     auto line_item = template_ptr->get_line_item(line_item_code);
@@ -243,40 +249,88 @@ bool ActionEngine::apply_transformation(
         return false;
     }
 
+    // Check if any transformation is type FORMULA (mutually exclusive)
+    const Transformation* formula_transformation = nullptr;
+    for (const auto& t : transformations) {
+        if (t.transformation_type == "FORMULA" || t.transformation_type == "formula_override") {
+            formula_transformation = &t;
+            break;  // First FORMULA wins
+        }
+    }
+
     std::string new_formula;
 
-    if (transformation.transformation_type == "formula_override") {
-        // Completely replace the formula
-        new_formula = transformation.new_formula;
-
-    } else if (transformation.transformation_type == "multiply") {
-        // Wrap existing formula in multiplication
-        if (line_item->formula.has_value() && !line_item->formula->empty()) {
-            new_formula = "(" + line_item->formula.value() + ") * " + std::to_string(transformation.factor);
-        } else {
-            // No formula to multiply - treat as driver
-            new_formula = line_item_code + " * " + std::to_string(transformation.factor);
-        }
-
-    } else if (transformation.transformation_type == "add") {
-        // Add amount to existing formula
-        if (line_item->formula.has_value() && !line_item->formula->empty()) {
-            new_formula = "(" + line_item->formula.value() + ") + (" + std::to_string(transformation.amount) + ")";
-        } else {
-            new_formula = line_item_code + " + (" + std::to_string(transformation.amount) + ")";
-        }
-
-    } else if (transformation.transformation_type == "reduce") {
-        // Subtract amount from existing formula
-        if (line_item->formula.has_value() && !line_item->formula->empty()) {
-            new_formula = "(" + line_item->formula.value() + ") - (" + std::to_string(transformation.amount) + ")";
-        } else {
-            new_formula = line_item_code + " - (" + std::to_string(transformation.amount) + ")";
-        }
+    if (formula_transformation) {
+        // FORMULA type: Complete replacement (mutually exclusive with other types)
+        new_formula = formula_transformation->new_formula;
 
     } else {
-        // Unknown transformation type
-        return false;
+        // Stack MULTIPLIER and DELTA types
+        // Order: (Base * Product_of_Multipliers) + Sum_of_Deltas
+
+        std::string base_formula;
+        if (line_item->formula.has_value() && !line_item->formula->empty()) {
+            base_formula = line_item->formula.value();
+        } else {
+            // No formula - use line item code as base (driver reference)
+            base_formula = line_item_code;
+        }
+
+        // Collect multipliers and deltas
+        std::vector<double> multipliers;
+        std::vector<double> deltas;
+
+        for (const auto& t : transformations) {
+            if (t.transformation_type == "MULTIPLIER") {
+                // Parse multiplier from new_formula field
+                try {
+                    double mult = std::stod(t.new_formula);
+                    multipliers.push_back(mult);
+                } catch (...) {
+                    // Invalid multiplier - skip
+                    continue;
+                }
+            } else if (t.transformation_type == "DELTA") {
+                // Parse delta from new_formula field
+                try {
+                    double delta = std::stod(t.new_formula);
+                    deltas.push_back(delta);
+                } catch (...) {
+                    // Invalid delta - skip
+                    continue;
+                }
+            }
+        }
+
+        // Build new formula: (base * mult1 * mult2 * ...) + delta1 + delta2 + ...
+        if (!multipliers.empty() || !deltas.empty()) {
+            std::ostringstream formula_builder;
+
+            // Start with base (possibly wrapped in multipliers)
+            if (!multipliers.empty()) {
+                formula_builder << "((" << base_formula << ")";
+                for (double mult : multipliers) {
+                    formula_builder << " * " << mult;
+                }
+                formula_builder << ")";
+            } else {
+                formula_builder << "(" << base_formula << ")";
+            }
+
+            // Add deltas
+            for (double delta : deltas) {
+                if (delta >= 0) {
+                    formula_builder << " + " << delta;
+                } else {
+                    formula_builder << " - " << (-delta);
+                }
+            }
+
+            new_formula = formula_builder.str();
+        } else {
+            // No valid transformations - keep original
+            return false;
+        }
     }
 
     // Update the line item formula
@@ -290,6 +344,16 @@ bool ActionEngine::apply_transformation(
     // template_ptr->clear_base_value_source(line_item_code);  // COMMENTED OUT
 
     return true;
+}
+
+bool ActionEngine::apply_transformation(
+    std::shared_ptr<core::StatementTemplate> template_ptr,
+    const std::string& line_item_code,
+    const Transformation& transformation
+) {
+    // Legacy method - delegate to new stacking implementation
+    std::vector<Transformation> transformations = {transformation};
+    return apply_transformations_to_line_item(template_ptr, line_item_code, transformations);
 }
 
 std::pair<std::string, std::string> ActionEngine::load_action_metadata(const std::string& action_code) {

@@ -1,6 +1,6 @@
 # Markdown Documentation Index
 
-**Last Updated:** 2025-10-26
+**Last Updated:** 2025-10-28
 **Total Active Documents:** 7
 **Total Archived Documents:** 7
 
@@ -199,6 +199,14 @@ Archived Background (docs/archive/):
 - Updated PerformCalculation.tsx with validation workflow and UI feedback
 - Prevents silent calculation failures with clear, actionable error messages
 - All CRITICAL/HIGH/MEDIUM architectural issues now resolved
+
+**2025-10-28 (Session 8 - Driver Decomposition Baseline Fix):**
+- Fixed driver decomposition to use period 1 as baseline (not period 0)
+- Removed ACTION_DELTA synthetic driver (actions modify formulas directly)
+- Driver contributions now show marginal impact relative to period 1 values
+- Simplified unified_engine.cpp: removed BASE/ACTION_DELTA decomposition logic
+- Cleaned up old ACTION_DELTA entries from database
+- Updated unified_engine.cpp:405-410 with clarifying comments
 
 **2025-10-26 (Session 4 - Unified Staging Architecture):**
 - Completed Issue #11 (75%): Unified staging architecture with dynamic timestamped tables

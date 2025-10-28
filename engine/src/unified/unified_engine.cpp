@@ -402,6 +402,13 @@ double UnifiedEngine::calculate_line_item(
             }
         }
 
+        // Driver contributions are calculated relative to period 1 baseline
+        // Any residual (difference between actual value and sum of driver marginal impacts)
+        // represents the constant/base part of the formula when all drivers are at period 1 values
+        // This residual includes any action-applied constants (e.g., -50000 from actions)
+        // We do NOT need to separately decompose this into BASE and ACTION_DELTA
+        // because actions modify the formulas themselves, so they have no separate marginal impact
+
         // Sign convention already applied in formula for computed values
         return value;
     } catch (const std::exception& e) {

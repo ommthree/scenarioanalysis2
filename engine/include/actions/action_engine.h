@@ -133,7 +133,27 @@ public:
     );
 
     /**
-     * @brief Apply a single transformation to a line item
+     * @brief Apply multiple transformations to a single line item with stacking
+     * @param template_ptr Template to modify
+     * @param line_item_code Line item to modify
+     * @param transformations Vector of transformations to apply
+     * @return true if transformations applied successfully
+     *
+     * Supports three transformation types:
+     * - FORMULA: Complete formula replacement (mutually exclusive, first wins)
+     * - MULTIPLIER: Stackable multiplier (applied multiplicatively)
+     * - DELTA: Stackable additive delta
+     *
+     * Stacking order: (Base * Product_of_Multipliers) + Sum_of_Deltas
+     */
+    bool apply_transformations_to_line_item(
+        std::shared_ptr<core::StatementTemplate> template_ptr,
+        const std::string& line_item_code,
+        const std::vector<Transformation>& transformations
+    );
+
+    /**
+     * @brief Apply a single transformation to a line item (legacy)
      * @param template_ptr Template to modify
      * @param line_item_code Line item to modify
      * @param transformation Transformation to apply

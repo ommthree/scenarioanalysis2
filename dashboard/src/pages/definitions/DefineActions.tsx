@@ -36,11 +36,25 @@ interface Driver {
 
 interface Transformation {
   line_item: string
-  type: 'formula_override' | 'carbon_formula_override'
+  type: 'FORMULA' | 'MULTIPLIER' | 'DELTA' | 'formula_override' | 'carbon_formula_override'
   new_formula: string
   comment?: string
 }
 
+interface Entity {
+  entity_id: number
+  entity_code: string
+  entity_name: string
+  parent_id: number | null
+  level: string
+}
+
+interface Scenario {
+  scenario_id: number
+  code: string
+  name: string
+  description: string
+}
 
 interface DefineActionsProps {
   dbPath: string | null
@@ -70,6 +84,10 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   const [isActive, setIsActive] = useState(true)
   const [isMacRelevant, setIsMacRelevant] = useState(false)
 
+  // Entity assignment states
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [entityToggles, setEntityToggles] = useState<Map<number, boolean>>(new Map())
+
   // Transformation states
   const [financialTransformations, setFinancialTransformations] = useState<Transformation[]>([])
   const [carbonTransformations, setCarbonTransformations] = useState<Transformation[]>([])
@@ -87,7 +105,15 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
     fetchActions()
     fetchTemplates()
     fetchDrivers()
+    fetchEntities()
   }, [])
+
+  // Load entity assignments when action changes
+  useEffect(() => {
+    if (selectedAction) {
+      loadEntityAssignments(selectedAction.action_code)
+    }
+  }, [selectedAction])
 
 
   const fetchActions = async () => {
@@ -154,6 +180,83 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       setDrivers(data)
     } catch (err) {
       logger.error('Error fetching drivers:', err)
+    }
+  }
+
+  const fetchEntities = async () => {
+    const dbPath = getDefaultDbPath()
+    try {
+      const response = await fetch(apiUrl(`/api/entities?dbPath=${encodeURIComponent(dbPath)}`))
+      const data = await response.json()
+      setEntities(data)
+    } catch (err) {
+      logger.error('Error fetching entities:', err)
+    }
+  }
+
+  const loadEntityAssignments = async (actionCode: string) => {
+    const dbPath = getDefaultDbPath()
+    try {
+      const response = await fetch(
+        apiUrl(`/api/action-entities?dbPath=${encodeURIComponent(dbPath)}&action_code=${encodeURIComponent(actionCode)}`)
+      )
+      const data = await response.json()
+
+      // Build a map of entity_id -> true for assigned entities
+      const newToggles = new Map<number, boolean>()
+      data.forEach((ae: any) => {
+        if (ae.entity_id) {
+          // Convert to number if it's a string
+          const entityIdNum = typeof ae.entity_id === 'string' ? parseInt(ae.entity_id) : ae.entity_id
+          newToggles.set(entityIdNum, true)
+        }
+      })
+      setEntityToggles(newToggles)
+    } catch (err) {
+      logger.error('Error loading entity assignments:', err)
+    }
+  }
+
+  const handleEntityToggle = async (entityId: number, enabled: boolean) => {
+    if (!selectedAction) return
+
+    const dbPath = getDefaultDbPath()
+
+    try {
+      if (enabled) {
+        // Create action_entity record
+        await fetch(apiUrl('/api/action-entities'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dbPath,
+            action_code: selectedAction.action_code,
+            entity_id: entityId
+          })
+        })
+      } else {
+        // Delete action_entity record
+        await fetch(apiUrl('/api/action-entities'), {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dbPath,
+            action_code: selectedAction.action_code,
+            entity_id: entityId
+          })
+        })
+      }
+
+      // Update local state
+      const newToggles = new Map(entityToggles)
+      if (enabled) {
+        newToggles.set(entityId, true)
+      } else {
+        newToggles.delete(entityId)
+      }
+      setEntityToggles(newToggles)
+    } catch (err) {
+      logger.error('Error toggling entity:', err)
     }
   }
 
@@ -437,6 +540,9 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
   }
 
   const handleSave = async () => {
+    // Clear previous validation error
+    setValidationError(null)
+
     if (!actionCode || !actionName || !actionCategory) {
       setValidationError('Action code, name, and category are required')
       return
@@ -512,10 +618,14 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       setIsCreatingNew(false)
       setSaveStatus('success')
       setTimeout(() => setSaveStatus('idle'), 2000)
-    } catch (err) {
+    } catch (err: any) {
       logger.error('Error saving action:', err)
+      setValidationError(err?.message || 'Failed to save action')
       setSaveStatus('error')
-      setTimeout(() => setSaveStatus('idle'), 3000)
+      setTimeout(() => {
+        setSaveStatus('idle')
+        setValidationError(null)
+      }, 5000)
     }
   }
 
@@ -1212,6 +1322,54 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                       />
                     </div>
 
+                    {/* Entity Assignment Section */}
+                    <div style={{ gridColumn: '1 / -1', marginTop: '24px', padding: '20px', backgroundColor: 'rgba(30, 41, 59, 0.3)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                      <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
+                        Entity-Level Action Assignment
+                      </label>
+
+                      {/* Entity Toggles */}
+                      {selectedAction ? (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '12px', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
+                            Assign to Entities
+                          </label>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+                            {entities.map(entity => (
+                              <div
+                                key={entity.entity_id}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '10px 14px',
+                                  backgroundColor: 'rgba(30, 41, 59, 0.6)',
+                                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                                  borderRadius: '6px',
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                <label style={{ fontSize: '13px', color: '#fff', cursor: 'pointer', flex: 1 }}>
+                                  {entity.entity_name}
+                                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginLeft: '6px' }}>
+                                    ({entity.entity_code})
+                                  </span>
+                                </label>
+                                <Switch
+                                  checked={entityToggles.get(entity.entity_id) || false}
+                                  onCheckedChange={(checked) => handleEntityToggle(entity.entity_id, checked)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>
+                          Select an action to assign it to specific entities
+                        </div>
+                      )}
+                    </div>
+
                     <div style={{ gridColumn: '1 / -1' }}>
                       <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: '12px' }}>
                         Select Template for Line Items
@@ -1419,7 +1577,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                         onClick={() => {
                           const newTransform: Transformation = {
                             line_item: '',
-                            type: 'formula_override',
+                            type: 'FORMULA',
                             new_formula: '',
                             comment: ''
                           }
@@ -1483,7 +1641,35 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                               </div>
                               <div>
                                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
-                                  Formula
+                                  Type
+                                </label>
+                                <select
+                                  value={t.type}
+                                  onChange={(e) => {
+                                    const updated = [...financialTransformations]
+                                    updated[idx] = { ...updated[idx], type: e.target.value as any }
+                                    setFinancialTransformations(updated)
+                                  }}
+                                  disabled={!isEditing && !isCreatingNew}
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                    borderRadius: '4px',
+                                    color: '#fff',
+                                    fontSize: '13px',
+                                    fontWeight: '600'
+                                  }}
+                                >
+                                  <option value="FORMULA">FORMULA (Complete replacement)</option>
+                                  <option value="MULTIPLIER">MULTIPLIER (Stackable %)</option>
+                                  <option value="DELTA">DELTA (Stackable amount)</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  {t.type === 'FORMULA' ? 'Formula' : t.type === 'MULTIPLIER' ? 'Multiplier (e.g., 0.8 for 20% reduction)' : 'Delta (e.g., -50000)'}
                                 </label>
                                 <input
                                   type="text"
@@ -1494,7 +1680,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     setFinancialTransformations(updated)
                                   }}
                                   disabled={!isEditing && !isCreatingNew}
-                                  placeholder="Formula"
+                                  placeholder={t.type === 'FORMULA' ? 'Formula' : t.type === 'MULTIPLIER' ? '0.8' : '-50000'}
                                   style={{
                                     width: '100%',
                                     padding: '6px 8px',
