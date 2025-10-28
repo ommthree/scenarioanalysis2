@@ -34,12 +34,45 @@ using namespace finmodel::core;
 std::map<int, std::set<std::string>> triggered_actions_;
 
 /**
+ * @brief Parse what-if combination string into set of action codes
+ * @param combination Combination string (e.g., "BASE", "DISC_SPEND_CUT", "DISC_SPEND_CUT+HIRING_FREEZE")
+ * @return Set of action codes that should be active
+ */
+std::set<std::string> parse_whatif_combination(const std::string& combination) {
+    std::set<std::string> actions;
+
+    // "BASE" means no actions active
+    if (combination.empty() || combination == "BASE") {
+        return actions;
+    }
+
+    // Split by '+' to get individual action codes
+    std::string current;
+    for (char c : combination) {
+        if (c == '+') {
+            if (!current.empty()) {
+                actions.insert(current);
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) {
+        actions.insert(current);
+    }
+
+    return actions;
+}
+
+/**
  * @brief Evaluate which actions are active for a given period and entity
  * @param db Database connection
  * @param scenario_id Current scenario
  * @param period_id Current period
  * @param entity_id Current entity
  * @param prior_values Values from previous period for conditional evaluation
+ * @param whatif_combination What-if combination string (empty = normal mode)
  * @return Vector of active action codes
  */
 std::vector<std::string> get_active_actions(
@@ -47,13 +80,29 @@ std::vector<std::string> get_active_actions(
     int scenario_id,
     int period_id,
     const std::string& entity_id,
-    const std::map<std::string, double>& prior_values
+    const std::map<std::string, double>& prior_values,
+    const std::string& whatif_combination = ""
 ) {
     std::vector<std::string> active_actions;
 
-    // Query all active management actions for this entity
+    // In what-if mode, override which actions are considered based on the combination
+    std::set<std::string> whatif_actions;
+    bool is_whatif_mode = !whatif_combination.empty();
+    if (is_whatif_mode) {
+        whatif_actions = parse_whatif_combination(whatif_combination);
+    }
+
+    // Query all management actions for this entity (remove is_active filter in what-if mode)
     // Actions are assigned to entities via action_entity table (scenario-independent)
-    std::string sql = R"(
+    std::string sql = is_whatif_mode ? R"(
+        SELECT ma.action_code, at.trigger_type, at.condition_formula as trigger_condition,
+               at.start_period, at.end_period, at.trigger_sticky, ae.entity_id
+        FROM management_action ma
+        LEFT JOIN action_trigger at ON ma.action_code = at.action_code
+        INNER JOIN action_entity ae ON ma.action_code = ae.action_code
+            AND ae.entity_id = :entity_id
+        ORDER BY ma.action_code
+    )" : R"(
         SELECT ma.action_code, at.trigger_type, at.condition_formula as trigger_condition,
                at.start_period, at.end_period, at.trigger_sticky, ae.entity_id
         FROM management_action ma
@@ -200,6 +249,12 @@ std::vector<std::string> get_active_actions(
                     }
                 }
             }
+        }
+
+        // In what-if mode, override is_active based on the combination
+        if (is_whatif_mode) {
+            // Action is active only if it's in the what-if combination
+            is_active = (whatif_actions.find(action_code) != whatif_actions.end());
         }
 
         if (is_active) {
@@ -722,7 +777,7 @@ int main(int argc, char* argv[]) {
                         } else {
                             // First time - evaluate actions and create template
                             std::vector<std::string> entity_actions = get_active_actions(
-                                db, scenario_id, period_id, entity_id, aggregate_prior_values
+                                db, scenario_id, period_id, entity_id, aggregate_prior_values, whatif_combination
                             );
 
                             if (!entity_actions.empty()) {
