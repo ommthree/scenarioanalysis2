@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-30 (Session 11 - Configurable MAC Tagging)
+**Last Updated:** 2025-10-29 (Session 12 - ROI Mode & Bug Fixes)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, configurable MAC curve analysis, and Monte Carlo results visualization
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, and Monte Carlo results visualization
 
 ---
 
@@ -267,63 +267,90 @@ See `docs/validation.md` for complete details and `docs/arch_improve.md` for fut
 
 ---
 
-## 💰 MAC Curve Analysis (Session 10-11 - Complete with Configurable Tagging)
+## 💰 Flexible MAC/ROI Analysis (Session 10-12 - Fully Configurable Cost-Benefit Framework)
 
-**Feature:** Marginal Abatement Cost (MAC) curves for prioritizing decarbonization actions by cost-effectiveness.
+**Feature:** Fully configurable cost-benefit analysis framework supporting MAC curves, ROI analysis, and custom metrics.
+
+### Key Innovation: Template-Based Metric Configuration
+
+The system now uses **template-based line item tagging** to define which line items represent costs, benefits, carbon, investment, or any custom metric pair. This makes the framework adaptable to:
+- **MAC Analysis:** Cost per unit carbon abatement ($/tCO₂e)
+- **ROI Analysis:** Return on investment (revenue/expense or benefit/cost)
+- **Custom Ratios:** Any numerator/denominator pair (e.g., water savings per dollar, productivity per headcount)
 
 ### How It Works
 
-1. **Configure MAC Line Items** (DefineStatements.tsx):
+1. **Configure Metric Line Items** (DefineStatements.tsx):
    - Navigate to Define Statements page
    - Blue-themed tagging panel with 4 checkbox options per line item:
-     - **MAC Numerator (Cost):** Typically NET_INCOME - economic impact of action
-     - **MAC Denominator (Carbon):** Typically TOTAL_EMISSIONS - carbon impact of action
-     - **ROI Numerator (Benefit):** Future use for return on investment analysis
-     - **ROI Denominator (Investment):** Future use for return on investment analysis
-   - Mutual exclusivity: Only one line item can be tagged as each type across all statement sections
+     - **MAC Numerator (Cost):** Economic impact (e.g., NET_INCOME, EXPENSES)
+     - **MAC Denominator (Carbon):** Environmental impact (e.g., TOTAL_EMISSIONS, SCOPE1_EMISSIONS)
+     - **ROI Numerator (Benefit):** Return metric (e.g., REVENUE, NET_SAVINGS)
+     - **ROI Denominator (Investment):** Investment metric (e.g., CAPEX, TOTAL_COST)
+   - **Mutual exclusivity:** Only one line item can be tagged as each type across all statement sections
    - Checking one box automatically unchecks all other items of that type
    - Save template to persist configuration
 
-2. **MAC Mode Toggle** (orange-themed, only visible in what-if mode):
-   - Appears next to Absolute/Delta controls in ViewResults.tsx
-   - Enables MAC curve calculation and display
+2. **Define Actions with Dual Financial Impacts** (DefineActions.tsx):
+   - Each management action now has **both revenue AND expense** transformations
+   - Example: EV_FLEET has +$80k expense (fleet costs) AND +$15k revenue (tax credits)
+   - Actions stored in `action_transformation` table with `line_item`, `type` (DELTA/MULTIPLIER/FORMULA), `new_formula`
+   - Enables realistic cost-benefit analysis with tradeoffs
+   - **ROI Mode Ready:** All 5 actions (EV_FLEET, HVAC_UPGRADE, GREEN_SUPPLY, WASTE_ENERGY, SOLAR_INSTALL) have dual impacts
 
-3. **Period Range Selector**:
+3. **MAC/ROI Mode Toggle** (orange-themed, only visible in what-if mode):
+   - Appears next to Absolute/Delta controls in ViewResults.tsx
+   - Enables cost-benefit curve calculation and display
+
+4. **Period Range Selector**:
    - Dual-handle slider at bottom of results page
-   - Select start and end periods for MAC calculation
+   - Select start and end periods for calculation
    - Visual orange highlight shows selected range
 
-4. **MAC Calculation** (backend endpoint: `GET /api/results/mac-curve`):
-   - Dynamically queries tagged line items from statement_template.json_structure
-   - For each MAC-relevant action (where `is_mac_relevant = 1`):
+5. **Dynamic Calculation** (backend endpoint: `GET /api/results/mac-curve`):
+   - **Fully dynamic:** Queries tagged line items from `statement_template.json_structure`
+   - **No hardcoded line items:** Works with any template configuration
+   - For each relevant action (where `is_mac_relevant = 1`):
      - Compare single-action case vs BASE case
-     - Calculate ΔNumerator = Base Numerator - Action Numerator (over selected periods)
-     - Calculate ΔDenominator = Base Denominator - Action Denominator (over selected periods)
-     - Calculate MAC = ΔNumerator / ΔDenominator (e.g., $/tCO₂e)
-   - Filter: Skips BASE, multi-action combinations, non-MAC-relevant actions, zero impact
-   - Sort by MAC ascending (best cost-effectiveness first)
+     - Calculate ΔNumerator = Base Numerator - Action Numerator (summed over selected periods)
+     - Calculate ΔDenominator = Base Denominator - Action Denominator (summed over selected periods)
+     - Calculate Ratio = ΔNumerator / ΔDenominator (e.g., $/tCO₂e for MAC, $/$ for ROI)
+   - Filter: Skips BASE, multi-action combinations, non-relevant actions, zero impact
+   - Sort by ratio (ascending for MAC = best cost-effectiveness first)
 
-5. **Results Display**:
-   - Table with columns: Action | Abatement (denominator units) | Cost Impact (numerator units) | MAC (ratio)
-   - Color-coded: Green (profitable, MAC < 0), Orange (moderate cost, 0-50), Red (expensive, >50)
-   - Sign convention: Positive abatement = reduction (good), Positive cost = income loss (expense)
+6. **Results Display**:
+   - Table with columns: Action | Denominator Impact (units) | Numerator Impact (units) | Ratio
+   - Color-coded: Green (profitable/negative cost), Orange (moderate), Red (expensive/high cost)
+   - Sign convention: Positive denominator = reduction/benefit, Positive numerator = cost/investment
 
 ### Example Use Cases
 
-- **Decarbonization Strategy:** Prioritize actions by MAC to maximize carbon reduction per dollar
-- **Budget Optimization:** Identify profitable actions (negative MAC) first
-- **Scenario Comparison:** Compare MAC curves across different scenarios (RCP 2.6 vs RCP 8.5)
-- **Net Zero Planning:** Find least-cost pathway to emissions targets
-- **Custom Metrics:** Tag any line items (e.g., CAPEX/REVENUE for ROI analysis, WATER_USE/OPEX for resource efficiency)
+- **Decarbonization Strategy (MAC):** Tag NET_INCOME as numerator, TOTAL_EMISSIONS as denominator → prioritize by $/tCO₂e
+- **ROI Analysis:** Tag REVENUE as numerator, EXPENSES as denominator → prioritize by return per dollar invested
+- **Resource Efficiency:** Tag WATER_SAVINGS as numerator, OPEX as denominator → optimize water use per dollar
+- **Productivity Analysis:** Tag OUTPUT as numerator, HEADCOUNT as denominator → measure output per employee
+- **Custom Metrics:** Any line item pair → flexible framework adapts to your specific needs
+
+### Real Action Examples (Session 12)
+
+All actions now demonstrate realistic financial tradeoffs:
+
+- **EV_FLEET:** +$80k expenses (leasing), +$15k revenue (incentives), -40% Scope 1 emissions
+- **HVAC_UPGRADE:** -$15k expenses (energy savings), +$8k revenue (productivity), -20% Scope 2
+- **GREEN_SUPPLY:** +$40k expenses (premium suppliers), +$12k revenue (brand value), -25% Scope 3
+- **SOLAR_INSTALL:** +$50k expenses (CAPEX), +$18k revenue (RECs), -30% Scope 2
+- **WASTE_ENERGY:** +$8k expenses (O&M), +$30k revenue (energy sales), -15% Scope 1
 
 ### Technical Details
 
-- **Frontend:** `ViewResults.tsx` MAC mode toggle and period selector (lines 732-1510)
+- **Frontend:** `ViewResults.tsx` mode toggle and period selector (lines 732-1510)
 - **Frontend:** `DefineStatements.tsx` tagging UI with mutual exclusivity logic (lines 161-177, 609-654)
+- **Frontend:** `DefineActions.tsx` action editor with revenue/expense transformations
 - **Backend:** `GET /api/results/mac-curve` endpoint (index.js:6850-7023) - fully dynamic, no hardcoded line items
 - **Backend:** Template parsing supports both snake_case (line_items) and camelCase (lineItems) formats
-- **Database:** Uses `management_action.is_mac_relevant` field for filtering, reads template tags from json_structure
-- **Calculation:** MAC = ΔNumerator / ΔDenominator (flexible based on tagged line items)
+- **Database:** `management_action.is_mac_relevant` field for filtering, `action_transformation` for impacts
+- **Database:** Template tags stored in `statement_template.json_structure` as boolean fields
+- **Calculation:** Ratio = ΔNumerator / ΔDenominator (flexible based on tagged line items)
 - **Period Range:** Sums ΔNumerator and ΔDenominator over selected periods only
 
 ---
@@ -409,6 +436,6 @@ See `docs/docu/md.md` for complete documentation index including:
 
 ---
 
-**Last Updated:** 2025-10-30
+**Last Updated:** 2025-10-29
 **Maintainer:** Development Team
 **For Questions:** Refer to documentation files listed above first

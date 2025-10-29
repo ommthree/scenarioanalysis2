@@ -170,6 +170,21 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-10-29 (Session 12 - ROI Mode & Template/Action Bug Fixes):**
+- Extended all management actions to have both revenue AND expense impacts for ROI analysis
+- Updated 5 actions: EV_FLEET, HVAC_UPGRADE, GREEN_SUPPLY, WASTE_ENERGY, SOLAR_INSTALL
+- Each action now has realistic financial tradeoffs: EV_FLEET (+$80k expense, +$15k revenue), HVAC_UPGRADE (-$15k expense, +$8k revenue)
+- Actions support multiple financial dimensions for comprehensive cost-benefit analysis
+- Fixed TEMPLATE_NOT_FOUND validation errors: scenarios referenced non-existent template_id 12756
+- Updated all 3 scenarios to use active template TEST_CARBON (template_id 12943)
+- Fixed scenario ingestion fallback in index.js:6294-6330: changed hardcoded template_id=1 to query active template
+- New fallback logic: queries `SELECT template_id FROM statement_template WHERE is_active = 1` when template_code not found
+- Prevents future ingestion from creating scenarios with invalid template references
+- Fixed "Load failed" TypeError: server needed restart after template fix to reload updated code
+- Verified validation endpoint returns proper JSON with all pre-flight checks passing
+- Action transformation schema: line_item + type (DELTA/MULTIPLIER/FORMULA) + new_formula + comment
+- ROI mode ready: actions now demonstrate both positive and negative financial impacts alongside carbon benefits
+
 **2025-10-30 (Session 11 - Configurable MAC Tagging):**
 - Made MAC calculation fully configurable via template-based line item tagging
 - Added 4 new boolean fields to LineItem interface: is_mac_numerator, is_mac_denominator, is_roi_numerator, is_roi_denominator

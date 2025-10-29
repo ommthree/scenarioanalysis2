@@ -1076,9 +1076,20 @@ All map pages follow similar pattern: Column mapping → validation → producti
 **Features:** Scenario metadata, layer type, base currency
 
 #### `dashboard/src/pages/definitions/DefineActions.tsx`
-**Lines:** ~420
-**Purpose:** Define management actions
-**Features:** Trigger configuration, transformation rules, MAC curves
+**Lines:** ~2030
+**Purpose:** Define management actions for cost-benefit analysis
+**Features:**
+- Action metadata (code, name, category, description)
+- Entity-level action assignment (toggles per entity)
+- Template selection for line item reference
+- **Financial transformations:** REVENUE and EXPENSES modifications (DELTA/MULTIPLIER/FORMULA)
+- **Carbon transformations:** Emission line item overrides
+- **Trigger configuration:** UNCONDITIONAL/TIMED/CONDITIONAL with sticky option
+- **MAC/ROI ready:** Actions can have both revenue AND expense impacts (Session 12)
+- Drag-and-drop formula builder with operators, line items, drivers
+- Import/export actions as JSON
+- AI suggestion integration for formula generation
+- Stored in `action_transformation` table with `line_item`, `type`, `new_formula`, `comment`
 
 ---
 

@@ -6301,10 +6301,29 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                       if (err) {
                         logDebug(`[TEMPLATE_LOOKUP] ERROR: ${err.message}`)
                         rej(err)
+                      } else if (row?.template_id) {
+                        logDebug(`[TEMPLATE_LOOKUP] Query result: ${JSON.stringify(row)}, resolved templateId = ${row.template_id}`)
+                        res(row.template_id)
                       } else {
-                        const id = row?.template_id || 1
-                        logDebug(`[TEMPLATE_LOOKUP] Query result: ${JSON.stringify(row)}, resolved templateId = ${id}`)
-                        res(id)
+                        // Fallback: query for active template instead of hardcoding template_id = 1
+                        logDebug(`[TEMPLATE_LOOKUP] No template found for code '${mapping.template_code}', querying for active template`)
+                        db.get(
+                          'SELECT template_id FROM statement_template WHERE is_active = 1 LIMIT 1',
+                          [],
+                          (err2, row2) => {
+                            if (err2) {
+                              logDebug(`[TEMPLATE_LOOKUP] ERROR querying active template: ${err2.message}`)
+                              rej(err2)
+                            } else if (row2?.template_id) {
+                              logDebug(`[TEMPLATE_LOOKUP] Using active template: ${row2.template_id}`)
+                              res(row2.template_id)
+                            } else {
+                              const error = new Error(`No template found for code '${mapping.template_code}' and no active template exists`)
+                              logDebug(`[TEMPLATE_LOOKUP] FATAL: ${error.message}`)
+                              rej(error)
+                            }
+                          }
+                        )
                       }
                     }
                   )

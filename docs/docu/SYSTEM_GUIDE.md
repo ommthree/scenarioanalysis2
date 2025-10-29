@@ -1542,7 +1542,162 @@ Response: {success: true}
 
 ## 7. Configuration & Extension
 
-### 7.1 Adding New Statement Templates
+### 7.1 Configurable MAC/ROI Analysis (Session 10-12)
+
+The system provides a **fully flexible cost-benefit analysis framework** that adapts to different metrics via template-based configuration. This eliminates hardcoded assumptions and enables:
+
+- **MAC (Marginal Abatement Cost):** Cost per unit carbon abatement ($/tCO₂e)
+- **ROI (Return on Investment):** Return per unit investment ($/$ or benefit/cost)
+- **Custom Ratios:** Any numerator/denominator pair (e.g., water savings/$, output/headcount)
+
+#### Configuration Workflow
+
+**Step 1: Tag Line Items in Template** (DefineStatements.tsx)
+
+Navigate to Define Statements page and use the blue-themed tagging panel to configure which line items represent:
+- **MAC Numerator:** Economic cost (e.g., NET_INCOME, EXPENSES)
+- **MAC Denominator:** Environmental impact (e.g., TOTAL_EMISSIONS, SCOPE1_EMISSIONS)
+- **ROI Numerator:** Financial benefit (e.g., REVENUE, NET_SAVINGS)
+- **ROI Denominator:** Investment (e.g., CAPEX, TOTAL_COST)
+
+**Mutual Exclusivity:** Only one line item can be tagged as each type across all statement sections. Checking a box automatically unchecks others of that type.
+
+Example configuration for MAC analysis:
+```javascript
+{
+  "code": "NET_INCOME",
+  "display_name": "Net Income",
+  "section": "pl",
+  "is_mac_numerator": true,
+  "is_mac_denominator": false,
+  "is_roi_numerator": false,
+  "is_roi_denominator": false
+}
+```
+
+**Step 2: Define Actions with Dual Impacts** (DefineActions.tsx)
+
+Create management actions with **both revenue AND expense** transformations to enable realistic cost-benefit analysis:
+
+```javascript
+// Example: EV Fleet Transition
+{
+  action_code: "EV_FLEET",
+  transformations: [
+    {
+      line_item: "EXPENSES",
+      type: "DELTA",
+      new_formula: "80000",
+      comment: "Annual EV leasing and charging costs"
+    },
+    {
+      line_item: "REVENUE",
+      type: "DELTA",
+      new_formula: "15000",
+      comment: "Government EV incentives and carbon credits"
+    },
+    {
+      line_item: "SCOPE1_EMISSIONS",
+      type: "MULTIPLIER",
+      new_formula: "0.60",
+      comment: "40% reduction in direct emissions"
+    }
+  ]
+}
+```
+
+**Step 3: Calculate and View Results**
+
+1. Run calculation in What-If mode to generate all 2^n action combinations
+2. Navigate to ViewResults page
+3. Toggle MAC/ROI mode (orange-themed toggle)
+4. Select period range with dual-handle slider
+5. View cost-benefit table sorted by ratio
+
+#### Backend Implementation
+
+**Dynamic Query Construction** (index.js:6850-7023)
+
+The `/api/results/mac-curve` endpoint:
+1. Reads `statement_template.json_structure` to find tagged line items
+2. Dynamically builds SQL query with placeholders for numerator/denominator
+3. For each MAC-relevant action:
+   - Queries BASE case values for tagged line items (sum over period range)
+   - Queries ACTION case values for same line items
+   - Calculates ΔNumerator = Base - Action
+   - Calculates ΔDenominator = Base - Action
+   - Calculates Ratio = ΔNumerator / ΔDenominator
+4. Filters out BASE, multi-action combos, non-relevant actions, zero impact
+5. Sorts by ratio (ascending for MAC = best cost-effectiveness first)
+
+**Template Format Support:**
+- Supports both `line_items` (snake_case) and `lineItems` (camelCase)
+- Backward compatible with existing templates
+
+#### Database Schema
+
+**action_transformation table:**
+```sql
+CREATE TABLE action_transformation (
+    transformation_id INTEGER PRIMARY KEY,
+    action_code TEXT NOT NULL,
+    line_item TEXT NOT NULL,           -- REVENUE, EXPENSES, SCOPE1_EMISSIONS, etc.
+    type TEXT NOT NULL,                 -- DELTA, MULTIPLIER, FORMULA
+    new_formula TEXT,                   -- Formula or constant value
+    comment TEXT,
+    FOREIGN KEY (action_code) REFERENCES management_action(action_code)
+);
+```
+
+**statement_template.json_structure:**
+```json
+{
+  "lineItems": [
+    {
+      "code": "NET_INCOME",
+      "is_mac_numerator": true,
+      "is_mac_denominator": false,
+      "is_roi_numerator": false,
+      "is_roi_denominator": false
+    }
+  ]
+}
+```
+
+#### Real-World Action Examples
+
+All 5 production actions demonstrate realistic financial tradeoffs:
+
+| Action | Expense Impact | Revenue Impact | Carbon Impact |
+|--------|----------------|----------------|---------------|
+| EV_FLEET | +$80k (leasing) | +$15k (incentives) | -40% Scope 1 |
+| HVAC_UPGRADE | -$15k (energy savings) | +$8k (productivity) | -20% Scope 2 |
+| GREEN_SUPPLY | +$40k (premium) | +$12k (brand value) | -25% Scope 3 |
+| SOLAR_INSTALL | +$50k (CAPEX) | +$18k (RECs) | -30% Scope 2 |
+| WASTE_ENERGY | +$8k (O&M) | +$30k (energy sales) | -15% Scope 1 |
+
+**Key Insight:** Actions are rarely pure cost or pure benefit. Real decisions involve tradeoffs. The flexible framework captures this complexity.
+
+#### Use Cases Beyond MAC
+
+**ROI Analysis:**
+- Tag REVENUE as ROI numerator, EXPENSES as denominator
+- Prioritize actions by revenue per dollar spent
+
+**Resource Efficiency:**
+- Tag WATER_SAVINGS as numerator, OPEX as denominator
+- Optimize water use per dollar
+
+**Productivity Analysis:**
+- Tag OUTPUT as numerator, HEADCOUNT as denominator
+- Measure output per employee
+
+**Custom Metrics:**
+- Any line item pair → framework adapts automatically
+
+---
+
+### 7.2 Adding New Statement Templates
 
 **Step 1: Create JSON Template**
 
@@ -1974,7 +2129,7 @@ Database errors: SQLite error codes in API responses
 
 ---
 
-**Document Version:** 2.0
-**Last Updated:** 2025-10-26
+**Document Version:** 2.1
+**Last Updated:** 2025-10-29 (Session 12 - ROI Mode & MAC Methodology)
 **Maintained By:** Development Team
 **Next Review:** After major feature additions
