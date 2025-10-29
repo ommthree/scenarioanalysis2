@@ -7307,6 +7307,108 @@ app.get('/api/results/mc-summary', (req, res) => {
 })
 
 /**
+ * Get Monte Carlo distribution data for a specific line item
+ * GET /api/results/mc-distribution
+ * Query params: dbPath, scenarioId, periodId, entityId, lineItemCode
+ * Returns: all draw values, statistics (mean, std, skew, kurtosis), percentiles
+ */
+app.get('/api/results/mc-distribution', (req, res) => {
+  const { dbPath, scenarioId, periodId, entityId, lineItemCode } = req.query
+
+  if (!dbPath || !scenarioId || !periodId || !entityId || !lineItemCode) {
+    return res.status(400).json({ error: 'Missing required parameters' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Query all draw values for the specific line item
+  const sql = `
+    SELECT
+      draw_number,
+      value
+    FROM mc_statement_result
+    WHERE scenario_id = ?
+      AND period_id = ?
+      AND entity_id = ?
+      AND line_item_code = ?
+    ORDER BY draw_number
+  `
+
+  db.all(sql, [scenarioId, periodId, entityId, lineItemCode], (err, rows) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: 'Database query failed: ' + err.message })
+    }
+
+    if (rows.length === 0) {
+      db.close()
+      return res.status(404).json({ error: 'No MC draws found for this line item' })
+    }
+
+    // Calculate statistics
+    const values = rows.map(r => r.value)
+    const n = values.length
+    const mean = values.reduce((a, b) => a + b, 0) / n
+
+    // Standard deviation
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n
+    const std = Math.sqrt(variance)
+
+    // Skewness
+    const m3 = values.reduce((sum, val) => sum + Math.pow(val - mean, 3), 0) / n
+    const skew = m3 / Math.pow(std, 3)
+
+    // Kurtosis (excess kurtosis, 0 for normal distribution)
+    const m4 = values.reduce((sum, val) => sum + Math.pow(val - mean, 4), 0) / n
+    const kurtosis = (m4 / Math.pow(std, 4)) - 3
+
+    // Percentiles
+    const sortedValues = [...values].sort((a, b) => a - b)
+    const getPercentile = (p) => {
+      const index = (p / 100) * (n - 1)
+      const lower = Math.floor(index)
+      const upper = Math.ceil(index)
+      const weight = index - lower
+      return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight
+    }
+
+    const percentiles = {
+      p5: getPercentile(5),
+      p25: getPercentile(25),
+      p50: getPercentile(50),  // median
+      p75: getPercentile(75),
+      p95: getPercentile(95)
+    }
+
+    db.close()
+    res.json({
+      success: true,
+      lineItemCode,
+      numDraws: n,
+      draws: rows.map(r => ({ drawNumber: r.draw_number, value: r.value })),
+      statistics: {
+        mean,
+        median: percentiles.p50,
+        std,
+        skew,
+        kurtosis,
+        min: sortedValues[0],
+        max: sortedValues[n - 1]
+      },
+      percentiles
+    })
+  })
+})
+
+/**
  * Generate what-if combinations
  */
 app.post('/api/whatif/combinations', async (req, res) => {

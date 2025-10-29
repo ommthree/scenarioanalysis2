@@ -109,6 +109,34 @@ export default function ViewResults() {
   const [mcResults, setMcResults] = useState<{mcPeriod: number; numDraws: number; lineItems: McLineItem[]} | null>(null)
   const [mcLoading, setMcLoading] = useState(false)
 
+  // MC distribution data for selected line item
+  interface McDistribution {
+    lineItemCode: string
+    numDraws: number
+    draws: Array<{drawNumber: number; value: number}>
+    statistics: {
+      mean: number
+      median: number
+      std: number
+      skew: number
+      kurtosis: number
+      min: number
+      max: number
+    }
+    percentiles: {
+      p5: number
+      p25: number
+      p50: number
+      p75: number
+      p95: number
+    }
+  }
+  const [selectedMcLineItem, setSelectedMcLineItem] = useState<string | null>(null)
+  const [mcDistribution, setMcDistribution] = useState<McDistribution | null>(null)
+  const [mcDistLoading, setMcDistLoading] = useState(false)
+  const [hoveredDraw, setHoveredDraw] = useState<{drawNumber: number; value: number} | null>(null)
+  const [hoverPos, setHoverPos] = useState<{x: number; y: number} | null>(null)
+
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
     loadScenarios()
@@ -276,6 +304,32 @@ export default function ViewResults() {
       setRoiResults([])
     } finally {
       setRoiLoading(false)
+    }
+  }
+
+  const loadMcDistribution = async (lineItemCode: string) => {
+    if (currentScenario === null || currentEntity === null || !mcResults) return
+
+    setMcDistLoading(true)
+    setSelectedMcLineItem(lineItemCode)
+    const dbPath = getDefaultDbPath()
+
+    try {
+      const url = apiUrl(`/api/results/mc-distribution?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&periodId=${mcResults.mcPeriod}&entityId=${currentEntity}&lineItemCode=${encodeURIComponent(lineItemCode)}`)
+      const response = await fetch(url)
+      const data = await response.json()
+
+      if (data.success) {
+        setMcDistribution(data)
+      } else {
+        logger.error('Failed to load MC distribution:', data.error)
+        setMcDistribution(null)
+      }
+    } catch (error) {
+      logger.error('Error loading MC distribution:', error)
+      setMcDistribution(null)
+    } finally {
+      setMcDistLoading(false)
     }
   }
 
@@ -2451,13 +2505,28 @@ export default function ViewResults() {
                       {items.map((item) => (
                         <div
                           key={item.code}
+                          onClick={() => loadMcDistribution(item.code)}
                           style={{
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             padding: '12px 16px',
                             borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
-                            backgroundColor: item.is_computed ? 'rgba(168, 85, 247, 0.05)' : 'transparent'
+                            backgroundColor: selectedMcLineItem === item.code
+                              ? 'rgba(168, 85, 247, 0.2)'
+                              : item.is_computed ? 'rgba(168, 85, 247, 0.05)' : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (selectedMcLineItem !== item.code) {
+                              e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.15)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (selectedMcLineItem !== item.code) {
+                              e.currentTarget.style.backgroundColor = item.is_computed ? 'rgba(168, 85, 247, 0.05)' : 'transparent'
+                            }
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -2493,6 +2562,350 @@ export default function ViewResults() {
                   </div>
                 ))
               })()
+            )}
+
+            {/* MC Distribution Panel - Shows frequency distribution for selected line item */}
+            {selectedMcLineItem && (
+              <div style={{
+                marginTop: '32px',
+                paddingTop: '32px',
+                borderTop: '2px solid rgba(168, 85, 247, 0.3)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '24px'
+                }}>
+                  <span style={{ fontSize: '20px' }}>📈</span>
+                  <h3 style={{
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    color: '#e9d5ff',
+                    margin: 0
+                  }}>
+                    Distribution: {selectedMcLineItem}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setSelectedMcLineItem(null)
+                      setMcDistribution(null)
+                    }}
+                    style={{
+                      marginLeft: 'auto',
+                      padding: '6px 12px',
+                      backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                      border: '1px solid rgba(168, 85, 247, 0.4)',
+                      borderRadius: '4px',
+                      color: '#e9d5ff',
+                      cursor: 'pointer',
+                      fontSize: '13px'
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {mcDistLoading ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '40px',
+                    color: '#94a3b8'
+                  }}>
+                    Loading distribution...
+                  </div>
+                ) : mcDistribution ? (
+                  <>
+                    {/* Statistics Summary */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(4, 1fr)',
+                      gap: '16px',
+                      marginBottom: '24px',
+                      padding: '16px',
+                      backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                      borderRadius: '8px'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '4px' }}>Mean</div>
+                        <div style={{ fontSize: '16px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                          {formatValue(mcDistribution.statistics.mean)}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '4px' }}>Median</div>
+                        <div style={{ fontSize: '16px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                          {formatValue(mcDistribution.statistics.median)}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '4px' }}>Std Dev</div>
+                        <div style={{ fontSize: '16px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                          {formatValue(mcDistribution.statistics.std)}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '4px' }}>Range</div>
+                        <div style={{ fontSize: '14px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                          {formatValue(mcDistribution.statistics.min)} to {formatValue(mcDistribution.statistics.max)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Distribution Chart with KDE curve and markers */}
+                    {(() => {
+                      // Calculate KDE curve using Gaussian kernel
+                      const draws = mcDistribution.draws
+                      const values = draws.map(d => d.value)
+                      const bandwidth = 1.06 * mcDistribution.statistics.std * Math.pow(draws.length, -0.2) // Silverman's rule
+
+                      // Generate KDE points
+                      const numKdePoints = 200
+                      const xMin = mcDistribution.statistics.min - bandwidth * 3
+                      const xMax = mcDistribution.statistics.max + bandwidth * 3
+                      const xStep = (xMax - xMin) / numKdePoints
+
+                      const kdePoints: Array<{x: number; density: number}> = []
+                      for (let i = 0; i <= numKdePoints; i++) {
+                        const x = xMin + i * xStep
+                        let density = 0
+                        for (const val of values) {
+                          const z = (x - val) / bandwidth
+                          density += Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI)
+                        }
+                        density = density / (values.length * bandwidth)
+                        kdePoints.push({ x, density })
+                      }
+
+                      // Chart dimensions
+                      const chartWidth = 800
+                      const chartHeight = 400
+                      const margin = { top: 40, right: 60, bottom: 80, left: 80 }
+                      const plotWidth = chartWidth - margin.left - margin.right
+                      const plotHeight = chartHeight - margin.top - margin.bottom
+
+                      // Scales
+                      const maxDensity = Math.max(...kdePoints.map(p => p.density))
+                      const xScale = (val: number) => margin.left + ((val - xMin) / (xMax - xMin)) * plotWidth
+                      const yScale = (density: number) => margin.top + plotHeight - (density / maxDensity) * plotHeight
+
+                      // Generate SVG path for KDE curve
+                      const kdePath = kdePoints.map((p, i) =>
+                        `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.density)}`
+                      ).join(' ')
+
+                      return (
+                        <div style={{ position: 'relative' }}>
+                          <svg width={chartWidth} height={chartHeight} style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px' }}>
+                            {/* Y-axis */}
+                            <line
+                              x1={margin.left}
+                              y1={margin.top}
+                              x2={margin.left}
+                              y2={margin.top + plotHeight}
+                              stroke="#94a3b8"
+                              strokeWidth="2"
+                            />
+                            <text
+                              x={margin.left - 50}
+                              y={margin.top + plotHeight / 2}
+                              fill="#c4b5fd"
+                              fontSize="14"
+                              textAnchor="middle"
+                              transform={`rotate(-90, ${margin.left - 50}, ${margin.top + plotHeight / 2})`}
+                            >
+                              Probability Density
+                            </text>
+
+                            {/* X-axis */}
+                            <line
+                              x1={margin.left}
+                              y1={margin.top + plotHeight}
+                              x2={margin.left + plotWidth}
+                              y2={margin.top + plotHeight}
+                              stroke="#94a3b8"
+                              strokeWidth="2"
+                            />
+                            <text
+                              x={margin.left + plotWidth / 2}
+                              y={chartHeight - 20}
+                              fill="#c4b5fd"
+                              fontSize="14"
+                              textAnchor="middle"
+                            >
+                              Value
+                            </text>
+
+                            {/* X-axis ticks */}
+                            {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+                              const val = xMin + frac * (xMax - xMin)
+                              const x = xScale(val)
+                              return (
+                                <g key={frac}>
+                                  <line x1={x} y1={margin.top + plotHeight} x2={x} y2={margin.top + plotHeight + 5} stroke="#94a3b8" />
+                                  <text x={x} y={margin.top + plotHeight + 20} fill="#94a3b8" fontSize="12" textAnchor="middle">
+                                    {formatValue(val)}
+                                  </text>
+                                </g>
+                              )
+                            })}
+
+                            {/* Percentile lines */}
+                            {Object.entries(mcDistribution.percentiles).map(([key, val]) => {
+                              const x = xScale(val)
+                              const label = key === 'p50' ? 'Median' : key.toUpperCase()
+                              const color = key === 'p50' ? '#e9d5ff' : '#94a3b8'
+                              return (
+                                <g key={key}>
+                                  <line
+                                    x1={x}
+                                    y1={margin.top}
+                                    x2={x}
+                                    y2={margin.top + plotHeight}
+                                    stroke={color}
+                                    strokeWidth={key === 'p50' ? 2 : 1}
+                                    strokeDasharray={key === 'p50' ? '5,5' : '2,2'}
+                                    opacity={0.5}
+                                  />
+                                  <text
+                                    x={x}
+                                    y={margin.top - 5}
+                                    fill={color}
+                                    fontSize="10"
+                                    textAnchor="middle"
+                                  >
+                                    {label}
+                                  </text>
+                                </g>
+                              )
+                            })}
+
+                            {/* Mean line */}
+                            <line
+                              x1={xScale(mcDistribution.statistics.mean)}
+                              y1={margin.top}
+                              x2={xScale(mcDistribution.statistics.mean)}
+                              y2={margin.top + plotHeight}
+                              stroke="#a78bfa"
+                              strokeWidth="2"
+                              strokeDasharray="5,5"
+                            />
+                            <text
+                              x={xScale(mcDistribution.statistics.mean)}
+                              y={margin.top - 5}
+                              fill="#a78bfa"
+                              fontSize="11"
+                              fontWeight="600"
+                              textAnchor="middle"
+                            >
+                              Mean
+                            </text>
+
+                            {/* KDE curve */}
+                            <path
+                              d={kdePath}
+                              fill="none"
+                              stroke="#a78bfa"
+                              strokeWidth="3"
+                            />
+
+                            {/* Individual draw markers */}
+                            {draws.map(draw => {
+                              const x = xScale(draw.value)
+                              const y = margin.top + plotHeight
+                              return (
+                                <circle
+                                  key={draw.drawNumber}
+                                  cx={x}
+                                  cy={y}
+                                  r={4}
+                                  fill={hoveredDraw?.drawNumber === draw.drawNumber ? '#fbbf24' : '#8b5cf6'}
+                                  stroke={hoveredDraw?.drawNumber === draw.drawNumber ? '#fff' : '#a78bfa'}
+                                  strokeWidth={hoveredDraw?.drawNumber === draw.drawNumber ? 2 : 1}
+                                  style={{ cursor: 'pointer' }}
+                                  onMouseEnter={(e) => {
+                                    setHoveredDraw(draw)
+                                    setHoverPos({ x: e.clientX, y: e.clientY })
+                                  }}
+                                  onMouseLeave={() => {
+                                    setHoveredDraw(null)
+                                    setHoverPos(null)
+                                  }}
+                                />
+                              )
+                            })}
+                          </svg>
+
+                          {/* Hover tooltip */}
+                          {hoveredDraw && hoverPos && (
+                            <div style={{
+                              position: 'fixed',
+                              left: hoverPos.x + 10,
+                              top: hoverPos.y - 40,
+                              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                              border: '1px solid rgba(168, 85, 247, 0.5)',
+                              borderRadius: '6px',
+                              padding: '8px 12px',
+                              fontSize: '13px',
+                              color: '#fff',
+                              pointerEvents: 'none',
+                              zIndex: 1000,
+                              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
+                            }}>
+                              <div><strong>Draw #{hoveredDraw.drawNumber}</strong></div>
+                              <div>Value: {formatValue(hoveredDraw.value)}</div>
+                            </div>
+                          )}
+
+                          {/* Statistics table */}
+                          <div style={{
+                            marginTop: '24px',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '16px'
+                          }}>
+                            <div style={{ padding: '12px', backgroundColor: 'rgba(168, 85, 247, 0.05)', borderRadius: '6px' }}>
+                              <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '6px' }}>Skewness</div>
+                              <div style={{ fontSize: '16px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                                {mcDistribution.statistics.skew.toFixed(3)}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                                {mcDistribution.statistics.skew > 0.5 ? 'Right-skewed' : mcDistribution.statistics.skew < -0.5 ? 'Left-skewed' : 'Symmetric'}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px', backgroundColor: 'rgba(168, 85, 247, 0.05)', borderRadius: '6px' }}>
+                              <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '6px' }}>Kurtosis</div>
+                              <div style={{ fontSize: '16px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                                {mcDistribution.statistics.kurtosis.toFixed(3)}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                                {mcDistribution.statistics.kurtosis > 1 ? 'Heavy tails' : mcDistribution.statistics.kurtosis < -1 ? 'Light tails' : 'Normal-like'}
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px', backgroundColor: 'rgba(168, 85, 247, 0.05)', borderRadius: '6px' }}>
+                              <div style={{ fontSize: '12px', color: '#c4b5fd', marginBottom: '6px' }}>IQR (P25-P75)</div>
+                              <div style={{ fontSize: '16px', color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                                {formatValue(mcDistribution.percentiles.p75 - mcDistribution.percentiles.p25)}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                                Interquartile range
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '40px',
+                    color: '#94a3b8'
+                  }}>
+                    Failed to load distribution data
+                  </div>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>
