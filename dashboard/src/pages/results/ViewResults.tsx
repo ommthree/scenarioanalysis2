@@ -86,6 +86,21 @@ export default function ViewResults() {
   const [macResults, setMacResults] = useState<MacResult[]>([])
   const [macLoading, setMacLoading] = useState(false)
 
+  // ROI mode controls
+  const [roiModeActive, setRoiModeActive] = useState(false)
+  const [roiStartPeriod, setRoiStartPeriod] = useState(1)
+  const [roiEndPeriod, setRoiEndPeriod] = useState(1)
+
+  // ROI results data
+  interface RoiResult {
+    action: string
+    investment: number
+    benefit: number
+    roi: number | null
+  }
+  const [roiResults, setRoiResults] = useState<RoiResult[]>([])
+  const [roiLoading, setRoiLoading] = useState(false)
+
   // MC results data
   interface McLineItem {
     code: string
@@ -144,6 +159,13 @@ export default function ViewResults() {
       loadMacCurve()
     }
   }, [macModeActive, macStartPeriod, macEndPeriod, currentScenario, currentEntity])
+
+  // Load ROI curve data when ROI mode is active
+  useEffect(() => {
+    if (roiModeActive && currentScenario !== null && currentEntity !== null && periods.length > 0) {
+      loadRoiCurve()
+    }
+  }, [roiModeActive, roiStartPeriod, roiEndPeriod, currentScenario, currentEntity])
 
   // Load MC results when stochastic mode was used
   useEffect(() => {
@@ -229,6 +251,31 @@ export default function ViewResults() {
       setMacResults([])
     } finally {
       setMacLoading(false)
+    }
+  }
+
+  const loadRoiCurve = async () => {
+    if (currentScenario === null || currentEntity === null) return
+
+    setRoiLoading(true)
+    const dbPath = getDefaultDbPath()
+
+    try {
+      const url = apiUrl(`/api/results/roi-curve?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&entityId=${currentEntity}&startPeriod=${roiStartPeriod}&endPeriod=${roiEndPeriod}`)
+      const response = await fetch(url)
+      const data = await response.json()
+
+      if (data.success && data.roiCurve) {
+        setRoiResults(data.roiCurve)
+      } else {
+        logger.error('Failed to load ROI curve:', data.error)
+        setRoiResults([])
+      }
+    } catch (error) {
+      logger.error('Error loading ROI curve:', error)
+      setRoiResults([])
+    } finally {
+      setRoiLoading(false)
     }
   }
 
@@ -825,7 +872,13 @@ export default function ViewResults() {
                     MAC Mode
                   </label>
                   <div
-                    onClick={() => setMacModeActive(!macModeActive)}
+                    onClick={() => {
+                      const newState = !macModeActive
+                      setMacModeActive(newState)
+                      if (newState && roiModeActive) {
+                        setRoiModeActive(false)
+                      }
+                    }}
                     style={{
                       position: 'relative',
                       width: '52px',
@@ -846,6 +899,47 @@ export default function ViewResults() {
                         width: '22px',
                         height: '22px',
                         backgroundColor: macModeActive ? '#f97316' : '#94a3b8',
+                        borderRadius: '50%',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* ROI Mode Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginLeft: '40px', paddingLeft: '40px', borderLeft: '1px solid rgba(71, 85, 105, 0.5)' }}>
+                  <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
+                    ROI Mode
+                  </label>
+                  <div
+                    onClick={() => {
+                      const newState = !roiModeActive
+                      setRoiModeActive(newState)
+                      if (newState && macModeActive) {
+                        setMacModeActive(false)
+                      }
+                    }}
+                    style={{
+                      position: 'relative',
+                      width: '52px',
+                      height: '28px',
+                      backgroundColor: roiModeActive ? 'rgba(168, 85, 247, 0.3)' : 'rgba(71, 85, 105, 0.5)',
+                      border: `1px solid ${roiModeActive ? 'rgba(168, 85, 247, 0.5)' : 'rgba(71, 85, 105, 0.6)'}`,
+                      borderRadius: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    {/* Toggle knob */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        left: roiModeActive ? '24px' : '2px',
+                        width: '22px',
+                        height: '22px',
+                        backgroundColor: roiModeActive ? '#a855f7' : '#94a3b8',
                         borderRadius: '50%',
                         transition: 'all 0.3s ease',
                         boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
@@ -1738,6 +1832,506 @@ export default function ViewResults() {
                 • <strong style={{ color: '#f97316' }}>Lower MAC</strong> = More cost-effective carbon reduction
                 <br />
                 • <strong style={{ color: '#10b981' }}>Negative MAC</strong> = Carbon reduction + income gain (best)
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ROI Period Selector Panel (only visible in What-If mode when ROI mode is active) */}
+      {lastRunMode?.whatIfMode && roiModeActive && periods.length > 0 && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(168, 85, 247, 0.5)',
+          marginTop: '24px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <BarChart3 size={20} style={{ color: '#a855f7' }} />
+                <label style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                  ROI Curve Period Range
+                </label>
+              </div>
+
+              {/* Combined Period Range Selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    Start: P{roiStartPeriod}
+                  </label>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    End: P{roiEndPeriod}
+                  </label>
+                </div>
+
+                {/* Dual-handle range slider container */}
+                <div style={{ position: 'relative', width: '100%', height: '40px' }}>
+                  {/* Background track */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '17px',
+                    left: 0,
+                    right: 0,
+                    height: '6px',
+                    backgroundColor: 'rgba(71, 85, 105, 0.5)',
+                    borderRadius: '3px'
+                  }} />
+
+                  {/* Active range highlight */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '17px',
+                    left: `${((roiStartPeriod - periods[0]) / (periods[periods.length - 1] - periods[0])) * 100}%`,
+                    width: `${((roiEndPeriod - roiStartPeriod) / (periods[periods.length - 1] - periods[0])) * 100}%`,
+                    height: '6px',
+                    backgroundColor: '#a855f7',
+                    borderRadius: '3px'
+                  }} />
+
+                  {/* Start Period Slider */}
+                  <input
+                    type="range"
+                    min={periods[0]}
+                    max={periods[periods.length - 1]}
+                    value={roiStartPeriod}
+                    onChange={(e) => {
+                      const newStart = parseInt(e.target.value)
+                      setRoiStartPeriod(newStart)
+                      if (newStart > roiEndPeriod) {
+                        setRoiEndPeriod(newStart)
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      top: 0,
+                      left: 0,
+                      height: '40px',
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      background: 'transparent',
+                      pointerEvents: 'all',
+                      cursor: 'pointer',
+                      zIndex: roiStartPeriod >= roiEndPeriod - 1 ? 5 : 4
+                    } as React.CSSProperties}
+                  />
+
+                  {/* End Period Slider */}
+                  <input
+                    type="range"
+                    min={periods[0]}
+                    max={periods[periods.length - 1]}
+                    value={roiEndPeriod}
+                    onChange={(e) => {
+                      const newEnd = parseInt(e.target.value)
+                      setRoiEndPeriod(newEnd)
+                      if (newEnd < roiStartPeriod) {
+                        setRoiStartPeriod(newEnd)
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      top: 0,
+                      left: 0,
+                      height: '40px',
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
+                      background: 'transparent',
+                      pointerEvents: 'all',
+                      cursor: 'pointer',
+                      zIndex: 3
+                    } as React.CSSProperties}
+                  />
+                </div>
+
+                <style>{`
+                  input[type="range"]::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #a855f7;
+                    border: 2px solid #fff;
+                    cursor: pointer;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                  }
+
+                  input[type="range"]::-moz-range-thumb {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #a855f7;
+                    border: 2px solid #fff;
+                    cursor: pointer;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                  }
+                `}</style>
+              </div>
+
+              <div style={{
+                fontSize: '12px',
+                color: '#64748b',
+                textAlign: 'center',
+                paddingTop: '8px',
+                borderTop: '1px solid rgba(71, 85, 105, 0.3)'
+              }}>
+                ROI curve will be calculated for {roiEndPeriod - roiStartPeriod + 1} periods (P{roiStartPeriod} to P{roiEndPeriod})
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ROI Results Table (only visible in What-If mode when ROI mode is active) */}
+      {lastRunMode?.whatIfMode && roiModeActive && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(168, 85, 247, 0.5)',
+          marginTop: '24px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <BarChart3 size={20} style={{ color: '#a855f7' }} />
+                <label style={{ fontSize: '16px', fontWeight: '700', color: '#fff' }}>
+                  Return on Investment (ROI) Curve
+                </label>
+              </div>
+
+              {roiLoading ? (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: '40px',
+                  color: '#94a3b8',
+                  fontSize: '14px'
+                }}>
+                  Loading ROI curve...
+                </div>
+              ) : roiResults.length === 0 ? (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: '40px',
+                  color: '#94a3b8',
+                  fontSize: '14px'
+                }}>
+                  No single-action results available. Run calculations with individual actions enabled.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: '13px'
+                  }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid rgba(168, 85, 247, 0.5)' }}>
+                        <th style={{
+                          textAlign: 'left',
+                          padding: '12px 16px',
+                          color: '#a855f7',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Action
+                        </th>
+                        <th style={{
+                          textAlign: 'right',
+                          padding: '12px 16px',
+                          color: '#a855f7',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Investment ($)
+                        </th>
+                        <th style={{
+                          textAlign: 'right',
+                          padding: '12px 16px',
+                          color: '#a855f7',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Benefit ($)
+                        </th>
+                        <th style={{
+                          textAlign: 'right',
+                          padding: '12px 16px',
+                          color: '#a855f7',
+                          fontWeight: '700',
+                          fontSize: '13px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          ROI (benefit/investment)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roiResults.map((result, index) => (
+                        <tr
+                          key={result.action}
+                          style={{
+                            borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+                            backgroundColor: index % 2 === 0 ? 'rgba(15, 23, 42, 0.5)' : 'transparent',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.1)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = index % 2 === 0 ? 'rgba(15, 23, 42, 0.5)' : 'transparent'
+                          }}
+                        >
+                          <td style={{
+                            padding: '12px 16px',
+                            color: '#fff',
+                            fontWeight: '600'
+                          }}>
+                            {result.action}
+                          </td>
+                          <td style={{
+                            padding: '12px 16px',
+                            color: result.investment > 0 ? '#ef4444' : result.investment < 0 ? '#10b981' : '#94a3b8',
+                            textAlign: 'right',
+                            fontFamily: 'monospace'
+                          }}>
+                            {result.investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{
+                            padding: '12px 16px',
+                            color: result.benefit > 0 ? '#10b981' : result.benefit < 0 ? '#ef4444' : '#94a3b8',
+                            textAlign: 'right',
+                            fontFamily: 'monospace'
+                          }}>
+                            {result.benefit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{
+                            padding: '12px 16px',
+                            color: result.roi === null ? '#64748b' : result.roi > 1 ? '#10b981' : '#a855f7',
+                            textAlign: 'right',
+                            fontFamily: 'monospace',
+                            fontWeight: '700'
+                          }}>
+                            {result.roi === null ? 'N/A' : result.roi.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* ROI Curve Visualization */}
+              {!roiLoading && roiResults.length > 0 && (() => {
+                // Sort by ROI descending for visualization
+                const sortedResults = [...roiResults].sort((a, b) => (b.roi || 0) - (a.roi || 0))
+
+                // Find min/max ROI for scaling
+                const validRois = sortedResults.filter(r => r.roi !== null).map(r => r.roi!)
+                if (validRois.length === 0) return null
+
+                const minROI = Math.min(...validRois)
+                const maxROI = Math.max(...validRois)
+
+                // Add padding to y-axis
+                const yPadding = Math.max(Math.abs(minROI), Math.abs(maxROI)) * 0.1
+                const yMin = minROI - yPadding
+                const yMax = maxROI + yPadding
+                const yRange = yMax - yMin
+
+                const chartWidth = 800
+                const chartHeight = 400
+                const margin = { top: 40, right: 40, bottom: 60, left: 80 }
+                const plotWidth = chartWidth - margin.left - margin.right
+                const plotHeight = chartHeight - margin.top - margin.bottom
+
+                const barWidth = plotWidth / sortedResults.length
+
+                return (
+                  <div style={{ marginTop: '32px', marginBottom: '24px' }}>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: '#a855f7',
+                      marginBottom: '16px',
+                      textAlign: 'center'
+                    }}>
+                      ROI Curve Visualization
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center', overflowX: 'auto' }}>
+                      <svg width={chartWidth} height={chartHeight} style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px' }}>
+                        {/* Y-axis */}
+                        <line
+                          x1={margin.left}
+                          y1={margin.top}
+                          x2={margin.left}
+                          y2={chartHeight - margin.bottom}
+                          stroke="#64748b"
+                          strokeWidth="2"
+                        />
+                        {/* X-axis */}
+                        <line
+                          x1={margin.left}
+                          y1={chartHeight - margin.bottom}
+                          x2={chartWidth - margin.right}
+                          y2={chartHeight - margin.bottom}
+                          stroke="#64748b"
+                          strokeWidth="2"
+                        />
+
+                        {/* Zero line (ROI = 1.0 break-even) */}
+                        {yMin < 1 && yMax > 1 && (
+                          <line
+                            x1={margin.left}
+                            y1={margin.top + plotHeight * (1 - (1 - yMin) / yRange)}
+                            x2={chartWidth - margin.right}
+                            y2={margin.top + plotHeight * (1 - (1 - yMin) / yRange)}
+                            stroke="#94a3b8"
+                            strokeWidth="1"
+                            strokeDasharray="4 4"
+                          />
+                        )}
+
+                        {/* Y-axis labels */}
+                        {[...Array(6)].map((_, i) => {
+                          const value = yMin + (yRange * i / 5)
+                          const y = margin.top + plotHeight * (1 - i / 5)
+                          return (
+                            <g key={i}>
+                              <line
+                                x1={margin.left - 5}
+                                y1={y}
+                                x2={margin.left}
+                                y2={y}
+                                stroke="#64748b"
+                                strokeWidth="1"
+                              />
+                              <text
+                                x={margin.left - 10}
+                                y={y}
+                                textAnchor="end"
+                                alignmentBaseline="middle"
+                                fill="#94a3b8"
+                                fontSize="11px"
+                                fontFamily="monospace"
+                              >
+                                {value.toFixed(2)}
+                              </text>
+                            </g>
+                          )
+                        })}
+
+                        {/* Y-axis label */}
+                        <text
+                          x={margin.left - 60}
+                          y={chartHeight / 2}
+                          textAnchor="middle"
+                          fill="#a855f7"
+                          fontSize="13px"
+                          fontWeight="700"
+                          transform={`rotate(-90, ${margin.left - 60}, ${chartHeight / 2})`}
+                        >
+                          ROI (benefit/investment)
+                        </text>
+
+                        {/* X-axis label */}
+                        <text
+                          x={chartWidth / 2}
+                          y={chartHeight - 10}
+                          textAnchor="middle"
+                          fill="#a855f7"
+                          fontSize="13px"
+                          fontWeight="700"
+                        >
+                          Management Actions (sorted by ROI)
+                        </text>
+
+                        {/* ROI bars */}
+                        {sortedResults.map((item, index) => {
+                          if (item.roi === null) return null
+
+                          const x = margin.left + index * barWidth
+                          const roiNormalized = (item.roi - yMin) / yRange
+                          const oneNormalized = (1 - yMin) / yRange
+
+                          let barY, barHeight
+                          if (item.roi >= 1) {
+                            // ROI >= 1 (positive): bar goes from 1.0 line up
+                            barY = margin.top + plotHeight * (1 - roiNormalized)
+                            barHeight = plotHeight * (roiNormalized - oneNormalized)
+                          } else {
+                            // ROI < 1 (negative): bar goes from 1.0 line down
+                            barY = margin.top + plotHeight * (1 - oneNormalized)
+                            barHeight = plotHeight * (oneNormalized - roiNormalized)
+                          }
+
+                          const color = item.roi > 1 ? '#10b981' : '#a855f7'
+
+                          const centerX = x + barWidth / 2
+                          const textY = item.roi >= 1 ? barY - 5 : barY + Math.abs(barHeight) + 15
+
+                          return (
+                            <g key={index}>
+                              <rect
+                                x={x + 2}
+                                y={barY}
+                                width={barWidth - 4}
+                                height={Math.abs(barHeight)}
+                                fill={color}
+                                opacity="0.8"
+                                stroke="rgba(255, 255, 255, 0.3)"
+                                strokeWidth="1"
+                              />
+                              <title>{`${item.action}\nInvestment: $${item.investment.toLocaleString()}\nBenefit: $${item.benefit.toLocaleString()}\nROI: ${item.roi.toFixed(2)}`}</title>
+                              {/* Action label */}
+                              <text
+                                x={centerX}
+                                y={textY}
+                                textAnchor="middle"
+                                fill="#e2e8f0"
+                                fontSize="10px"
+                                fontWeight="600"
+                              >
+                                {item.action}
+                              </text>
+                            </g>
+                          )
+                        })}
+                      </svg>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div style={{
+                fontSize: '12px',
+                color: '#64748b',
+                textAlign: 'left',
+                paddingTop: '8px',
+                borderTop: '1px solid rgba(71, 85, 105, 0.3)',
+                lineHeight: '1.6'
+              }}>
+                <strong style={{ color: '#94a3b8' }}>Interpretation:</strong>
+                <br />
+                • <strong style={{ color: '#10b981' }}>ROI &gt; 1.0</strong> = Investment pays off (benefit exceeds cost)
+                <br />
+                • <strong style={{ color: '#a855f7' }}>ROI &lt; 1.0</strong> = Investment does not pay off
+                <br />
+                • <strong style={{ color: '#10b981' }}>Higher ROI</strong> = More efficient investment
+                <br />
+                • <strong style={{ color: '#64748b' }}>N/A</strong> = Zero investment (cannot calculate ROI)
               </div>
             </div>
           </CardContent>

@@ -7047,6 +7047,192 @@ app.get('/api/results/mac-curve', (req, res) => {
 })
 
 /**
+ * Calculate ROI curve for what-if scenario
+ * GET /api/results/roi-curve
+ * Query params: dbPath, scenarioId, entityId, startPeriod, endPeriod
+ *
+ * Uses tagged line items from statement template (is_roi_numerator and is_roi_denominator)
+ * Calculates ROI = benefit / investment for each single-action combination
+ */
+app.get('/api/results/roi-curve', (req, res) => {
+  const { dbPath, scenarioId, entityId, startPeriod, endPeriod } = req.query
+
+  if (!dbPath || !scenarioId || !entityId || !startPeriod || !endPeriod) {
+    return res.status(400).json({ error: 'Missing required parameters' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Step 1: Get template_id for this scenario
+  const templateQuery = `
+    SELECT st.template_id, st.json_structure
+    FROM scenario s
+    JOIN statement_template st ON s.statement_template_id = st.template_id
+    WHERE s.scenario_id = ?
+  `
+
+  db.get(templateQuery, [scenarioId], (err, template) => {
+    if (err || !template) {
+      db.close()
+      return res.status(500).json({ error: 'Failed to query template: ' + (err?.message || 'Template not found') })
+    }
+
+    // Step 2: Parse json_structure to find ROI-tagged line items
+    let lineItems
+    try {
+      const parsed = JSON.parse(template.json_structure)
+      // Support both line_items (stored format) and lineItems (legacy format)
+      lineItems = parsed.line_items || parsed.lineItems || []
+    } catch (e) {
+      db.close()
+      return res.status(500).json({ error: 'Failed to parse template structure' })
+    }
+
+    const roiNumeratorCodes = lineItems.filter(item => item.is_roi_numerator).map(item => item.code)
+    const roiDenominatorCodes = lineItems.filter(item => item.is_roi_denominator).map(item => item.code)
+
+    if (roiNumeratorCodes.length === 0 || roiDenominatorCodes.length === 0) {
+      db.close()
+      return res.status(400).json({ error: 'No ROI numerator or denominator tagged in template. Please tag line items in Define Statements.' })
+    }
+
+    // Step 3: Get the list of management action codes (all actions can be included in ROI)
+    const actionsQuery = `
+      SELECT action_code
+      FROM management_action
+    `
+
+    db.all(actionsQuery, [], (err, actions) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to query management actions: ' + err.message })
+      }
+
+      const actionCodes = new Set(actions.map(a => a.action_code))
+
+      // Step 4: Build dynamic SQL with tagged line item codes
+      const allRoiCodes = [...roiNumeratorCodes, ...roiDenominatorCodes]
+      const placeholders = allRoiCodes.map(() => '?').join(',')
+
+      const sql = `
+        SELECT
+          sr.what_if_combination,
+          sr.period_id,
+          sr.line_item_code,
+          sr.value
+        FROM statement_result sr
+        WHERE sr.scenario_id = ?
+          AND sr.entity_id = ?
+          AND sr.period_id BETWEEN ? AND ?
+          AND sr.line_item_code IN (${placeholders})
+        ORDER BY sr.what_if_combination, sr.period_id, sr.line_item_code
+      `
+
+      const params = [scenarioId, entityId, startPeriod, endPeriod, ...allRoiCodes]
+
+      db.all(sql, params, (err, rows) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Database query failed: ' + err.message })
+        }
+
+        console.log(`\n=== ROI Calculation Debug ===`)
+        console.log(`Query returned ${rows.length} rows`)
+        console.log(`ROI Numerator codes (benefit): ${JSON.stringify(roiNumeratorCodes)}`)
+        console.log(`ROI Denominator codes (investment): ${JSON.stringify(roiDenominatorCodes)}`)
+        console.log(`First 5 rows:`, rows.slice(0, 5))
+
+        // Step 5: Group by combination and accumulate numerator/denominator values
+        const combinationData = {}
+        rows.forEach(row => {
+          const combo = row.what_if_combination || ''
+          if (!combinationData[combo]) {
+            combinationData[combo] = {
+              numerator: 0,      // Benefit (e.g. revenue increase)
+              denominator: 0      // Investment (e.g. capital expenditure)
+            }
+          }
+
+          // Sum up values across periods
+          if (roiNumeratorCodes.includes(row.line_item_code)) {
+            combinationData[combo].numerator += row.value
+          } else if (roiDenominatorCodes.includes(row.line_item_code)) {
+            combinationData[combo].denominator += row.value
+          }
+        })
+
+        console.log(`\nCombination data keys: ${JSON.stringify(Object.keys(combinationData))}`)
+        console.log(`Combination data:`, combinationData)
+
+        // Step 6: Find base case (no actions = empty combination)
+        const baseCase = combinationData[''] || combinationData['BASE'] || combinationData['NONE'] || null
+        if (!baseCase) {
+          db.close()
+          return res.status(400).json({ error: 'Base case (no actions) not found in results' })
+        }
+
+        const baseNumerator = baseCase.numerator
+        const baseDenominator = baseCase.denominator
+
+        // Step 7: Calculate ROI for each single-action combination
+        const roiResults = []
+        Object.keys(combinationData).forEach(combo => {
+          if (!combo || combo === '' || combo === 'BASE' || combo === 'NONE') return // Skip base case
+
+          // Check if this is a single-action combination (no + signs)
+          if (combo.includes('+')) return // Skip multi-action combinations
+
+          // Check if this action exists in management actions
+          if (!actionCodes.has(combo)) return // Skip unknown actions
+
+          const data = combinationData[combo]
+          const numerator = data.numerator
+          const denominator = data.denominator
+
+          // Calculate deltas relative to base case
+          const benefit = numerator - baseNumerator  // Positive = increased benefit (e.g., more revenue)
+          const investment = denominator - baseDenominator  // Positive = increased investment (e.g., more capex)
+
+          // Skip actions with zero investment (can't calculate meaningful ROI)
+          if (investment === 0) return
+
+          // Calculate ROI (benefit per unit of investment)
+          const roi = benefit / investment
+
+          roiResults.push({
+            action: combo,
+            investment,
+            benefit,
+            roi
+          })
+        })
+
+        // Sort by ROI (descending - highest ROI first)
+        roiResults.sort((a, b) => b.roi - a.roi)
+
+        db.close()
+        res.json({
+          success: true,
+          baseCase: {
+            totalBenefit: baseNumerator,
+            totalInvestment: baseDenominator
+          },
+          roiCurve: roiResults
+        })
+      })
+    })
+  })
+})
+
+/**
  * Get Monte Carlo results summary (mean across draws for MC period)
  * GET /api/results/mc-summary
  * Query params: dbPath, scenarioId, period, entityId
