@@ -1,6 +1,6 @@
 # Markdown Documentation Index
 
-**Last Updated:** 2025-10-29
+**Last Updated:** 2025-10-30
 **Total Active Documents:** 7
 **Total Archived Documents:** 7
 
@@ -170,6 +170,22 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-10-30 (Session 11 - Configurable MAC Tagging):**
+- Made MAC calculation fully configurable via template-based line item tagging
+- Added 4 new boolean fields to LineItem interface: is_mac_numerator, is_mac_denominator, is_roi_numerator, is_roi_denominator
+- Created blue-themed tagging UI panel in DefineStatements.tsx with mutual exclusivity across all statement sections
+- Completely rewrote GET /api/results/mac-curve endpoint (index.js:6850-7023) to dynamically query tagged line items from template
+- Removed hardcoded NET_INCOME and SCOPE1/2/3_EMISSIONS references - now reads from statement_template.json_structure
+- Backend parses template, identifies tagged line items, builds dynamic SQL query with placeholders
+- Supports both snake_case (line_items) and camelCase (lineItems) JSON formats for backward compatibility
+- Template tagging workflow: Define Statements → Check boxes for MAC numerator/denominator → Save template → Run calculation → View MAC results
+- Example configuration: NET_INCOME as MAC numerator (cost), TOTAL_EMISSIONS as MAC denominator (carbon)
+- MAC calculation groups results by what-if combination, accumulates numerator/denominator values over period range
+- Filters out BASE case, multi-action combinations, non-MAC-relevant actions, and zero-impact actions
+- Results sorted by MAC ascending (negative = profitable, positive = costly)
+- Color-coded output: Green (MAC < 0), orange (0-50), red (> 50)
+- Fixed JSON key mismatch: Save stores as line_items, MAC endpoint supports both formats
+
 **2025-10-29 (Session 10 - MAC Curve Analysis):**
 - Implemented MAC (Marginal Abatement Cost) curve for decarbonization strategy optimization
 - Orange-themed MAC mode toggle switch (only visible in what-if mode)
@@ -280,6 +296,6 @@ Archived Background (docs/archive/):
 
 ---
 
-**Last Reviewed:** 2025-10-28
+**Last Reviewed:** 2025-10-30
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

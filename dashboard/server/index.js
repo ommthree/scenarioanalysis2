@@ -1636,6 +1636,19 @@ app.post('/api/statement-templates', (req, res) => {
     return res.status(400).json({ error: 'Database path and template required' })
   }
 
+  // Log what we're receiving (for debugging)
+  console.log(`Saving template ${template.code} with ${lineItems?.length || 0} line items`)
+  if (lineItems && lineItems.length > 0) {
+    const taggedItems = lineItems.filter(item =>
+      item.is_mac_numerator || item.is_mac_denominator ||
+      item.is_roi_numerator || item.is_roi_denominator
+    )
+    console.log(`  Tagged items: ${taggedItems.length}`)
+    taggedItems.forEach(item => {
+      console.log(`    ${item.code}: MAC num=${!!item.is_mac_numerator} den=${!!item.is_mac_denominator} ROI num=${!!item.is_roi_numerator} den=${!!item.is_roi_denominator}`)
+    })
+  }
+
   const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to connect to database' })
@@ -6851,6 +6864,8 @@ app.post('/api/validate-scenario', (req, res) => {
  * Calculate MAC curve for what-if scenario
  * GET /api/results/mac-curve
  * Query params: dbPath, scenarioId, entityId, startPeriod, endPeriod
+ *
+ * UPDATED: Now uses tagged line items from statement template instead of hardcoded values
  */
 app.get('/api/results/mac-curve', (req, res) => {
   const { dbPath, scenarioId, entityId, startPeriod, endPeriod } = req.query
@@ -6869,122 +6884,165 @@ app.get('/api/results/mac-curve', (req, res) => {
     }
   })
 
-  // First, get the list of MAC-relevant action codes
-  const macActionsQuery = `
-    SELECT action_code
-    FROM management_action
-    WHERE is_mac_relevant = 1
+  // Step 1: Get template_id for this scenario
+  const templateQuery = `
+    SELECT st.template_id, st.json_structure
+    FROM scenario s
+    JOIN statement_template st ON s.statement_template_id = st.template_id
+    WHERE s.scenario_id = ?
   `
 
-  db.all(macActionsQuery, [], (err, macActions) => {
-    if (err) {
+  db.get(templateQuery, [scenarioId], (err, template) => {
+    if (err || !template) {
       db.close()
-      return res.status(500).json({ error: 'Failed to query MAC-relevant actions: ' + err.message })
+      return res.status(500).json({ error: 'Failed to query template: ' + (err?.message || 'Template not found') })
     }
 
-    const macActionCodes = new Set(macActions.map(a => a.action_code))
+    // Step 2: Parse json_structure to find MAC-tagged line items
+    let lineItems
+    try {
+      const parsed = JSON.parse(template.json_structure)
+      // Support both line_items (stored format) and lineItems (legacy format)
+      lineItems = parsed.line_items || parsed.lineItems || []
+    } catch (e) {
+      db.close()
+      return res.status(500).json({ error: 'Failed to parse template structure' })
+    }
 
-    const sql = `
-      SELECT
-        sr.what_if_combination,
-        sr.period_id,
-        sr.line_item_code,
-        sr.value
-      FROM statement_result sr
-      WHERE sr.scenario_id = ?
-        AND sr.entity_id = ?
-        AND sr.period_id BETWEEN ? AND ?
-        AND sr.line_item_code IN ('SCOPE1_EMISSIONS', 'SCOPE2_EMISSIONS', 'SCOPE3_EMISSIONS', 'NET_INCOME')
-      ORDER BY sr.what_if_combination, sr.period_id, sr.line_item_code
+    const macNumeratorCodes = lineItems.filter(item => item.is_mac_numerator).map(item => item.code)
+    const macDenominatorCodes = lineItems.filter(item => item.is_mac_denominator).map(item => item.code)
+
+    if (macNumeratorCodes.length === 0 || macDenominatorCodes.length === 0) {
+      db.close()
+      return res.status(400).json({ error: 'No MAC numerator or denominator tagged in template. Please tag line items in Define Statements.' })
+    }
+
+    // Step 3: Get the list of MAC-relevant action codes
+    const macActionsQuery = `
+      SELECT action_code
+      FROM management_action
+      WHERE is_mac_relevant = 1
     `
 
-    db.all(sql, [scenarioId, entityId, startPeriod, endPeriod], (err, rows) => {
-    if (err) {
-      db.close()
-      return res.status(500).json({ error: 'Database query failed: ' + err.message })
-    }
+    db.all(macActionsQuery, [], (err, macActions) => {
+      if (err) {
+        db.close()
+        return res.status(500).json({ error: 'Failed to query MAC-relevant actions: ' + err.message })
+      }
 
-    // Group by combination
-    const combinationData = {}
-    rows.forEach(row => {
-      const combo = row.what_if_combination || ''
-      if (!combinationData[combo]) {
-        combinationData[combo] = {
-          scope1: 0,
-          scope2: 0,
-          scope3: 0,
-          netIncome: 0
+      const macActionCodes = new Set(macActions.map(a => a.action_code))
+
+      // Step 4: Build dynamic SQL with tagged line item codes
+      const allMacCodes = [...macNumeratorCodes, ...macDenominatorCodes]
+      const placeholders = allMacCodes.map(() => '?').join(',')
+
+      const sql = `
+        SELECT
+          sr.what_if_combination,
+          sr.period_id,
+          sr.line_item_code,
+          sr.value
+        FROM statement_result sr
+        WHERE sr.scenario_id = ?
+          AND sr.entity_id = ?
+          AND sr.period_id BETWEEN ? AND ?
+          AND sr.line_item_code IN (${placeholders})
+        ORDER BY sr.what_if_combination, sr.period_id, sr.line_item_code
+      `
+
+      const params = [scenarioId, entityId, startPeriod, endPeriod, ...allMacCodes]
+
+      db.all(sql, params, (err, rows) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Database query failed: ' + err.message })
         }
-      }
 
-      // Sum up values across periods
-      if (row.line_item_code === 'SCOPE1_EMISSIONS') {
-        combinationData[combo].scope1 += row.value
-      } else if (row.line_item_code === 'SCOPE2_EMISSIONS') {
-        combinationData[combo].scope2 += row.value
-      } else if (row.line_item_code === 'SCOPE3_EMISSIONS') {
-        combinationData[combo].scope3 += row.value
-      } else if (row.line_item_code === 'NET_INCOME') {
-        combinationData[combo].netIncome += row.value
-      }
-    })
+        console.log(`\n=== MAC Calculation Debug ===`)
+        console.log(`Query returned ${rows.length} rows`)
+        console.log(`MAC Numerator codes: ${JSON.stringify(macNumeratorCodes)}`)
+        console.log(`MAC Denominator codes: ${JSON.stringify(macDenominatorCodes)}`)
+        console.log(`First 5 rows:`, rows.slice(0, 5))
 
-    // Find base case (no actions = empty combination)
-    const baseCase = combinationData[''] || combinationData['BASE'] || combinationData['NONE'] || null
-    if (!baseCase) {
-      db.close()
-      return res.status(400).json({ error: 'Base case (no actions) not found in results' })
-    }
+        // Step 5: Group by combination and accumulate numerator/denominator values
+        const combinationData = {}
+        rows.forEach(row => {
+          const combo = row.what_if_combination || ''
+          if (!combinationData[combo]) {
+            combinationData[combo] = {
+              numerator: 0,      // Cost (e.g. lost net income)
+              denominator: 0      // Carbon (e.g. total emissions)
+            }
+          }
 
-    const baseTotalCarbon = baseCase.scope1 + baseCase.scope2 + baseCase.scope3
-    const baseNetIncome = baseCase.netIncome
+          // Sum up values across periods
+          if (macNumeratorCodes.includes(row.line_item_code)) {
+            combinationData[combo].numerator += row.value
+          } else if (macDenominatorCodes.includes(row.line_item_code)) {
+            combinationData[combo].denominator += row.value
+          }
+        })
 
-    // Calculate MAC for each single-action combination
-    const macResults = []
-    Object.keys(combinationData).forEach(combo => {
-      if (!combo || combo === '' || combo === 'BASE' || combo === 'NONE') return // Skip base case
+        console.log(`\nCombination data keys: ${JSON.stringify(Object.keys(combinationData))}`)
+        console.log(`Combination data:`, combinationData)
 
-      // Check if this is a single-action combination (no + signs)
-      if (combo.includes('+')) return // Skip multi-action combinations
+        // Step 6: Find base case (no actions = empty combination)
+        const baseCase = combinationData[''] || combinationData['BASE'] || combinationData['NONE'] || null
+        if (!baseCase) {
+          db.close()
+          return res.status(400).json({ error: 'Base case (no actions) not found in results' })
+        }
 
-      // Check if this action is MAC-relevant
-      if (!macActionCodes.has(combo)) return // Skip non-MAC-relevant actions
+        const baseNumerator = baseCase.numerator
+        const baseDenominator = baseCase.denominator
 
-      const data = combinationData[combo]
-      const totalCarbon = data.scope1 + data.scope2 + data.scope3
-      const netIncome = data.netIncome
+        // Step 7: Calculate MAC for each single-action combination
+        const macResults = []
+        Object.keys(combinationData).forEach(combo => {
+          if (!combo || combo === '' || combo === 'BASE' || combo === 'NONE') return // Skip base case
 
-      // Calculate deltas (positive = reduction/cost)
-      const carbonAbatement = baseTotalCarbon - totalCarbon  // Positive = carbon reduced
-      const cost = baseNetIncome - netIncome  // Positive = income reduced (cost)
+          // Check if this is a single-action combination (no + signs)
+          if (combo.includes('+')) return // Skip multi-action combinations
 
-      // Skip actions with zero carbon impact (can't calculate meaningful MAC)
-      if (carbonAbatement === 0) return
+          // Check if this action is MAC-relevant
+          if (!macActionCodes.has(combo)) return // Skip non-MAC-relevant actions
 
-      // Calculate MAC (cost per unit of carbon abatement)
-      const mac = cost / carbonAbatement
+          const data = combinationData[combo]
+          const numerator = data.numerator
+          const denominator = data.denominator
 
-      macResults.push({
-        action: combo,
-        carbonAbatement,
-        cost,
-        mac
+          // Calculate deltas (positive = reduction/cost)
+          const denominatorAbatement = baseDenominator - denominator  // Positive = denominator reduced (e.g., carbon reduced)
+          const cost = baseNumerator - numerator  // Positive = numerator reduced (e.g., income loss = cost)
+
+          // Skip actions with zero denominator impact (can't calculate meaningful MAC)
+          if (denominatorAbatement === 0) return
+
+          // Calculate MAC (cost per unit of denominator abatement)
+          const mac = cost / denominatorAbatement
+
+          macResults.push({
+            action: combo,
+            carbonAbatement: denominatorAbatement,  // Keep name for backwards compatibility
+            cost,
+            mac
+          })
+        })
+
+        // Sort by MAC (ascending - lowest cost per unit first)
+        macResults.sort((a, b) => a.mac - b.mac)
+
+        db.close()
+        res.json({
+          success: true,
+          baseCase: {
+            totalCarbon: baseDenominator,  // Keep name for backwards compatibility
+            netIncome: baseNumerator
+          },
+          macCurve: macResults
+        })
       })
     })
-
-    // Sort by MAC (ascending - lowest cost per tCO2e first)
-    macResults.sort((a, b) => a.mac - b.mac)
-
-    db.close()
-    res.json({
-      success: true,
-      baseCase: {
-        totalCarbon: baseTotalCarbon,
-        netIncome: baseNetIncome
-      },
-      macCurve: macResults
-    })
-  })
   })
 })
 

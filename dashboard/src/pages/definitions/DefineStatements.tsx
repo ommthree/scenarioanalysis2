@@ -17,6 +17,10 @@ interface LineItem {
   is_computed: boolean
   sign_convention: 'positive' | 'negative'
   dependencies?: string[]
+  is_mac_numerator?: boolean
+  is_mac_denominator?: boolean
+  is_roi_numerator?: boolean
+  is_roi_denominator?: boolean
 }
 
 interface TemplateMetadata {
@@ -135,7 +139,11 @@ export default function DefineStatements() {
       base_value_source: '',
       is_computed: false,
       sign_convention: 'positive',
-      dependencies: []
+      dependencies: [],
+      is_mac_numerator: false,
+      is_mac_denominator: false,
+      is_roi_numerator: false,
+      is_roi_denominator: false
     }
     setLineItems([...lineItems, newItem])
   }
@@ -147,6 +155,24 @@ export default function DefineStatements() {
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     const updated = [...lineItems]
     updated[index] = { ...updated[index], [field]: value }
+    setLineItems(updated)
+  }
+
+  // Handle tag changes with mutual exclusivity across all line items
+  const handleTagChange = (index: number, tagType: 'is_mac_numerator' | 'is_mac_denominator' | 'is_roi_numerator' | 'is_roi_denominator', checked: boolean) => {
+    const updated = [...lineItems]
+
+    if (checked) {
+      // Uncheck this tag type from all other line items (mutual exclusivity across all sections)
+      updated.forEach((item, i) => {
+        if (i !== index) {
+          item[tagType] = false
+        }
+      })
+    }
+
+    // Set the current item's tag
+    updated[index] = { ...updated[index], [tagType]: checked }
     setLineItems(updated)
   }
 
@@ -193,7 +219,11 @@ export default function DefineStatements() {
             base_value_source: item.base_value_source || '',
             is_computed: item.is_computed || false,
             sign_convention: item.sign_convention || 'positive',
-            dependencies: item.dependencies || []
+            dependencies: item.dependencies || [],
+            is_mac_numerator: item.is_mac_numerator || false,
+            is_mac_denominator: item.is_mac_denominator || false,
+            is_roi_numerator: item.is_roi_numerator || false,
+            is_roi_denominator: item.is_roi_denominator || false
           })))
 
           setSaveMessage('Template imported successfully')
@@ -575,6 +605,52 @@ export default function DefineStatements() {
                                     <option value="positive">Positive</option>
                                     <option value="negative">Negative</option>
                                   </select>
+                                </div>
+                                {/* MAC/ROI Tagging */}
+                                <div style={{ gridColumn: '1 / -1', marginTop: '16px', padding: '16px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                                  <label className="text-sm font-medium" style={{ color: '#60a5fa', display: 'block', marginBottom: '12px' }}>Analysis Tags (one per type across all sections)</label>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#cbd5e1' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={item.is_mac_numerator || false}
+                                          onChange={(e) => handleTagChange(index, 'is_mac_numerator', e.target.checked)}
+                                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#fb923c' }}
+                                        />
+                                        MAC Numerator (Cost)
+                                      </label>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#cbd5e1' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={item.is_mac_denominator || false}
+                                          onChange={(e) => handleTagChange(index, 'is_mac_denominator', e.target.checked)}
+                                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#fb923c' }}
+                                        />
+                                        MAC Denominator (Carbon)
+                                      </label>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#cbd5e1' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={item.is_roi_numerator || false}
+                                          onChange={(e) => handleTagChange(index, 'is_roi_numerator', e.target.checked)}
+                                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#3b82f6' }}
+                                        />
+                                        ROI Numerator (Benefit)
+                                      </label>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#cbd5e1' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={item.is_roi_denominator || false}
+                                          onChange={(e) => handleTagChange(index, 'is_roi_denominator', e.target.checked)}
+                                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#3b82f6' }}
+                                        />
+                                        ROI Denominator (Investment)
+                                      </label>
+                                    </div>
+                                  </div>
                                 </div>
                                 <div>
                                   <label className="text-sm font-medium text-muted-foreground">Derived Mode</label>

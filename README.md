@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-29 (Session 9 - Monte Carlo Results Panel)
+**Last Updated:** 2025-10-30 (Session 11 - Configurable MAC Tagging)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, MAC curve analysis, and Monte Carlo results visualization
+**Status:** Production-ready with What-If Mode, configurable MAC curve analysis, and Monte Carlo results visualization
 
 ---
 
@@ -267,32 +267,44 @@ See `docs/validation.md` for complete details and `docs/arch_improve.md` for fut
 
 ---
 
-## 💰 MAC Curve Analysis (Session 10 - Complete)
+## 💰 MAC Curve Analysis (Session 10-11 - Complete with Configurable Tagging)
 
 **Feature:** Marginal Abatement Cost (MAC) curves for prioritizing decarbonization actions by cost-effectiveness.
 
 ### How It Works
 
-1. **MAC Mode Toggle** (orange-themed, only visible in what-if mode):
+1. **Configure MAC Line Items** (DefineStatements.tsx):
+   - Navigate to Define Statements page
+   - Blue-themed tagging panel with 4 checkbox options per line item:
+     - **MAC Numerator (Cost):** Typically NET_INCOME - economic impact of action
+     - **MAC Denominator (Carbon):** Typically TOTAL_EMISSIONS - carbon impact of action
+     - **ROI Numerator (Benefit):** Future use for return on investment analysis
+     - **ROI Denominator (Investment):** Future use for return on investment analysis
+   - Mutual exclusivity: Only one line item can be tagged as each type across all statement sections
+   - Checking one box automatically unchecks all other items of that type
+   - Save template to persist configuration
+
+2. **MAC Mode Toggle** (orange-themed, only visible in what-if mode):
    - Appears next to Absolute/Delta controls in ViewResults.tsx
    - Enables MAC curve calculation and display
 
-2. **Period Range Selector**:
+3. **Period Range Selector**:
    - Dual-handle slider at bottom of results page
    - Select start and end periods for MAC calculation
    - Visual orange highlight shows selected range
 
-3. **MAC Calculation** (backend endpoint: `GET /api/results/mac-curve`):
+4. **MAC Calculation** (backend endpoint: `GET /api/results/mac-curve`):
+   - Dynamically queries tagged line items from statement_template.json_structure
    - For each MAC-relevant action (where `is_mac_relevant = 1`):
      - Compare single-action case vs BASE case
-     - Calculate ΔCarbon = Base Carbon - Action Carbon (over selected periods)
-     - Calculate ΔCost = Base Net Income - Action Net Income (over selected periods)
-     - Calculate MAC = ΔCost / ΔCarbon ($/tCO₂e)
-   - Filter: Skips BASE, multi-action combinations, non-MAC-relevant actions, zero carbon impact
+     - Calculate ΔNumerator = Base Numerator - Action Numerator (over selected periods)
+     - Calculate ΔDenominator = Base Denominator - Action Denominator (over selected periods)
+     - Calculate MAC = ΔNumerator / ΔDenominator (e.g., $/tCO₂e)
+   - Filter: Skips BASE, multi-action combinations, non-MAC-relevant actions, zero impact
    - Sort by MAC ascending (best cost-effectiveness first)
 
-4. **Results Display**:
-   - Table with columns: Action | Carbon Abatement (tCO₂e) | Cost Impact ($) | MAC ($/tCO₂e)
+5. **Results Display**:
+   - Table with columns: Action | Abatement (denominator units) | Cost Impact (numerator units) | MAC (ratio)
    - Color-coded: Green (profitable, MAC < 0), Orange (moderate cost, 0-50), Red (expensive, >50)
    - Sign convention: Positive abatement = reduction (good), Positive cost = income loss (expense)
 
@@ -302,14 +314,17 @@ See `docs/validation.md` for complete details and `docs/arch_improve.md` for fut
 - **Budget Optimization:** Identify profitable actions (negative MAC) first
 - **Scenario Comparison:** Compare MAC curves across different scenarios (RCP 2.6 vs RCP 8.5)
 - **Net Zero Planning:** Find least-cost pathway to emissions targets
+- **Custom Metrics:** Tag any line items (e.g., CAPEX/REVENUE for ROI analysis, WATER_USE/OPEX for resource efficiency)
 
 ### Technical Details
 
 - **Frontend:** `ViewResults.tsx` MAC mode toggle and period selector (lines 732-1510)
-- **Backend:** `GET /api/results/mac-curve` endpoint (index.js:6845-6984)
-- **Database:** Uses `management_action.is_mac_relevant` field for filtering
-- **Calculation:** MAC = (Base Income - Action Income) / (Base Carbon - Action Carbon)
-- **Period Range:** Sums ΔCarbon and ΔCost over selected periods only
+- **Frontend:** `DefineStatements.tsx` tagging UI with mutual exclusivity logic (lines 161-177, 609-654)
+- **Backend:** `GET /api/results/mac-curve` endpoint (index.js:6850-7023) - fully dynamic, no hardcoded line items
+- **Backend:** Template parsing supports both snake_case (line_items) and camelCase (lineItems) formats
+- **Database:** Uses `management_action.is_mac_relevant` field for filtering, reads template tags from json_structure
+- **Calculation:** MAC = ΔNumerator / ΔDenominator (flexible based on tagged line items)
+- **Period Range:** Sums ΔNumerator and ΔDenominator over selected periods only
 
 ---
 
@@ -394,6 +409,6 @@ See `docs/docu/md.md` for complete documentation index including:
 
 ---
 
-**Last Updated:** 2025-10-29
+**Last Updated:** 2025-10-30
 **Maintainer:** Development Team
 **For Questions:** Refer to documentation files listed above first
