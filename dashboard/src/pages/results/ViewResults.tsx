@@ -1534,6 +1534,193 @@ export default function ViewResults() {
                 </div>
               )}
 
+              {/* MAC Curve Visualization */}
+              {!macLoading && macResults.length > 0 && (() => {
+                // Calculate cumulative carbon abatement and find min/max MAC for scaling
+                let cumulativeCarbon = 0
+                const chartData = macResults.map(result => {
+                  const start = cumulativeCarbon
+                  cumulativeCarbon += result.carbonAbatement
+                  return {
+                    ...result,
+                    startX: start,
+                    endX: cumulativeCarbon
+                  }
+                })
+
+                const maxCarbon = cumulativeCarbon
+                const minMAC = Math.min(...macResults.map(r => r.mac === null ? 0 : r.mac))
+                const maxMAC = Math.max(...macResults.map(r => r.mac === null ? 0 : r.mac))
+
+                // Add padding to y-axis
+                const yPadding = Math.max(Math.abs(minMAC), Math.abs(maxMAC)) * 0.1
+                const yMin = minMAC - yPadding
+                const yMax = maxMAC + yPadding
+                const yRange = yMax - yMin
+
+                const chartWidth = 800
+                const chartHeight = 400
+                const margin = { top: 40, right: 40, bottom: 60, left: 80 }
+                const plotWidth = chartWidth - margin.left - margin.right
+                const plotHeight = chartHeight - margin.top - margin.bottom
+
+                return (
+                  <div style={{ marginTop: '32px', marginBottom: '24px' }}>
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: '#f97316',
+                      marginBottom: '16px',
+                      textAlign: 'center'
+                    }}>
+                      MAC Curve Visualization
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'center', overflowX: 'auto' }}>
+                      <svg width={chartWidth} height={chartHeight} style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px' }}>
+                        {/* Y-axis */}
+                        <line
+                          x1={margin.left}
+                          y1={margin.top}
+                          x2={margin.left}
+                          y2={chartHeight - margin.bottom}
+                          stroke="#64748b"
+                          strokeWidth="2"
+                        />
+                        {/* X-axis */}
+                        <line
+                          x1={margin.left}
+                          y1={chartHeight - margin.bottom}
+                          x2={chartWidth - margin.right}
+                          y2={chartHeight - margin.bottom}
+                          stroke="#64748b"
+                          strokeWidth="2"
+                        />
+
+                        {/* Zero line */}
+                        {yMin < 0 && yMax > 0 && (
+                          <line
+                            x1={margin.left}
+                            y1={margin.top + plotHeight * (1 - (0 - yMin) / yRange)}
+                            x2={chartWidth - margin.right}
+                            y2={margin.top + plotHeight * (1 - (0 - yMin) / yRange)}
+                            stroke="#94a3b8"
+                            strokeWidth="1"
+                            strokeDasharray="4 4"
+                          />
+                        )}
+
+                        {/* Y-axis labels */}
+                        {[...Array(6)].map((_, i) => {
+                          const value = yMin + (yRange * i / 5)
+                          const y = margin.top + plotHeight * (1 - i / 5)
+                          return (
+                            <g key={i}>
+                              <line
+                                x1={margin.left - 5}
+                                y1={y}
+                                x2={margin.left}
+                                y2={y}
+                                stroke="#64748b"
+                                strokeWidth="1"
+                              />
+                              <text
+                                x={margin.left - 10}
+                                y={y}
+                                textAnchor="end"
+                                alignmentBaseline="middle"
+                                fill="#94a3b8"
+                                fontSize="11px"
+                                fontFamily="monospace"
+                              >
+                                {value.toFixed(0)}
+                              </text>
+                            </g>
+                          )
+                        })}
+
+                        {/* Y-axis label */}
+                        <text
+                          x={margin.left - 60}
+                          y={chartHeight / 2}
+                          textAnchor="middle"
+                          fill="#f97316"
+                          fontSize="13px"
+                          fontWeight="700"
+                          transform={`rotate(-90, ${margin.left - 60}, ${chartHeight / 2})`}
+                        >
+                          MAC ($/tCO₂e)
+                        </text>
+
+                        {/* X-axis label */}
+                        <text
+                          x={chartWidth / 2}
+                          y={chartHeight - 10}
+                          textAnchor="middle"
+                          fill="#f97316"
+                          fontSize="13px"
+                          fontWeight="700"
+                        >
+                          Cumulative Carbon Abatement (tCO₂e)
+                        </text>
+
+                        {/* MAC bars */}
+                        {chartData.map((item, index) => {
+                          if (item.mac === null) return null
+
+                          const x = margin.left + (item.startX / maxCarbon) * plotWidth
+                          const width = ((item.endX - item.startX) / maxCarbon) * plotWidth
+                          const macNormalized = (item.mac - yMin) / yRange
+                          const zeroNormalized = (0 - yMin) / yRange
+
+                          let barY, barHeight
+                          if (item.mac >= 0) {
+                            // Positive MAC: bar goes from zero line up
+                            barY = margin.top + plotHeight * (1 - macNormalized)
+                            barHeight = plotHeight * (macNormalized - zeroNormalized)
+                          } else {
+                            // Negative MAC: bar goes from zero line down
+                            barY = margin.top + plotHeight * (1 - zeroNormalized)
+                            barHeight = plotHeight * (zeroNormalized - macNormalized)
+                          }
+
+                          const color = item.mac < 0 ? '#10b981' : item.mac < 50 ? '#f97316' : '#ef4444'
+
+                          const centerX = x + width / 2
+                          const textY = item.mac >= 0 ? barY - 5 : barY + Math.abs(barHeight) + 15
+
+                          return (
+                            <g key={index}>
+                              <rect
+                                x={x}
+                                y={barY}
+                                width={width}
+                                height={Math.abs(barHeight)}
+                                fill={color}
+                                opacity="0.8"
+                                stroke="rgba(255, 255, 255, 0.3)"
+                                strokeWidth="1"
+                              />
+                              <title>{`${item.action}\nCarbon: ${item.carbonAbatement.toLocaleString()} tCO₂e\nMAC: $${item.mac.toFixed(2)}/tCO₂e`}</title>
+                              {/* Action label */}
+                              <text
+                                x={centerX}
+                                y={textY}
+                                textAnchor="middle"
+                                fill="#e2e8f0"
+                                fontSize="10px"
+                                fontWeight="600"
+                              >
+                                {item.action}
+                              </text>
+                            </g>
+                          )
+                        })}
+                      </svg>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <div style={{
                 fontSize: '12px',
                 color: '#64748b',
