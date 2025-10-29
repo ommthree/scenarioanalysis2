@@ -249,6 +249,14 @@ Archived Background (docs/archive/):
 - Updated all documentation (schema.md, codefiles.md, SYSTEM_GUIDE.md, README.md)
 - Full audit trail with staging_metadata table tracking all staging operations
 
+**2025-10-29 (Session 9 - Monte Carlo Results Panel):**
+- Implemented MC Results Panel: purple-themed panel in ViewResults showing mean values across MC draws
+- Added `/api/results/mc-summary` endpoint: calculates AVG(value) from mc_statement_result table
+- MC panel appears automatically when stochasticMode=true in localStorage (set after MC calculation)
+- Panel displays structured financial statements (P&L, BS, CF sections) for MC period only
+- Fixed MC period semantics: slider value = actual MC period (removed confusing +1 offset)
+- Updated C++ engine (run_calculation.cpp): MC draws at mc_start_period, deterministic stops before mc_start_period
+
 **2025-10-26 (Session 2 - Validation Completion):**
 - Created arch_improve.md: 60-80 hour implementation plan for architectural issues 11-15 (2650 lines)
 - Completed validation work: 9 of 10 issues resolved (all CRITICAL/HIGH/MEDIUM fixed)

@@ -385,7 +385,7 @@ export default function PerformCalculation() {
 
         // Step 3c: Run Monte Carlo loop for numDraws iterations
         if (verbosity !== 'quiet') {
-          addLog('info', `Monte Carlo Loop: Running ${numDraws} simulation draws from period ${mcStartPeriod + 1}`)
+          addLog('info', `Monte Carlo Loop: Running ${numDraws} simulation draws from period ${mcStartPeriod}`)
         }
 
         // Loop over all Monte Carlo draws
@@ -609,7 +609,8 @@ export default function PerformCalculation() {
       // Save post-run flags
       localStorage.setItem('lastRunMode', JSON.stringify({
         stochasticMode,
-        whatIfMode
+        whatIfMode,
+        mcStartPeriod
       }))
 
     } catch (err) {

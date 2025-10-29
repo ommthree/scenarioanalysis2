@@ -63,7 +63,7 @@ export default function ViewResults() {
   const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set())
   const [driverData, setDriverData] = useState<Map<string, DriverContribution[]>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [lastRunMode, setLastRunMode] = useState<{ stochasticMode: boolean; whatIfMode: boolean } | null>(null)
+  const [lastRunMode, setLastRunMode] = useState<{ stochasticMode: boolean; whatIfMode: boolean; mcStartPeriod?: number } | null>(null)
 
   // What-if mode controls
   const [displayMode, setDisplayMode] = useState<'absolute' | 'delta'>('absolute')
@@ -85,6 +85,14 @@ export default function ViewResults() {
   }
   const [macResults, setMacResults] = useState<MacResult[]>([])
   const [macLoading, setMacLoading] = useState(false)
+
+  // MC results data
+  interface McLineItem {
+    code: string
+    meanValue: number
+  }
+  const [mcResults, setMcResults] = useState<{mcPeriod: number; numDraws: number; lineItems: McLineItem[]} | null>(null)
+  const [mcLoading, setMcLoading] = useState(false)
 
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
@@ -136,6 +144,13 @@ export default function ViewResults() {
       loadMacCurve()
     }
   }, [macModeActive, macStartPeriod, macEndPeriod, currentScenario, currentEntity])
+
+  // Load MC results when stochastic mode was used
+  useEffect(() => {
+    if (lastRunMode?.stochasticMode && currentScenario !== null && currentEntity !== null && periods.length > 0) {
+      loadMcResults()
+    }
+  }, [lastRunMode, currentScenario, currentEntity, periods])
 
   const loadScenarios = async () => {
     const dbPath = getDefaultDbPath()
@@ -214,6 +229,39 @@ export default function ViewResults() {
       setMacResults([])
     } finally {
       setMacLoading(false)
+    }
+  }
+
+  const loadMcResults = async () => {
+    if (currentScenario === null || currentEntity === null || periods.length === 0) return
+
+    setMcLoading(true)
+    const dbPath = getDefaultDbPath()
+
+    // MC period is exactly mcStartPeriod (slider value = actual MC period)
+    const mcStartPeriod = lastRunMode?.mcStartPeriod || 3
+    const mcPeriod = mcStartPeriod
+
+    try {
+      const url = apiUrl(`/api/results/mc-summary?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&periodId=${mcPeriod}&entityId=${currentEntity}`)
+      const response = await fetch(url)
+      const data = await response.json()
+
+      if (data.success && data.lineItems) {
+        setMcResults({
+          mcPeriod: data.mcPeriod,
+          numDraws: data.numDraws,
+          lineItems: data.lineItems
+        })
+      } else {
+        logger.error('Failed to load MC results:', data.error)
+        setMcResults(null)
+      }
+    } catch (error) {
+      logger.error('Error loading MC results:', error)
+      setMcResults(null)
+    } finally {
+      setMcLoading(false)
     }
   }
 
@@ -1505,6 +1553,166 @@ export default function ViewResults() {
                 • <strong style={{ color: '#10b981' }}>Negative MAC</strong> = Carbon reduction + income gain (best)
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Monte Carlo Results Panel - Shows only MC period with detailed financial statement structure */}
+      {lastRunMode?.stochasticMode && mcResults && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(168, 85, 247, 0.5)',
+          marginTop: '24px'
+        }}>
+          <CardContent style={{ padding: '24px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '24px',
+              paddingBottom: '16px',
+              borderBottom: '2px solid rgba(168, 85, 247, 0.3)'
+            }}>
+              <span style={{ fontSize: '24px' }}>📊</span>
+              <h2 style={{
+                fontSize: '20px',
+                fontWeight: '600',
+                color: '#e9d5ff',
+                margin: 0
+              }}>
+                Monte Carlo Results - Period {mcResults.mcPeriod}
+              </h2>
+              <span style={{
+                padding: '4px 12px',
+                backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                border: '1px solid rgba(168, 85, 247, 0.4)',
+                borderRadius: '4px',
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#e9d5ff'
+              }}>
+                {mcResults.numDraws} draws
+              </span>
+              {currentEntity && entities.length > 0 && (
+                <span style={{ color: '#c4b5fd', fontSize: '16px', fontWeight: '400', marginLeft: '12px' }}>
+                  {findEntityInTree(entities, currentEntity)?.name || ''}
+                </span>
+              )}
+            </div>
+
+            <div style={{
+              fontSize: '14px',
+              color: '#c4b5fd',
+              marginBottom: '20px',
+              lineHeight: '1.6'
+            }}>
+              Mean values across {mcResults.numDraws} Monte Carlo simulation draws. These represent the average financial outcomes under stochastic conditions.
+            </div>
+
+            {mcLoading ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '40px',
+                color: '#94a3b8'
+              }}>
+                Loading Monte Carlo results...
+              </div>
+            ) : (
+              (() => {
+                // Group MC results by section similar to multi-year results
+                const mcSectionMap = new Map<string, Array<{code: string, meanValue: number, display_name: string, is_computed: boolean, sign_convention: string}>>()
+
+                mcResults.lineItems.forEach(item => {
+                  // Find the line item definition to get section and display info
+                  for (const section of sections) {
+                    const lineItem = section.items.find(li => li.code === item.code)
+                    if (lineItem) {
+                      if (!mcSectionMap.has(section.name)) {
+                        mcSectionMap.set(section.name, [])
+                      }
+                      mcSectionMap.get(section.name)!.push({
+                        code: item.code,
+                        meanValue: item.meanValue,
+                        display_name: lineItem.display_name,
+                        is_computed: lineItem.is_computed,
+                        sign_convention: lineItem.sign_convention
+                      })
+                      break
+                    }
+                  }
+                })
+
+                return Array.from(mcSectionMap.entries()).map(([sectionName, items]) => (
+                  <div key={sectionName} style={{ marginBottom: '24px' }}>
+                    {/* Section Header */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px 16px',
+                      backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                      borderRadius: '8px',
+                      marginBottom: '8px'
+                    }}>
+                      <span style={{
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        color: '#c084fc',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                      }}>
+                        {sectionName}
+                      </span>
+                    </div>
+
+                    {/* Line Items */}
+                    <div style={{ paddingLeft: '32px' }}>
+                      {items.map((item) => (
+                        <div
+                          key={item.code}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 16px',
+                            borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
+                            backgroundColor: item.is_computed ? 'rgba(168, 85, 247, 0.05)' : 'transparent'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{
+                              fontSize: '14px',
+                              color: '#c4b5fd',
+                              fontFamily: 'monospace',
+                              minWidth: '120px'
+                            }}>
+                              {item.code}
+                            </span>
+                            <span style={{
+                              fontSize: '14px',
+                              color: '#fff',
+                              fontWeight: item.is_computed ? '600' : '400'
+                            }}>
+                              {item.display_name}
+                            </span>
+                          </div>
+                          <span style={{
+                            fontSize: '16px',
+                            color: (item.sign_convention === 'negative' || item.meanValue < 0) ? '#f87171' : '#86efac',
+                            fontWeight: '600',
+                            fontFamily: 'monospace',
+                            minWidth: '150px',
+                            textAlign: 'right'
+                          }}>
+                            {(item.sign_convention === 'negative' || item.meanValue < 0) ? '(' : ''}{formatValue(Math.abs(item.meanValue))}{(item.sign_convention === 'negative' || item.meanValue < 0) ? ')' : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              })()
+            )}
           </CardContent>
         </Card>
       )}

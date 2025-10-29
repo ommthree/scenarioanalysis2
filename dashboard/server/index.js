@@ -6989,6 +6989,61 @@ app.get('/api/results/mac-curve', (req, res) => {
 })
 
 /**
+ * Get Monte Carlo results summary (mean across draws for MC period)
+ * GET /api/results/mc-summary
+ * Query params: dbPath, scenarioId, period, entityId
+ */
+app.get('/api/results/mc-summary', (req, res) => {
+  const { dbPath, scenarioId, periodId, entityId } = req.query
+
+  if (!dbPath || !scenarioId || !periodId || !entityId) {
+    return res.status(400).json({ error: 'Missing required parameters' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Query MC results and calculate mean for each line item
+  const sql = `
+    SELECT
+      line_item_code,
+      AVG(value) as mean_value,
+      COUNT(DISTINCT draw_number) as num_draws
+    FROM mc_statement_result
+    WHERE scenario_id = ?
+      AND period_id = ?
+      AND entity_id = ?
+    GROUP BY line_item_code
+    ORDER BY line_item_code
+  `
+
+  db.all(sql, [scenarioId, periodId, entityId], (err, rows) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: 'Database query failed: ' + err.message })
+    }
+
+    db.close()
+    res.json({
+      success: true,
+      mcPeriod: parseInt(periodId),
+      numDraws: rows.length > 0 ? rows[0].num_draws : 0,
+      lineItems: rows.map(row => ({
+        code: row.line_item_code,
+        meanValue: row.mean_value
+      }))
+    })
+  })
+})
+
+/**
  * Generate what-if combinations
  */
 app.post('/api/whatif/combinations', async (req, res) => {

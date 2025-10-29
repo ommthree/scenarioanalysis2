@@ -729,19 +729,19 @@ int main(int argc, char* argv[]) {
 
             // Process each period
             for (int period_id : periods) {
-                // Monte Carlo Draw Mode: Only calculate the stochastic period (mc_start_period + 1)
-                // Deterministic Mode: Calculate periods 0 through mc_start_period
+                // Monte Carlo Draw Mode: Only calculate the stochastic period (mc_start_period)
+                // Deterministic Mode: Calculate periods 0 through mc_start_period - 1
                 if (mc_start_period > 0) {
                     if (!mc_samples.empty()) {
-                        // MC Draw Mode (Cholesky file provided): Skip all periods except mc_start_period + 1
-                        if (period_id != mc_start_period + 1) {
+                        // MC Draw Mode (Cholesky file provided): Skip all periods except mc_start_period
+                        if (period_id != mc_start_period) {
                             continue;  // Skip this period
                         }
                         std::cout << "\n--- Period " << period_id << " (Monte Carlo Draw) ---" << std::endl;
                     } else {
-                        // Deterministic Mode (no Cholesky file): Stop after mc_start_period
-                        if (period_id > mc_start_period) {
-                            std::cout << "\n--- Stopping at period " << mc_start_period << " (deterministic baseline) ---" << std::endl;
+                        // Deterministic Mode (no Cholesky file): Stop before mc_start_period
+                        if (period_id >= mc_start_period) {
+                            std::cout << "\n--- Stopping at period " << (mc_start_period - 1) << " (deterministic baseline) ---" << std::endl;
                             break;
                         }
                         std::cout << "\n--- Period " << period_id << " ---" << std::endl;

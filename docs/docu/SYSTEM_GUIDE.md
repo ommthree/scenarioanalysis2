@@ -1,7 +1,7 @@
 # Financial Scenario Analysis System - Technical Guide
 
-**Version:** 2.0
-**Last Updated:** 2025-10-26
+**Version:** 2.1
+**Last Updated:** 2025-10-29
 **Status:** Production System
 **Target Audience:** Technical users, analysts, system administrators
 
@@ -1207,7 +1207,50 @@ Return: success, rows_ingested, errors[]
    - Multiple scenarios overlaid for comparison
    - Drill-down to period-specific details
 
-4. **Export**
+4. **Monte Carlo Results Panel** (when Stochastic Mode enabled)
+   ```
+   When a calculation is run with Stochastic Mode enabled:
+   ↓
+   Frontend saves: localStorage.setItem('lastRunMode', JSON.stringify({
+     stochasticMode: true,
+     mcStartPeriod: 3  // User-selected MC start period
+   }))
+   ↓
+   ViewResults page detects stochasticMode=true
+   ↓
+   GET /api/results/mc-summary?dbPath=...&scenarioId=42&periodId=3&entityId=ENTITY_001
+   ↓
+   API Server:
+     SELECT line_item_code, AVG(value) as mean_value, COUNT(DISTINCT draw_number) as num_draws
+     FROM mc_statement_result
+     WHERE scenario_id=42 AND period_id=3 AND entity_id='ENTITY_001'
+     GROUP BY line_item_code
+   ↓
+   Returns: {
+     success: true,
+     mcPeriod: 3,
+     numDraws: 100,
+     lineItems: [
+       {code: 'REVENUE', meanValue: 1234567.89},
+       {code: 'NET_INCOME', meanValue: 456789.12},
+       ...
+     ]
+   }
+   ↓
+   Display purple-themed MC Results Panel at bottom of page:
+     - Shows mean values across all MC draws for the MC period only
+     - Grouped by financial statement sections (P&L, BS, CF)
+     - Purple color scheme distinguishes from regular results
+     - Appears automatically when stochasticMode flag is present
+   ```
+
+   **MC Period Semantics:**
+   - MC Start Period slider value = actual MC calculation period (no offset)
+   - Example: Slider set to 3 → MC simulations run at period 3
+   - Deterministic calculation runs periods 0 through (mc_start_period - 1)
+   - MC draws calculate only the single MC period with correlated shocks
+
+5. **Export**
    ```
    User clicks "Export to CSV"
    ↓

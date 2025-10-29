@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-29 (Session 10 - MAC Curve Analysis Complete)
+**Last Updated:** 2025-10-29 (Session 9 - Monte Carlo Results Panel)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode and MAC curve analysis for decarbonization strategy optimization
+**Status:** Production-ready with What-If Mode, MAC curve analysis, and Monte Carlo results visualization
 
 ---
 
