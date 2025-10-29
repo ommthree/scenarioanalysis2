@@ -1,8 +1,8 @@
 # Financial Scenario Analysis System - Technical Guide
 
-**Version:** 2.1
-**Last Updated:** 2025-10-29
-**Status:** Production System
+**Version:** 2.2
+**Last Updated:** 2025-10-30
+**Status:** Production System with Interactive Monte Carlo Distribution Visualization
 **Target Audience:** Technical users, analysts, system administrators
 
 ---
@@ -1207,7 +1207,7 @@ Return: success, rows_ingested, errors[]
    - Multiple scenarios overlaid for comparison
    - Drill-down to period-specific details
 
-4. **Monte Carlo Results Panel** (when Stochastic Mode enabled)
+4. **Monte Carlo Results Panel with Interactive Distribution Visualization** (Session 13)
    ```
    When a calculation is run with Stochastic Mode enabled:
    ↓
@@ -1242,6 +1242,36 @@ Return: success, rows_ingested, errors[]
      - Grouped by financial statement sections (P&L, BS, CF)
      - Purple color scheme distinguishes from regular results
      - Appears automatically when stochasticMode flag is present
+     - **Click any line item** to show interactive frequency distribution
+   ```
+
+   **Interactive Distribution Drill-Down (Session 13):**
+   ```
+   User clicks line item (e.g., NET_INCOME) in MC Results Panel
+   ↓
+   GET /api/results/mc-distribution?dbPath=...&scenarioId=42&periodId=3&entityId=ENTITY_001&lineItemCode=NET_INCOME
+   ↓
+   API Server (index.js:7309-7409):
+     SELECT draw_number, value FROM mc_statement_result
+     WHERE scenario_id=42 AND period_id=3 AND entity_id='ENTITY_001' AND line_item_code='NET_INCOME'
+     ORDER BY draw_number
+
+     Calculate statistics:
+       mean = Σ(values) / n
+       std = √(Σ(value - mean)² / n)
+       skewness = (Σ(value - mean)³ / n) / std³
+       kurtosis = (Σ(value - mean)⁴ / n) / std⁴ - 3
+       percentiles = [P5, P25, P50, P75, P95] via linear interpolation
+   ↓
+   Returns: {draws: [...], statistics: {mean, std, skew, kurtosis, min, max}, percentiles: {p5, p25, p50, p75, p95}}
+   ↓
+   Display distribution panel below table (ViewResults.tsx:2662-2961):
+     - KDE curve with Gaussian kernel (Silverman's bandwidth: 1.06 * σ * n^(-0.2))
+     - Multi-color gradient: red→orange→purple→blue→green
+     - Individual draw markers positioned on curve (interpolated from KDE points)
+     - Interactive percentile lines (P5, P25, P50, P75, P95) with extended full-height hover areas
+     - Statistics panel: mean, median, std dev, skewness, kurtosis
+     - Zero variance protection: friendly message when all draws identical
    ```
 
    **MC Period Semantics:**
@@ -2129,7 +2159,76 @@ Database errors: SQLite error codes in API responses
 
 ---
 
-**Document Version:** 2.1
-**Last Updated:** 2025-10-29 (Session 12 - ROI Mode & MAC Methodology)
+## Appendix D: Monte Carlo Distribution Visualization (Session 13)
+
+### Overview
+
+The Monte Carlo Distribution Visualization feature provides interactive drill-down analysis of MC simulation results, enabling users to visualize the full frequency distribution of any line item.
+
+### Methodology
+
+**Kernel Density Estimation (KDE):**
+- **Algorithm:** Gaussian kernel with Silverman's bandwidth rule
+- **Bandwidth:** h = 1.06 * σ * n^(-0.2)
+- **Grid Points:** 200 evaluation points between min and max values
+- **Kernel Function:** K(z) = (1/√(2π)) * exp(-0.5 * z²)
+- **Density:** ρ(x) = (1/nh) * Σ K((x - xᵢ)/h)
+
+**Statistics Calculated:**
+- **Mean:** μ = Σxᵢ / n
+- **Standard Deviation:** σ = √(Σ(xᵢ - μ)² / n)
+- **Skewness:** γ₁ = (Σ(xᵢ - μ)³ / n) / σ³
+- **Kurtosis (Excess):** γ₂ = (Σ(xᵢ - μ)⁴ / n) / σ⁴ - 3
+- **Percentiles:** P5, P25, P50 (median), P75, P95 via linear interpolation
+
+**Visualization Features:**
+- **KDE Curve:** Smooth probability density function fitted to MC draws
+- **Draw Markers:** Individual draws positioned on KDE curve (interpolated y-coordinate)
+- **Color Gradient:** Red (low) → Orange → Purple → Blue → Green (high)
+- **Interactive Percentiles:** Extended hit areas cover full chart height for better UX
+- **Zero Variance Protection:** Shows friendly message when std = 0 (all draws identical)
+
+### Use Cases
+
+**Risk Assessment:**
+- Visualize tail risks and extreme outcomes (P5/P95 range)
+- Identify asymmetric risks via skewness metric
+- Detect fat tails via kurtosis metric
+
+**Sensitivity Analysis:**
+- Compare distributions across different line items
+- Identify which metrics have highest variance (uncertainty)
+- Prioritize risk mitigation efforts
+
+**Distribution Shape Analysis:**
+- **Skewness:**
+  - Negative: Left tail longer (downside risk)
+  - Positive: Right tail longer (upside opportunity)
+  - Zero: Symmetric distribution
+- **Kurtosis:**
+  - Positive: Fat tails (extreme events more likely)
+  - Negative: Thin tails (extreme events less likely)
+  - Zero: Normal distribution tails
+
+### Technical Implementation
+
+**Backend:** `GET /api/results/mc-distribution` (index.js:7309-7409)
+- Query all draw values from `mc_statement_result` table
+- Calculate summary statistics (mean, std, skew, kurtosis)
+- Calculate percentiles via linear interpolation
+- Return structured JSON with draws, statistics, percentiles
+
+**Frontend:** ViewResults.tsx (lines 2662-2961)
+- Render on line item click in MC Results Panel
+- Calculate KDE using Gaussian kernel
+- Position draw markers via interpolation onto KDE curve
+- Render SVG with gradients, percentile lines, statistics panel
+- Handle hover interactions with extended hit areas
+- Protect against zero variance edge case
+
+---
+
+**Document Version:** 2.2
+**Last Updated:** 2025-10-30 (Session 13 - Interactive Monte Carlo Distribution Visualization)
 **Maintained By:** Development Team
 **Next Review:** After major feature additions

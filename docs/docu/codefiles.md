@@ -1,8 +1,19 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-10-28
+**Last Updated:** 2025-10-30
 **Total Files:** 79 (27 C++ source, 28 C++ headers, 49 TypeScript/React, 4 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with What-If Mode
+**Status:** Production - Unified Engine Architecture with What-If Mode and Interactive MC Distribution Visualization
+
+**Recent Changes (2025-10-30):**
+- ✅ Added interactive Monte Carlo distribution visualization (Session 13)
+- ✅ Added GET /api/results/mc-distribution endpoint in index.js (lines 7309-7409)
+- ✅ Updated ViewResults.tsx with KDE curve visualization (lines 2662-2961)
+- ✅ Added React state for hover interactions (hoveredDraw, hoverPos, hoveredPercentile at lines 137-139)
+- ✅ Implemented Gaussian KDE with Silverman's bandwidth rule
+- ✅ Interactive percentile hover with extended full-height hit areas
+- ✅ Draw markers positioned on KDE curve via interpolation
+- ✅ Zero variance protection for all-identical MC draws
+- ✅ Statistics panel: mean, median, std dev, skewness, kurtosis, percentiles
 
 **Recent Changes (2025-10-28):**
 - ✅ Added What-If Mode Phase 1 - Calculation loop over 2^n action combinations (Session 9)
@@ -1134,8 +1145,8 @@ All map pages follow similar pattern: Column mapping → validation → producti
 ### Results Pages (✅ Complete)
 
 #### `dashboard/src/pages/results/ViewResults.tsx`
-**Lines:** ~650
-**Purpose:** Main results visualization with drill-down
+**Lines:** ~2970
+**Purpose:** Main results visualization with drill-down and Monte Carlo distribution analysis
 **Features:**
 - Statement result table (scenario × period × entity)
 - Driver decomposition drill-down
@@ -1149,10 +1160,21 @@ All map pages follow similar pattern: Column mapping → validation → producti
   - Delta calculation: Fetches A and B in parallel, computes A - B
   - `buildWhatIfCombination()` helper for combination string generation
   - Reactive updates on control changes
+- **Monte Carlo Distribution Visualization (Session 13):**
+  - Click any line item in MC Results Panel to show frequency distribution
+  - KDE curve with Gaussian kernel (Silverman's bandwidth: 1.06 * σ * n^(-0.2))
+  - SVG-based visualization with multi-color gradient (red→orange→purple→blue→green)
+  - Individual draw markers positioned on KDE curve (interpolated, not on axis)
+  - Interactive percentile hover (P5, P25, P50, P75, P95) with extended full-height hit areas
+  - Statistics panel: mean, median, std dev, skewness, kurtosis
+  - Zero variance protection (friendly message when all draws identical)
+  - React state: hoveredDraw, hoverPos, hoveredPercentile (lines 137-139)
+  - Visualization code: lines 2662-2961
 
 **Data Sources:**
 - `statement_result` table for line item values (filtered by `what_if_combination`)
 - `statement_result_by_driver` table for decomposition (filtered by `what_if_combination`)
+- `mc_statement_result` table for Monte Carlo draws
 - `scenario`, `period`, `entity` tables for metadata
 - `management_action` table for available actions
 
@@ -1161,6 +1183,7 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Stacked bar chart showing driver contributions
 - Waterfall chart showing period-over-period changes
 - **Delta mode:** Shows (Run A - Run B) differences for all metrics
+- **MC Distribution:** KDE curve with draw markers and percentile lines
 
 ---
 
@@ -1259,6 +1282,12 @@ All UI components are from shadcn/ui library, customized for this project:
 **Port:** 3001
 
 **Key Endpoints:**
+
+**Monte Carlo Results:**
+- `GET /api/results/mc-summary` — Get mean values across all MC draws
+- `GET /api/results/mc-distribution` — Get frequency distribution for single line item (lines 7309-7409)
+  - Returns: all draw values, statistics (mean, std, skew, kurtosis), percentiles (P5-P95)
+  - Used by interactive distribution visualization
 
 **Database:**
 - `GET /api/tables` — List all tables

@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-29 (Session 12 - ROI Mode & Bug Fixes)
+**Last Updated:** 2025-10-30 (Session 13 - Interactive MC Distribution Visualization)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, and Monte Carlo results visualization
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, and interactive frequency distribution drill-down
 
 ---
 
@@ -352,6 +352,56 @@ All actions now demonstrate realistic financial tradeoffs:
 - **Database:** Template tags stored in `statement_template.json_structure` as boolean fields
 - **Calculation:** Ratio = ΔNumerator / ΔDenominator (flexible based on tagged line items)
 - **Period Range:** Sums ΔNumerator and ΔDenominator over selected periods only
+
+---
+
+## 📊 Monte Carlo Distribution Visualization (Session 13 - Interactive Drill-Down)
+
+**Feature:** Interactive frequency distribution visualization for Monte Carlo simulation results with KDE curves and detailed statistics.
+
+### How It Works
+
+1. **Run Monte Carlo Calculation** (PerformCalculation.tsx):
+   - Enable Stochastic Mode
+   - Set MC Start Period (e.g., period 3)
+   - System runs 100+ Monte Carlo draws with correlated driver shocks
+   - Results stored in `mc_statement_result` table
+
+2. **View MC Summary** (ViewResults.tsx):
+   - Purple-themed MC Results Panel appears automatically
+   - Shows mean values across all draws for each line item
+   - Grouped by financial statement sections (P&L, BS, CF)
+
+3. **Interactive Distribution Drill-Down**:
+   - **Click any line item** in MC Results Panel
+   - Distribution panel appears below table showing:
+     - **KDE Curve**: Smooth probability density curve fitted to MC draws
+     - **Gradient Colors**: Red (low) → Orange → Purple → Blue → Green (high)
+     - **Draw Markers**: Individual draws positioned on curve (color-coded by value)
+     - **Percentile Lines**: P5, P25, P50 (median), P75, P95 with hover labels
+     - **Statistics Panel**: Mean, median, std dev, skewness, kurtosis
+     - **Interactive Hover**: Percentile hover works across full chart height
+
+### Technical Details
+
+**Backend - GET /api/results/mc-distribution** (index.js:7309-7409):
+- Query all draw values for a line item from mc_statement_result table
+- Calculate mean, std, skewness, kurtosis, percentiles (P5, P25, P50, P75, P95)
+- Return structured JSON with draws, statistics, and percentiles
+
+**Frontend - Visualization** (ViewResults.tsx:2662-2961):
+- **KDE Calculation**: Gaussian kernel with Silverman's bandwidth (1.06 * σ * n^(-0.2))
+- **Draw Positioning**: Interpolated onto KDE curve for visual accuracy
+- **Extended Hover Areas**: Transparent rectangles cover full chart height
+- **SVG Gradients**: Multi-color gradient for visual appeal
+- **Zero Variance Protection**: Friendly message when all draws identical
+
+### Example Use Cases
+
+- **Risk Assessment**: Visualize tail risks and extreme outcomes
+- **Sensitivity Analysis**: See which line items have highest variance
+- **Distribution Shape**: Identify skewness (asymmetric risks) and kurtosis (fat tails)
+- **Percentile Analysis**: Understand P5/P95 range for stress testing
 
 ---
 

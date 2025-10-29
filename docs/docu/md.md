@@ -170,6 +170,23 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-10-30 (Session 13 - Interactive Monte Carlo Distribution Visualization):**
+- Implemented interactive Monte Carlo distribution visualization feature for drill-down analysis
+- Added GET /api/results/mc-distribution endpoint (index.js:7309-7409) returning all MC draws with statistics
+- Backend calculates: mean, median, std dev, skewness, kurtosis, percentiles (P5, P25, P50, P75, P95)
+- Frontend: Click any line item in MC Results Panel to show frequency distribution below table
+- KDE (Kernel Density Estimation) curve with Gaussian kernel and Silverman's bandwidth rule (1.06 * σ * n^(-0.2))
+- SVG-based visualization with multi-color gradient (red→orange→purple→blue→green)
+- Individual draw markers positioned on KDE curve (interpolated from curve points, not on axis)
+- Interactive percentile hover with extended full-height hit areas for better UX
+- Hover shows: percentile label, value, deviation from mean for draws
+- Color-coded draw markers by position in distribution (red=low, green=high, purple=mid)
+- Zero variance protection: shows friendly message when all draws identical (prevents crash)
+- Statistics panel: mean, median, std dev, skewness, kurtosis with formatted values
+- Fixed React hooks state management (moved to component level for proper interactivity)
+- Fixed z-order rendering (percentiles after KDE curve) for correct mouse event capture
+- Dashboard updates: ViewResults.tsx (lines 137-139 state, 2662-2961 visualization)
+
 **2025-10-29 (Session 12 - ROI Mode & Template/Action Bug Fixes):**
 - Extended all management actions to have both revenue AND expense impacts for ROI analysis
 - Updated 5 actions: EV_FLEET, HVAC_UPGRADE, GREEN_SUPPLY, WASTE_ENERGY, SOLAR_INSTALL

@@ -136,6 +136,7 @@ export default function ViewResults() {
   const [mcDistLoading, setMcDistLoading] = useState(false)
   const [hoveredDraw, setHoveredDraw] = useState<{drawNumber: number; value: number} | null>(null)
   const [hoverPos, setHoverPos] = useState<{x: number; y: number} | null>(null)
+  const [hoveredPercentile, setHoveredPercentile] = useState<string | null>(null)
 
   // Load available scenarios, periods, entities, and initial data
   useEffect(() => {
@@ -2657,6 +2658,30 @@ export default function ViewResults() {
                       // Calculate KDE curve using Gaussian kernel
                       const draws = mcDistribution.draws
                       const values = draws.map(d => d.value)
+
+                      // Check for zero variance (all values the same)
+                      if (mcDistribution.statistics.std === 0 || mcDistribution.statistics.min === mcDistribution.statistics.max) {
+                        return (
+                          <div style={{
+                            padding: '40px',
+                            textAlign: 'center',
+                            backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(168, 85, 247, 0.2)'
+                          }}>
+                            <div style={{ fontSize: '16px', color: '#e9d5ff', marginBottom: '8px', fontWeight: '600' }}>
+                              No Variation in Monte Carlo Draws
+                            </div>
+                            <div style={{ fontSize: '14px', color: '#c4b5fd', marginBottom: '16px' }}>
+                              All {draws.length} draws have the same value: {formatValue(mcDistribution.statistics.mean)}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+                              This line item has no stochastic drivers affecting it, or all drivers produced identical results.
+                            </div>
+                          </div>
+                        )
+                      }
+
                       const bandwidth = 1.06 * mcDistribution.statistics.std * Math.pow(draws.length, -0.2) // Silverman's rule
 
                       // Generate KDE points
@@ -2697,6 +2722,21 @@ export default function ViewResults() {
                       return (
                         <div style={{ position: 'relative' }}>
                           <svg width={chartWidth} height={chartHeight} style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px' }}>
+                            {/* Gradient definitions */}
+                            <defs>
+                              <linearGradient id="kdeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stopColor="#ef4444" stopOpacity="0.8" />
+                                <stop offset="25%" stopColor="#f97316" stopOpacity="0.8" />
+                                <stop offset="50%" stopColor="#a78bfa" stopOpacity="1" />
+                                <stop offset="75%" stopColor="#3b82f6" stopOpacity="0.8" />
+                                <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
+                              </linearGradient>
+                              <linearGradient id="kdeAreaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.3" />
+                                <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.05" />
+                              </linearGradient>
+                            </defs>
+
                             {/* Y-axis */}
                             <line
                               x1={margin.left}
@@ -2750,36 +2790,6 @@ export default function ViewResults() {
                               )
                             })}
 
-                            {/* Percentile lines */}
-                            {Object.entries(mcDistribution.percentiles).map(([key, val]) => {
-                              const x = xScale(val)
-                              const label = key === 'p50' ? 'Median' : key.toUpperCase()
-                              const color = key === 'p50' ? '#e9d5ff' : '#94a3b8'
-                              return (
-                                <g key={key}>
-                                  <line
-                                    x1={x}
-                                    y1={margin.top}
-                                    x2={x}
-                                    y2={margin.top + plotHeight}
-                                    stroke={color}
-                                    strokeWidth={key === 'p50' ? 2 : 1}
-                                    strokeDasharray={key === 'p50' ? '5,5' : '2,2'}
-                                    opacity={0.5}
-                                  />
-                                  <text
-                                    x={x}
-                                    y={margin.top - 5}
-                                    fill={color}
-                                    fontSize="10"
-                                    textAnchor="middle"
-                                  >
-                                    {label}
-                                  </text>
-                                </g>
-                              )
-                            })}
-
                             {/* Mean line */}
                             <line
                               x1={xScale(mcDistribution.statistics.mean)}
@@ -2801,59 +2811,193 @@ export default function ViewResults() {
                               Mean
                             </text>
 
-                            {/* KDE curve */}
+                            {/* KDE filled area */}
+                            <path
+                              d={`${kdePath} L ${xScale(xMax)} ${margin.top + plotHeight} L ${xScale(xMin)} ${margin.top + plotHeight} Z`}
+                              fill="url(#kdeAreaGradient)"
+                              stroke="none"
+                            />
+
+                            {/* KDE curve with gradient */}
                             <path
                               d={kdePath}
                               fill="none"
-                              stroke="#a78bfa"
+                              stroke="url(#kdeGradient)"
                               strokeWidth="3"
+                              style={{ filter: 'drop-shadow(0 0 8px rgba(167, 139, 250, 0.5))' }}
                             />
 
-                            {/* Individual draw markers */}
-                            {draws.map(draw => {
-                              const x = xScale(draw.value)
-                              const y = margin.top + plotHeight
+                            {/* Percentile lines with hover interaction - MUST BE AFTER CURVE for z-order */}
+                            {Object.entries(mcDistribution.percentiles).map(([key, val]) => {
+                              const x = xScale(val)
+                              const label = key === 'p50' ? 'Median' : key.toUpperCase()
+                              const percentileColors: Record<string, string> = {
+                                p5: '#ef4444',    // red
+                                p25: '#f97316',   // orange
+                                p50: '#e9d5ff',   // light purple (median)
+                                p75: '#3b82f6',   // blue
+                                p95: '#10b981'    // green
+                              }
+                              const color = percentileColors[key] || '#94a3b8'
+                              const isHovered = hoveredPercentile === key
                               return (
-                                <circle
-                                  key={draw.drawNumber}
-                                  cx={x}
-                                  cy={y}
-                                  r={4}
-                                  fill={hoveredDraw?.drawNumber === draw.drawNumber ? '#fbbf24' : '#8b5cf6'}
-                                  stroke={hoveredDraw?.drawNumber === draw.drawNumber ? '#fff' : '#a78bfa'}
-                                  strokeWidth={hoveredDraw?.drawNumber === draw.drawNumber ? 2 : 1}
-                                  style={{ cursor: 'pointer' }}
-                                  onMouseEnter={(e) => {
-                                    setHoveredDraw(draw)
-                                    setHoverPos({ x: e.clientX, y: e.clientY })
-                                  }}
-                                  onMouseLeave={() => {
-                                    setHoveredDraw(null)
-                                    setHoverPos(null)
-                                  }}
-                                />
+                                <g key={key}>
+                                  {/* Invisible wider hit area extending full chart height including margins */}
+                                  <rect
+                                    x={x - 10}
+                                    y={0}
+                                    width={20}
+                                    height={chartHeight}
+                                    fill="transparent"
+                                    style={{ cursor: 'pointer' }}
+                                    onMouseEnter={() => setHoveredPercentile(key)}
+                                    onMouseLeave={() => setHoveredPercentile(null)}
+                                  />
+                                  {/* Visible line */}
+                                  <line
+                                    x1={x}
+                                    y1={margin.top}
+                                    x2={x}
+                                    y2={margin.top + plotHeight}
+                                    stroke={color}
+                                    strokeWidth={isHovered ? 3 : (key === 'p50' ? 2 : 1)}
+                                    strokeDasharray={key === 'p50' ? '5,5' : '2,2'}
+                                    opacity={isHovered ? 0.9 : 0.5}
+                                    style={{ pointerEvents: 'none', transition: 'all 0.2s' }}
+                                  />
+                                  {isHovered && (
+                                    <>
+                                      <text
+                                        x={x}
+                                        y={margin.top - 5}
+                                        fill={color}
+                                        fontSize="12"
+                                        fontWeight="600"
+                                        textAnchor="middle"
+                                        style={{ pointerEvents: 'none' }}
+                                      >
+                                        {label}
+                                      </text>
+                                      <text
+                                        x={x}
+                                        y={margin.top - 20}
+                                        fill={color}
+                                        fontSize="11"
+                                        textAnchor="middle"
+                                        style={{ pointerEvents: 'none' }}
+                                      >
+                                        {formatValue(val)}
+                                      </text>
+                                    </>
+                                  )}
+                                </g>
+                              )
+                            })}
+
+                            {/* Individual draw markers with color variation - positioned on KDE curve */}
+                            {draws.map((draw, idx) => {
+                              const x = xScale(draw.value)
+
+                              // Find the density at this x value by interpolating KDE points
+                              let density = 0
+                              for (let i = 0; i < kdePoints.length - 1; i++) {
+                                if (draw.value >= kdePoints[i].x && draw.value <= kdePoints[i + 1].x) {
+                                  // Linear interpolation
+                                  const t = (draw.value - kdePoints[i].x) / (kdePoints[i + 1].x - kdePoints[i].x)
+                                  density = kdePoints[i].density + t * (kdePoints[i + 1].density - kdePoints[i].density)
+                                  break
+                                }
+                              }
+                              const y = yScale(density)
+
+                              // Color based on position in distribution
+                              const normalizedPos = (draw.value - mcDistribution.statistics.min) /
+                                                   (mcDistribution.statistics.max - mcDistribution.statistics.min)
+                              let markerColor = '#8b5cf6' // default purple
+                              if (normalizedPos < 0.2) markerColor = '#ef4444' // red for low values
+                              else if (normalizedPos < 0.4) markerColor = '#f97316' // orange
+                              else if (normalizedPos > 0.8) markerColor = '#10b981' // green for high values
+                              else if (normalizedPos > 0.6) markerColor = '#3b82f6' // blue
+
+                              const isHovered = hoveredDraw?.drawNumber === draw.drawNumber
+
+                              return (
+                                <g key={draw.drawNumber}>
+                                  {isHovered && (
+                                    <circle
+                                      cx={x}
+                                      cy={y}
+                                      r={12}
+                                      fill={markerColor}
+                                      opacity="0.2"
+                                      style={{
+                                        animation: 'pulse 1s infinite'
+                                      }}
+                                    />
+                                  )}
+                                  <circle
+                                    cx={x}
+                                    cy={y}
+                                    r={isHovered ? 6 : 4}
+                                    fill={isHovered ? '#fbbf24' : markerColor}
+                                    stroke={isHovered ? '#fff' : '#a78bfa'}
+                                    strokeWidth={isHovered ? 2 : 1}
+                                    style={{
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s ease-in-out',
+                                      filter: isHovered ? 'drop-shadow(0 0 6px rgba(251, 191, 36, 0.8))' : 'none'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      setHoveredDraw(draw)
+                                      setHoverPos({ x: e.clientX, y: e.clientY })
+                                    }}
+                                    onMouseLeave={() => {
+                                      setHoveredDraw(null)
+                                      setHoverPos(null)
+                                    }}
+                                  />
+                                </g>
                               )
                             })}
                           </svg>
 
-                          {/* Hover tooltip */}
+                          {/* Enhanced hover tooltip */}
                           {hoveredDraw && hoverPos && (
                             <div style={{
                               position: 'fixed',
-                              left: hoverPos.x + 10,
-                              top: hoverPos.y - 40,
-                              backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                              border: '1px solid rgba(168, 85, 247, 0.5)',
-                              borderRadius: '6px',
-                              padding: '8px 12px',
+                              left: hoverPos.x + 15,
+                              top: hoverPos.y - 80,
+                              backgroundColor: 'rgba(15, 23, 42, 0.98)',
+                              border: '2px solid rgba(251, 191, 36, 0.6)',
+                              borderRadius: '8px',
+                              padding: '12px 16px',
                               fontSize: '13px',
                               color: '#fff',
                               pointerEvents: 'none',
                               zIndex: 1000,
-                              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
+                              boxShadow: '0 8px 16px rgba(0, 0, 0, 0.5), 0 0 20px rgba(251, 191, 36, 0.3)',
+                              minWidth: '180px'
                             }}>
-                              <div><strong>Draw #{hoveredDraw.drawNumber}</strong></div>
-                              <div>Value: {formatValue(hoveredDraw.value)}</div>
+                              <div style={{
+                                color: '#fbbf24',
+                                fontWeight: '700',
+                                marginBottom: '6px',
+                                fontSize: '14px',
+                                borderBottom: '1px solid rgba(251, 191, 36, 0.3)',
+                                paddingBottom: '4px'
+                              }}>
+                                Draw #{hoveredDraw.drawNumber}
+                              </div>
+                              <div style={{ marginBottom: '4px' }}>
+                                <span style={{ color: '#c4b5fd' }}>Value:</span>{' '}
+                                <span style={{ color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                                  {formatValue(hoveredDraw.value)}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+                                {hoveredDraw.value < mcDistribution.statistics.mean ? '↓ Below mean' : '↑ Above mean'}
+                                {' '}({Math.abs(((hoveredDraw.value - mcDistribution.statistics.mean) / mcDistribution.statistics.mean) * 100).toFixed(1)}%)
+                              </div>
                             </div>
                           )}
 
