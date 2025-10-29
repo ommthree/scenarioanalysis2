@@ -242,6 +242,18 @@ public:
      */
     void clear_driver_contributions();
 
+    /**
+     * @brief Set Monte Carlo samples to add shocks to driver values
+     * @param mc_samples Map of driver_code → standard normal sample
+     * @param stddevs Map of driver_code → standard deviation
+     *
+     * Passes MC samples to the DriverValueProvider for correlated random sampling.
+     * Driver values are computed as: base_value + (mc_sample * stddev)
+     * Drivers NOT in the map use deterministic values from scenario_drivers.
+     */
+    void set_mc_samples(const std::map<std::string, double>& mc_samples,
+                        const std::map<std::string, double>& stddevs);
+
 private:
     std::shared_ptr<database::IDatabase> db_;
     core::FormulaEvaluator evaluator_;

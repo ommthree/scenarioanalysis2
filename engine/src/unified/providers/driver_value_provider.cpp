@@ -161,16 +161,35 @@ double DriverValueProvider::get_value(const std::string& key, [[maybe_unused]] c
         driver_code = resolve_driver_code(key);
     }
 
-    // Look up driver in cache
+    // Look up deterministic driver value from cache (scenario_drivers table)
     auto it = driver_cache_.find(driver_code);
-    if (it == driver_cache_.end()) {
-        // Driver not found in scenario_drivers table
-        // This is normal for physical risk drivers when no damage occurred
-        // Return 0.0 instead of throwing error
-        return 0.0;
+    double base_value = 0.0;
+    if (it != driver_cache_.end()) {
+        base_value = it->second;
+    }
+    // If driver not found in scenario_drivers table, base_value = 0.0
+    // This is normal for physical risk drivers when no damage occurred
+
+    // Monte Carlo Mode: Add shock to base value if MC sample exists
+    // Shock formula: value = base_value + (standard_normal_sample * stddev)
+    auto mc_it = mc_samples_.find(driver_code);
+    if (mc_it != mc_samples_.end()) {
+        double standard_normal = mc_it->second;  // Standard normal sample (mean=0, std=1)
+
+        // Look up standard deviation for this driver
+        auto stddev_it = mc_stddevs_.find(driver_code);
+        if (stddev_it != mc_stddevs_.end()) {
+            double stddev = stddev_it->second;
+            double shock = standard_normal * stddev;
+            return base_value + shock;  // Add shock to base value
+        } else {
+            // No stddev defined, treat MC sample as absolute shock
+            return base_value + standard_normal;
+        }
     }
 
-    return it->second;
+    // Deterministic Mode: Return base value without shock
+    return base_value;
 }
 
 void DriverValueProvider::load_drivers() const {
@@ -227,6 +246,17 @@ void DriverValueProvider::load_drivers() const {
     }
 
     cache_loaded_ = true;
+}
+
+void DriverValueProvider::set_mc_samples(const std::map<std::string, double>& mc_samples,
+                                          const std::map<std::string, double>& stddevs) {
+    mc_samples_ = mc_samples;
+    mc_stddevs_ = stddevs;
+}
+
+void DriverValueProvider::clear_mc_samples() {
+    mc_samples_.clear();
+    mc_stddevs_.clear();
 }
 
 } // namespace unified

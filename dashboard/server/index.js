@@ -7203,10 +7203,15 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
         }
       }
 
+      // Extract stddevs from covariance matrix diagonal
+      // Covariance matrix diagonal contains variances: stddev = sqrt(variance)
+      const stddevs = correlationMatrix.map((row, i) => Math.sqrt(Math.abs(row[i])))
+
       res.json({
         success: true,
         choleskyMatrix: L,
         driverCodes: driverCodes,
+        stddevs: stddevs,
         csvRowNames: csvRowNames,
         dimension: n
       })
@@ -7220,7 +7225,7 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
 app.post('/api/calculate', async (req, res) => {
-  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod, mcDrawNumber } = req.body
+  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod, mcDrawNumber, choleskyMatrix, choleskyDrivers, choleskyStddevs } = req.body
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
@@ -7234,6 +7239,31 @@ app.post('/api/calculate', async (req, res) => {
   const logger = new LoggingService()
   logger.start()
   logger.info('Calculation started', { dbPath, scenarioIds, mcStartPeriod, mcDrawNumber })
+
+  // Write Cholesky data to temp file if provided (for MC draws)
+  let choleskyFilePath = null
+  if (choleskyMatrix && choleskyDrivers && mcDrawNumber) {
+    const tempDir = path.join(__dirname, '../../temp')
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
+    }
+
+    choleskyFilePath = path.join(tempDir, `cholesky_${Date.now()}_${mcDrawNumber}.json`)
+    const choleskyData = {
+      matrix: choleskyMatrix,
+      drivers: choleskyDrivers,
+      stddevs: choleskyStddevs || [],
+      drawNumber: mcDrawNumber
+    }
+
+    try {
+      fs.writeFileSync(choleskyFilePath, JSON.stringify(choleskyData, null, 2))
+      logger.debug('Cholesky data written to temp file', { path: choleskyFilePath })
+    } catch (err) {
+      logger.error('Failed to write Cholesky temp file', { error: err.message })
+      return res.status(500).json({ error: 'Failed to write Cholesky data: ' + err.message })
+    }
+  }
 
   // Validate scenarios before calculation (unless explicitly skipped)
   if (!skipValidation && scenarioIds && scenarioIds.length > 0) {
@@ -7300,8 +7330,21 @@ app.post('/api/calculate', async (req, res) => {
   if (mcStartPeriod) {
     command += ` --mc-start-period ${mcStartPeriod}`
   }
+  if (choleskyFilePath) {
+    command += ` --cholesky-file "${choleskyFilePath}"`
+  }
 
   exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // Clean up Cholesky temp file
+    if (choleskyFilePath && fs.existsSync(choleskyFilePath)) {
+      try {
+        fs.unlinkSync(choleskyFilePath)
+        logger.debug('Cholesky temp file cleaned up', { path: choleskyFilePath })
+      } catch (cleanupErr) {
+        logger.warn('Failed to delete Cholesky temp file', { error: cleanupErr.message })
+      }
+    }
+
     // Merge C++ logs
     if (stdout) {
       logger.mergeCppLogs(stdout)

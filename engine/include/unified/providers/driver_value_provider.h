@@ -88,6 +88,23 @@ public:
      */
     std::string resolve_driver_code(const std::string& line_item_code) const;
 
+    /**
+     * @brief Set Monte Carlo samples to add shocks to driver values
+     * @param mc_samples Map of driver_code → standard normal random sample
+     * @param stddevs Map of driver_code → standard deviation
+     *
+     * When MC samples are set, get_value() will return base_value + (mc_sample * stddev)
+     * for drivers in the map, and fall back to deterministic values from scenario_drivers
+     * for drivers NOT in the map.
+     */
+    void set_mc_samples(const std::map<std::string, double>& mc_samples,
+                        const std::map<std::string, double>& stddevs);
+
+    /**
+     * @brief Clear Monte Carlo samples (return to deterministic mode)
+     */
+    void clear_mc_samples();
+
 private:
     std::shared_ptr<database::IDatabase> db_;
     std::shared_ptr<core::UnitConverter> unit_converter_;
@@ -101,6 +118,13 @@ private:
 
     // Mapping: line_item_code → driver_code (from base_value_source)
     std::map<std::string, std::string> line_item_to_driver_map_;
+
+    // Monte Carlo samples: driver_code → standard normal sample value
+    // When non-empty, these add shocks to deterministic driver values from database
+    std::map<std::string, double> mc_samples_;
+
+    // Standard deviations: driver_code → stddev for scaling MC shocks
+    std::map<std::string, double> mc_stddevs_;
 
     /**
      * @brief Load all drivers for current context into cache

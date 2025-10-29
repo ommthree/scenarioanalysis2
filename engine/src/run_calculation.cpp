@@ -14,6 +14,9 @@
 #include <map>
 #include <sstream>
 #include <filesystem>
+#include <fstream>
+#include <random>
+#include <cmath>
 #include "database/database_factory.h"
 #include "database/result_set.h"
 #include "unified/unified_engine.h"
@@ -24,6 +27,7 @@
 #include "physical_risk/hazard_map_risk_engine.h"
 #include "core/unit_converter.h"
 #include "fx/fx_provider.h"
+#include <nlohmann/json.hpp>
 
 using namespace finmodel;
 using namespace finmodel::database;
@@ -34,6 +38,121 @@ using namespace finmodel::core;
 
 // Track which conditional actions have been triggered (sticky behavior)
 std::map<int, std::set<std::string>> triggered_actions_;
+
+/**
+ * @brief Structure to hold Cholesky decomposition data for Monte Carlo sampling
+ */
+struct CholeskyData {
+    std::vector<std::vector<double>> matrix;  // Lower triangular matrix
+    std::vector<std::string> driver_codes;    // Driver codes in order
+    std::vector<double> stddevs;              // Standard deviations for each driver
+    int draw_number;                          // Draw number for seeding RNG
+
+    bool is_valid() const {
+        return !matrix.empty() && !driver_codes.empty() &&
+               matrix.size() == driver_codes.size();
+    }
+};
+
+/**
+ * @brief Generate correlated random samples using Cholesky decomposition
+ * @param cholesky_data Cholesky matrix and driver list
+ * @return Map of driver_code → random sample value
+ */
+std::map<std::string, double> generate_mc_samples(const CholeskyData& cholesky_data) {
+    std::map<std::string, double> samples;
+
+    if (!cholesky_data.is_valid()) {
+        return samples;
+    }
+
+    size_t n = cholesky_data.driver_codes.size();
+
+    // Initialize random number generator with draw number as seed
+    // This ensures reproducibility - same draw number → same samples
+    std::mt19937 rng(cholesky_data.draw_number);
+    std::normal_distribution<double> normal(0.0, 1.0);
+
+    // Generate n independent standard normal random variables
+    std::vector<double> independent_normals(n);
+    for (size_t i = 0; i < n; ++i) {
+        independent_normals[i] = normal(rng);
+    }
+
+    // Multiply by Cholesky matrix to get correlated samples
+    // correlated_sample[i] = sum_j( L[i][j] * independent_normals[j] )
+    std::vector<double> correlated_samples(n, 0.0);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j <= i; ++j) {  // Lower triangular
+            correlated_samples[i] += cholesky_data.matrix[i][j] * independent_normals[j];
+        }
+    }
+
+    // Map samples to driver codes
+    for (size_t i = 0; i < n; ++i) {
+        samples[cholesky_data.driver_codes[i]] = correlated_samples[i];
+    }
+
+    return samples;
+}
+
+/**
+ * @brief Load Cholesky data from JSON file
+ * @param file_path Path to JSON file
+ * @return CholeskyData structure
+ */
+CholeskyData load_cholesky_data(const std::string& file_path) {
+    CholeskyData data;
+
+    try {
+        std::ifstream file(file_path);
+        if (!file.is_open()) {
+            std::cerr << "Warning: Could not open Cholesky file: " << file_path << std::endl;
+            return data;
+        }
+
+        nlohmann::json j;
+        file >> j;
+
+        // Parse matrix
+        if (j.contains("matrix") && j["matrix"].is_array()) {
+            for (const auto& row : j["matrix"]) {
+                std::vector<double> row_values;
+                for (const auto& val : row) {
+                    row_values.push_back(val.get<double>());
+                }
+                data.matrix.push_back(row_values);
+            }
+        }
+
+        // Parse driver codes
+        if (j.contains("drivers") && j["drivers"].is_array()) {
+            for (const auto& driver : j["drivers"]) {
+                data.driver_codes.push_back(driver.get<std::string>());
+            }
+        }
+
+        // Parse standard deviations
+        if (j.contains("stddevs") && j["stddevs"].is_array()) {
+            for (const auto& stddev : j["stddevs"]) {
+                data.stddevs.push_back(stddev.get<double>());
+            }
+        }
+
+        // Parse draw number
+        if (j.contains("drawNumber")) {
+            data.draw_number = j["drawNumber"].get<int>();
+        }
+
+        std::cout << "Loaded Cholesky data: " << data.driver_codes.size()
+                  << " drivers, " << data.stddevs.size() << " stddevs, draw " << data.draw_number << std::endl;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to parse Cholesky JSON: " << e.what() << std::endl;
+    }
+
+    return data;
+}
 
 /**
  * @brief Parse what-if combination string into set of action codes
@@ -410,13 +529,14 @@ bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <database_path> [--whatif-combination <combination>] [--mc-start-period <period>]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <database_path> [--whatif-combination <combination>] [--mc-start-period <period>] [--cholesky-file <path>]" << std::endl;
         return 1;
     }
 
     std::string db_path = argv[1];
     std::string whatif_combination = "";  // Empty means not in what-if mode
     int mc_start_period = -1;  // -1 means no Monte Carlo mode (run all periods)
+    std::string cholesky_file_path = "";  // Empty means no Cholesky sampling
 
     // Parse optional arguments
     for (int i = 2; i < argc; i++) {
@@ -427,6 +547,9 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--mc-start-period" && i + 1 < argc) {
             mc_start_period = std::stoi(argv[i + 1]);
             i++; // Skip next arg since we consumed it
+        } else if (arg == "--cholesky-file" && i + 1 < argc) {
+            cholesky_file_path = argv[i + 1];
+            i++; // Skip next arg since we consumed it
         }
     }
 
@@ -436,6 +559,17 @@ int main(int argc, char* argv[]) {
     }
     if (mc_start_period > 0) {
         std::cout << "Monte Carlo Mode: Stopping at period " << mc_start_period << std::endl;
+    }
+
+    // Load Cholesky data if provided
+    CholeskyData cholesky_data;
+    std::map<std::string, double> mc_samples;
+    if (!cholesky_file_path.empty()) {
+        cholesky_data = load_cholesky_data(cholesky_file_path);
+        if (cholesky_data.is_valid()) {
+            mc_samples = generate_mc_samples(cholesky_data);
+            std::cout << "Generated " << mc_samples.size() << " Monte Carlo samples" << std::endl;
+        }
     }
 
     try {
@@ -503,6 +637,20 @@ int main(int argc, char* argv[]) {
         // Set entity hierarchy for rollup aggregation
         if (hierarchy) {
             engine.set_entity_hierarchy(hierarchy.get());
+        }
+
+        // Set Monte Carlo samples if provided
+        if (!mc_samples.empty()) {
+            // Build stddev map from Cholesky data
+            std::map<std::string, double> stddev_map;
+            for (size_t i = 0; i < cholesky_data.driver_codes.size() && i < cholesky_data.stddevs.size(); ++i) {
+                stddev_map[cholesky_data.driver_codes[i]] = cholesky_data.stddevs[i];
+            }
+
+            std::cout << "Setting MC samples: " << mc_samples.size() << " samples, "
+                      << stddev_map.size() << " stddevs" << std::endl;
+
+            engine.set_mc_samples(mc_samples, stddev_map);
         }
 
         // Run each scenario
@@ -581,13 +729,26 @@ int main(int argc, char* argv[]) {
 
             // Process each period
             for (int period_id : periods) {
-                // In Monte Carlo mode, stop after processing mc_start_period
-                if (mc_start_period > 0 && period_id > mc_start_period) {
-                    std::cout << "\n--- Stopping at period " << mc_start_period << " (Monte Carlo mode) ---" << std::endl;
-                    break;
+                // Monte Carlo Draw Mode: Only calculate the stochastic period (mc_start_period + 1)
+                // Deterministic Mode: Calculate periods 0 through mc_start_period
+                if (mc_start_period > 0) {
+                    if (!mc_samples.empty()) {
+                        // MC Draw Mode (Cholesky file provided): Skip all periods except mc_start_period + 1
+                        if (period_id != mc_start_period + 1) {
+                            continue;  // Skip this period
+                        }
+                        std::cout << "\n--- Period " << period_id << " (Monte Carlo Draw) ---" << std::endl;
+                    } else {
+                        // Deterministic Mode (no Cholesky file): Stop after mc_start_period
+                        if (period_id > mc_start_period) {
+                            std::cout << "\n--- Stopping at period " << mc_start_period << " (deterministic baseline) ---" << std::endl;
+                            break;
+                        }
+                        std::cout << "\n--- Period " << period_id << " ---" << std::endl;
+                    }
+                } else {
+                    std::cout << "\n--- Period " << period_id << " ---" << std::endl;
                 }
-
-                std::cout << "\n--- Period " << period_id << " ---" << std::endl;
 
                 // Storage for results: entity_id → (line_item_code → {value, is_populated})
                 std::map<std::string, std::map<std::string, std::pair<double, bool>>> period_results;

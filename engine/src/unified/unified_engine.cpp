@@ -719,5 +719,12 @@ void UnifiedEngine::clear_driver_contributions() {
     statement_provider_->set_opening_values(empty_map);
 }
 
+void UnifiedEngine::set_mc_samples(const std::map<std::string, double>& mc_samples,
+                                    const std::map<std::string, double>& stddevs) {
+    if (driver_provider_) {
+        driver_provider_->set_mc_samples(mc_samples, stddevs);
+    }
+}
+
 } // namespace unified
 } // namespace finmodel

@@ -1,0 +1,156 @@
+{
+  "code": "TEST_CARBON",
+  "statement_type": "unified",
+  "industry": "general",
+  "version": "1.0",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "BASE:REVENUE*driver:REVENUE",
+      "base_value_source": "driver:REVENUE",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "dependencies": []
+    },
+    {
+      "code": "EXPENSES",
+      "display_name": "Expenses",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "(BASE:EXPENSES*driver:EXPENSES)+driver:FLOOD",
+      "base_value_source": "driver:EXPENSES",
+      "is_computed": false,
+      "sign_convention": "negative",
+      "dependencies": []
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "level": 1,
+      "section": "profit_and_loss",
+      "formula": "REVENUE + EXPENSES",
+      "base_value_source": "",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": [
+        "REVENUE",
+        "EXPENSES"
+      ]
+    },
+    {
+      "code": "CASH",
+      "display_name": "Cash",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH[t-1]",
+      "base_value_source": "",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "dependencies": [
+        "CASH[t-1]"
+      ]
+    },
+    {
+      "code": "RETAINED_EARNINGS",
+      "display_name": "Retained Earnings",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS[t-1] + NET_INCOME",
+      "base_value_source": "",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "dependencies": [
+        "RETAINED_EARNINGS[t-1]",
+        "NET_INCOME"
+      ]
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "CASH",
+      "base_value_source": "",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": [
+        "CASH"
+      ]
+    },
+    {
+      "code": "TOTAL_LIABILITIES",
+      "display_name": "Total Liabilities",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "0",
+      "base_value_source": "",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": []
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "level": 1,
+      "section": "balance_sheet",
+      "formula": "RETAINED_EARNINGS",
+      "base_value_source": "",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": [
+        "RETAINED_EARNINGS"
+      ]
+    },
+    {
+      "code": "SCOPE1_EMISSIONS",
+      "display_name": "Scope 1 Emissions",
+      "level": 1,
+      "section": "carbon_statement",
+      "formula": "BASE:SCOPE1_EMISSIONS*driver:SCOPE1_EMISSIONS",
+      "base_value_source": "driver:SCOPE1_EMISSIONS",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "dependencies": []
+    },
+    {
+      "code": "SCOPE2_EMISSIONS",
+      "display_name": "Scope 2 Emissions",
+      "level": 1,
+      "section": "carbon_statement",
+      "formula": "BASE:SCOPE2_EMISSIONS*driver:SCOPE2_EMISSIONS",
+      "base_value_source": "driver:SCOPE2_EMISSIONS",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "dependencies": []
+    },
+    {
+      "code": "SCOPE3_EMISSIONS",
+      "display_name": "Scope 3 Emissions",
+      "level": 1,
+      "section": "carbon_statement",
+      "formula": "BASE:SCOPE3_EMISSIONS*driver:SCOPE3_EMISSIONS",
+      "base_value_source": "driver:SCOPE3_EMISSIONS",
+      "is_computed": false,
+      "sign_convention": "positive",
+      "dependencies": []
+    },
+    {
+      "code": "TOTAL_EMISSIONS",
+      "display_name": "Total Emissions",
+      "level": 1,
+      "section": "carbon_statement",
+      "formula": "SCOPE1_EMISSIONS + SCOPE2_EMISSIONS + SCOPE3_EMISSIONS",
+      "base_value_source": "",
+      "is_computed": true,
+      "sign_convention": "positive",
+      "dependencies": [
+        "SCOPE1_EMISSIONS",
+        "SCOPE2_EMISSIONS",
+        "SCOPE3_EMISSIONS"
+      ]
+    }
+  ]
+}

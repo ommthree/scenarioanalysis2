@@ -401,14 +401,17 @@ export default function PerformCalculation() {
           }
 
           // Call actual C++ calculation engine for this draw
-          // TODO: Pass draw number and Cholesky matrix to engine
+          // Pass Cholesky matrix and driver codes for correlated sampling
           const mcCalcResponse = await fetch(apiUrl('/api/calculate'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               dbPath,
               mcStartPeriod: mcStartPeriod,
-              mcDrawNumber: draw
+              mcDrawNumber: draw,
+              choleskyMatrix: prepareResult.choleskyMatrix,
+              choleskyDrivers: prepareResult.driverCodes,
+              choleskyStddevs: prepareResult.stddevs
             })
           })
 

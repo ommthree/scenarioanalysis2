@@ -63,6 +63,7 @@ add_executable(run_calculation src/run_calculation.cpp)
 target_link_libraries(run_calculation
     PRIVATE
         engine_lib
+        nlohmann_json
 )
 
 # Install
