@@ -7102,7 +7102,7 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
 app.post('/api/calculate', async (req, res) => {
-  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod } = req.body
+  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod, mcDrawNumber } = req.body
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
@@ -7115,7 +7115,7 @@ app.post('/api/calculate', async (req, res) => {
   // Initialize logging service
   const logger = new LoggingService()
   logger.start()
-  logger.info('Calculation started', { dbPath, scenarioIds, mcStartPeriod })
+  logger.info('Calculation started', { dbPath, scenarioIds, mcStartPeriod, mcDrawNumber })
 
   // Validate scenarios before calculation (unless explicitly skipped)
   if (!skipValidation && scenarioIds && scenarioIds.length > 0) {
@@ -7206,33 +7206,109 @@ app.post('/api/calculate', async (req, res) => {
 
     logger.info('Calculation completed successfully')
 
-    // Parse calculation output to extract results and write to statement_result table
-    // Output format: "✓ Scenario X completed successfully" followed by period data
-    const db = new sqlite3.Database(dbPath, (err) => {
-      if (err) {
-        logger.error('Failed to open database for result verification', { error: err.message })
-        return res.json({
+    // If this is a Monte Carlo draw, copy results to MC tables
+    if (mcDrawNumber) {
+      logger.info(`Copying results to MC tables for draw ${mcDrawNumber}`)
+
+      const db = new sqlite3.Database(dbPath, (err) => {
+        if (err) {
+          logger.error('Failed to open database for MC result copy', { error: err.message })
+          return res.json({
+            success: true,
+            output: stdout,
+            errors: stderr,
+            warning: 'Calculation succeeded but failed to copy to MC tables',
+            logs: logger.getLogs('info'),
+            errorSummary: logger.getErrorSummary()
+          })
+        }
+
+        // Copy statement_result to mc_statement_result
+        db.run(`
+          INSERT INTO mc_statement_result
+            (scenario_id, period_id, entity_id, line_item_code, draw_number, value, calculated_at, is_populated)
+          SELECT scenario_id, period_id, entity_id, line_item_code, ?, value, calculated_at, is_populated
+          FROM statement_result
+          WHERE what_if_combination = ''
+        `, [mcDrawNumber], (err) => {
+          if (err) {
+            logger.error('Failed to copy to mc_statement_result', { error: err.message, draw: mcDrawNumber })
+            db.close()
+            return res.json({
+              success: true,
+              output: stdout,
+              errors: stderr,
+              warning: 'Failed to copy results to mc_statement_result',
+              logs: logger.getLogs('info'),
+              errorSummary: logger.getErrorSummary()
+            })
+          }
+
+          logger.verbose(`Copied statement_result to mc_statement_result for draw ${mcDrawNumber}`)
+
+          // Copy statement_result_by_driver to mc_statement_result_by_driver
+          db.run(`
+            INSERT INTO mc_statement_result_by_driver
+              (scenario_id, period_id, entity_id, line_item_code, driver_code, draw_number, value, calculated_at)
+            SELECT scenario_id, period_id, entity_id, line_item_code, driver_code, ?, value, calculated_at
+            FROM statement_result_by_driver
+            WHERE what_if_combination = ''
+          `, [mcDrawNumber], (err) => {
+            if (err) {
+              logger.error('Failed to copy to mc_statement_result_by_driver', { error: err.message, draw: mcDrawNumber })
+              db.close()
+              return res.json({
+                success: true,
+                output: stdout,
+                errors: stderr,
+                warning: 'Failed to copy results to mc_statement_result_by_driver',
+                logs: logger.getLogs('info'),
+                errorSummary: logger.getErrorSummary()
+              })
+            }
+
+            logger.verbose(`Copied statement_result_by_driver to mc_statement_result_by_driver for draw ${mcDrawNumber}`)
+            logger.info(`MC draw ${mcDrawNumber} results saved successfully`)
+
+            db.close()
+            res.json({
+              success: true,
+              output: stdout,
+              errors: stderr,
+              logs: logger.getLogs('info'),
+              errorSummary: logger.getErrorSummary()
+            })
+          })
+        })
+      })
+    } else {
+      // Not a Monte Carlo draw - just return success
+      const db = new sqlite3.Database(dbPath, (err) => {
+        if (err) {
+          logger.error('Failed to open database for result verification', { error: err.message })
+          return res.json({
+            success: true,
+            output: stdout,
+            errors: stderr,
+            warning: 'Results calculated but not saved to database',
+            logs: logger.getLogs('info'),
+            errorSummary: logger.getErrorSummary()
+          })
+        }
+
+        // Note: The C++ binary should be writing results directly to the database
+        // This is just a fallback/verification step
+        db.close()
+
+        res.json({
           success: true,
           output: stdout,
           errors: stderr,
-          warning: 'Results calculated but not saved to database',
           logs: logger.getLogs('info'),
           errorSummary: logger.getErrorSummary()
         })
-      }
-
-      // Note: The C++ binary should be writing results directly to the database
-      // This is just a fallback/verification step
-      db.close()
-
-      res.json({
-        success: true,
-        output: stdout,
-        errors: stderr,
-        logs: logger.getLogs('info'),
-        errorSummary: logger.getErrorSummary()
       })
-    })
+    }
   })
 })
 

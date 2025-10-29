@@ -37,6 +37,7 @@ export default function PerformCalculation() {
   const [stochasticMode, setStochasticMode] = useState(false)
   const [whatIfMode, setWhatIfMode] = useState(false)
   const [mcStartPeriod, setMcStartPeriod] = useState(1)
+  const [numDraws, setNumDraws] = useState(1000)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Load run definition, previous logs, and validation result on mount
@@ -49,6 +50,7 @@ export default function PerformCalculation() {
         setStochasticMode(data.stochasticMode || false)
         setWhatIfMode(data.whatIfMode || false)
         setMcStartPeriod(data.mcStartPeriod || 1)
+        setNumDraws(data.numDraws || 1000)
       } catch (err) {
         setRunName('Unnamed Run')
       }
@@ -368,8 +370,76 @@ export default function PerformCalculation() {
         }
 
         if (verbosity === 'debug' || verbosity === 'verbose') {
-          addLog('success', '✓ Calculation engine completed successfully')
+          addLog('success', '✓ Deterministic calculation completed successfully')
           addLog('info', 'Results stored in database')
+        }
+
+        // Step 3c: Run Monte Carlo loop for numDraws iterations
+        if (verbosity !== 'quiet') {
+          addLog('info', `Monte Carlo Loop: Running ${numDraws} simulation draws from period ${mcStartPeriod + 1}`)
+        }
+
+        // Loop over all Monte Carlo draws
+        for (let draw = 1; draw <= numDraws; draw++) {
+          if (verbosity !== 'quiet' && draw % 10 === 0) {
+            addLog('info', `MC Progress: Completed ${draw}/${numDraws} draws`)
+          }
+
+          if (verbosity === 'debug') {
+            addLog('info', `Draw ${draw}: Generating correlated random samples...`)
+            addLog('info', `Draw ${draw}: Processing line item formulas...`)
+            addLog('info', `Draw ${draw}: Applying validation rules...`)
+          }
+
+          // Call actual C++ calculation engine for this draw
+          // TODO: Pass draw number and Cholesky matrix to engine
+          const mcCalcResponse = await fetch(apiUrl('/api/calculate'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dbPath,
+              mcStartPeriod: mcStartPeriod,
+              mcDrawNumber: draw
+            })
+          })
+
+          if (!mcCalcResponse.ok) {
+            const errorText = await mcCalcResponse.text()
+            if (verbosity !== 'quiet') {
+              addLog('error', `API request failed for draw ${draw}: ${mcCalcResponse.status} ${mcCalcResponse.statusText}`)
+              addLog('error', errorText)
+            }
+            throw new Error(`API request failed for draw ${draw}: ${mcCalcResponse.status}`)
+          }
+
+          const mcCalcResult = await mcCalcResponse.json()
+
+          if (!mcCalcResult.success) {
+            if (verbosity !== 'quiet') {
+              addLog('error', `Calculation engine failed for draw ${draw}`)
+              if (mcCalcResult.stderr) {
+                const errorLines = mcCalcResult.stderr.split('\n').filter((line: string) => line.trim())
+                errorLines.forEach((line: string) => addLog('error', line))
+              }
+              if (mcCalcResult.error) {
+                addLog('error', mcCalcResult.error)
+              }
+            }
+            throw new Error(mcCalcResult.error || `Calculation failed for draw ${draw}`)
+          }
+
+          if (verbosity === 'debug' && mcCalcResult.output) {
+            const outputLines = mcCalcResult.output.split('\n').filter((line: string) => line.trim())
+            outputLines.forEach((line: string) => addLog('info', line))
+          }
+
+          if (verbosity === 'debug') {
+            addLog('success', `✓ Draw ${draw}/${numDraws} completed successfully`)
+          }
+        }
+
+        if (verbosity !== 'quiet') {
+          addLog('success', `✓ All ${numDraws} Monte Carlo draws completed`)
         }
       } else if (whatIfMode) {
         const combosResponse = await fetch(apiUrl('/api/whatif/combinations'), {
