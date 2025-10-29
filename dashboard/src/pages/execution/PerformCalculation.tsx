@@ -36,6 +36,7 @@ export default function PerformCalculation() {
   const [isValidating, setIsValidating] = useState(false)
   const [stochasticMode, setStochasticMode] = useState(false)
   const [whatIfMode, setWhatIfMode] = useState(false)
+  const [mcStartPeriod, setMcStartPeriod] = useState(1)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Load run definition, previous logs, and validation result on mount
@@ -47,6 +48,7 @@ export default function PerformCalculation() {
         setRunName(data.runName || 'Unnamed Run')
         setStochasticMode(data.stochasticMode || false)
         setWhatIfMode(data.whatIfMode || false)
+        setMcStartPeriod(data.mcStartPeriod || 1)
       } catch (err) {
         setRunName('Unnamed Run')
       }
@@ -277,8 +279,99 @@ export default function PerformCalculation() {
         addLog('info', 'Step 3: Running multi-period scenario calculations...')
       }
 
-      // If what-if mode, generate combinations and loop
-      if (whatIfMode) {
+      // If Monte Carlo mode, prepare Cholesky matrix and run calculation up to MC start period
+      if (stochasticMode) {
+        if (verbosity !== 'quiet') {
+          addLog('info', `Monte Carlo Mode: Preparing correlation matrix and running deterministic calculation up to period ${mcStartPeriod}`)
+        }
+
+        // Step 3a: Prepare Monte Carlo (load correlation matrix and perform Cholesky decomposition)
+        if (verbosity !== 'quiet') {
+          addLog('info', 'Loading correlation matrix and performing Cholesky decomposition...')
+        }
+
+        const correlationCsvPath = '/Users/Owen/ScenarioAnalysis2/data/inputs/correlations/level2_correlation_matrix.csv'
+        const prepareResponse = await fetch(apiUrl('/api/montecarlo/prepare'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ correlationCsvPath })
+        })
+
+        if (!prepareResponse.ok) {
+          const errorText = await prepareResponse.text()
+          if (verbosity !== 'quiet') {
+            addLog('error', `Failed to prepare Monte Carlo: ${prepareResponse.status}`)
+            addLog('error', errorText)
+          }
+          throw new Error('Monte Carlo preparation failed')
+        }
+
+        const prepareResult = await prepareResponse.json()
+
+        if (!prepareResult.success) {
+          if (verbosity !== 'quiet') {
+            addLog('error', 'Cholesky decomposition failed')
+          }
+          throw new Error('Cholesky decomposition failed')
+        }
+
+        if (verbosity === 'verbose' || verbosity === 'debug') {
+          addLog('success', `✓ Cholesky matrix prepared (${prepareResult.dimension}x${prepareResult.dimension})`)
+          addLog('info', `Drivers: ${prepareResult.driverNames.join(', ')}`)
+        }
+
+        // Step 3b: Run deterministic calculation up to MC start period
+        if (verbosity === 'debug') {
+          addLog('info', 'Processing line item formulas and dependencies...')
+          addLog('info', 'Applying validation rules...')
+          addLog('info', 'Executing management actions...')
+        }
+
+        // Call actual C++ calculation engine with MC start period
+        const calcResponse = await fetch(apiUrl('/api/calculate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dbPath,
+            mcStartPeriod: mcStartPeriod
+          })
+        })
+
+        if (!calcResponse.ok) {
+          const errorText = await calcResponse.text()
+          if (verbosity !== 'quiet') {
+            addLog('error', `API request failed: ${calcResponse.status} ${calcResponse.statusText}`)
+            addLog('error', errorText)
+          }
+          throw new Error(`API request failed: ${calcResponse.status}`)
+        }
+
+        const calcResult = await calcResponse.json()
+
+        if (!calcResult.success) {
+          if (verbosity !== 'quiet') {
+            addLog('error', 'Calculation engine failed')
+            if (calcResult.stderr) {
+              const errorLines = calcResult.stderr.split('\n').filter((line: string) => line.trim())
+              errorLines.forEach((line: string) => addLog('error', line))
+            }
+            if (calcResult.error) {
+              addLog('error', calcResult.error)
+            }
+          }
+          throw new Error(calcResult.error || 'Calculation failed')
+        }
+
+        if ((verbosity === 'debug' || verbosity === 'verbose') && calcResult.output) {
+          const outputLines = calcResult.output.split('\n').filter((line: string) => line.trim())
+          outputLines.forEach((line: string) => addLog('info', line))
+        }
+
+        if (verbosity === 'debug' || verbosity === 'verbose') {
+          addLog('success', '✓ Calculation engine completed successfully')
+          addLog('info', 'Results stored in database')
+        }
+      } else if (whatIfMode) {
         const combosResponse = await fetch(apiUrl('/api/whatif/combinations'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

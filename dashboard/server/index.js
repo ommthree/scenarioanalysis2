@@ -7016,10 +7016,93 @@ app.post('/api/whatif/combinations', async (req, res) => {
 })
 
 /**
+ * Prepare Monte Carlo simulation: Load correlation matrix and perform Cholesky decomposition
+ */
+app.post('/api/montecarlo/prepare', async (req, res) => {
+  const { correlationCsvPath } = req.body
+
+  if (!correlationCsvPath) {
+    return res.status(400).json({ error: 'correlationCsvPath is required' })
+  }
+
+  if (!fs.existsSync(correlationCsvPath)) {
+    return res.status(400).json({ error: 'Correlation CSV file not found' })
+  }
+
+  try {
+    // Read CSV file
+    const csvContent = fs.readFileSync(correlationCsvPath, 'utf-8')
+    const lines = csvContent.trim().split('\n')
+
+    if (lines.length < 2) {
+      return res.status(400).json({ error: 'Correlation CSV must have at least header and one data row' })
+    }
+
+    // Parse header to get driver names
+    const header = lines[0].split(',')
+    const driverNames = header.slice(1) // Skip first column (Driver label)
+    const n = driverNames.length
+
+    // Parse correlation matrix
+    const correlationMatrix = []
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',')
+      const row = values.slice(1).map(v => parseFloat(v.trim()))
+      if (row.length !== n) {
+        return res.status(400).json({
+          error: `Row ${i} has ${row.length} values, expected ${n}`
+        })
+      }
+      correlationMatrix.push(row)
+    }
+
+    if (correlationMatrix.length !== n) {
+      return res.status(400).json({
+        error: `Matrix should be ${n}x${n}, got ${correlationMatrix.length}x${n}`
+      })
+    }
+
+    // Perform Cholesky decomposition
+    // L * L^T = Correlation Matrix
+    const L = Array(n).fill(0).map(() => Array(n).fill(0))
+
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j <= i; j++) {
+        let sum = 0
+        for (let k = 0; k < j; k++) {
+          sum += L[i][k] * L[j][k]
+        }
+
+        if (i === j) {
+          const diag = correlationMatrix[i][i] - sum
+          if (diag <= 0) {
+            return res.status(400).json({
+              error: `Matrix is not positive definite (row ${i})`
+            })
+          }
+          L[i][j] = Math.sqrt(diag)
+        } else {
+          L[i][j] = (correlationMatrix[i][j] - sum) / L[j][j]
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      choleskyMatrix: L,
+      driverNames: driverNames,
+      dimension: n
+    })
+  } catch (err) {
+    res.status(500).json({ error: `Failed to prepare Monte Carlo: ${err.message}` })
+  }
+})
+
+/**
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
 app.post('/api/calculate', async (req, res) => {
-  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination } = req.body
+  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod } = req.body
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
@@ -7032,7 +7115,7 @@ app.post('/api/calculate', async (req, res) => {
   // Initialize logging service
   const logger = new LoggingService()
   logger.start()
-  logger.info('Calculation started', { dbPath, scenarioIds })
+  logger.info('Calculation started', { dbPath, scenarioIds, mcStartPeriod })
 
   // Validate scenarios before calculation (unless explicitly skipped)
   if (!skipValidation && scenarioIds && scenarioIds.length > 0) {
@@ -7089,12 +7172,16 @@ app.post('/api/calculate', async (req, res) => {
 
   // Run the calculation
   const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
-  logger.info('Launching C++ calculation engine', { binary: calculationBinary, whatIfCombination })
+  logger.info('Launching C++ calculation engine', { binary: calculationBinary, whatIfCombination, mcStartPeriod })
 
-  // Conditionally add --whatif-combination parameter if in what-if mode
-  const command = whatIfCombination
-    ? `"${calculationBinary}" "${dbPath}" --whatif-combination "${whatIfCombination}"`
-    : `"${calculationBinary}" "${dbPath}"`
+  // Build command with optional flags
+  let command = `"${calculationBinary}" "${dbPath}"`
+  if (whatIfCombination) {
+    command += ` --whatif-combination "${whatIfCombination}"`
+  }
+  if (mcStartPeriod) {
+    command += ` --mc-start-period ${mcStartPeriod}`
+  }
 
   exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
     // Merge C++ logs

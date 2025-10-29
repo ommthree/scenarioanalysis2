@@ -410,18 +410,22 @@ bool has_physical_risk(std::shared_ptr<IDatabase> db, int scenario_id) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <database_path> [--whatif-combination <combination>]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <database_path> [--whatif-combination <combination>] [--mc-start-period <period>]" << std::endl;
         return 1;
     }
 
     std::string db_path = argv[1];
     std::string whatif_combination = "";  // Empty means not in what-if mode
+    int mc_start_period = -1;  // -1 means no Monte Carlo mode (run all periods)
 
-    // Parse optional --whatif-combination argument
+    // Parse optional arguments
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--whatif-combination" && i + 1 < argc) {
             whatif_combination = argv[i + 1];
+            i++; // Skip next arg since we consumed it
+        } else if (arg == "--mc-start-period" && i + 1 < argc) {
+            mc_start_period = std::stoi(argv[i + 1]);
             i++; // Skip next arg since we consumed it
         }
     }
@@ -429,6 +433,9 @@ int main(int argc, char* argv[]) {
     std::cout << "Starting calculation engine for database: " << db_path << std::endl;
     if (!whatif_combination.empty()) {
         std::cout << "What-If Mode: " << whatif_combination << std::endl;
+    }
+    if (mc_start_period > 0) {
+        std::cout << "Monte Carlo Mode: Stopping at period " << mc_start_period << std::endl;
     }
 
     try {
@@ -574,6 +581,12 @@ int main(int argc, char* argv[]) {
 
             // Process each period
             for (int period_id : periods) {
+                // In Monte Carlo mode, stop after processing mc_start_period
+                if (mc_start_period > 0 && period_id > mc_start_period) {
+                    std::cout << "\n--- Stopping at period " << mc_start_period << " (Monte Carlo mode) ---" << std::endl;
+                    break;
+                }
+
                 std::cout << "\n--- Period " << period_id << " ---" << std::endl;
 
                 // Storage for results: entity_id → (line_item_code → {value, is_populated})

@@ -9,6 +9,8 @@ export default function RunDefinition() {
   const [description, setDescription] = useState('')
   const [stochasticMode, setStochasticMode] = useState(false)
   const [whatIfMode, setWhatIfMode] = useState(false)
+  const [numDraws, setNumDraws] = useState(1000)
+  const [mcStartPeriod, setMcStartPeriod] = useState(1)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   // Load saved run definition on mount
@@ -21,6 +23,8 @@ export default function RunDefinition() {
         setDescription(data.description || '')
         setStochasticMode(data.stochasticMode || false)
         setWhatIfMode(data.whatIfMode || false)
+        setNumDraws(data.numDraws || 1000)
+        setMcStartPeriod(data.mcStartPeriod || 1)
       } catch (err) {
         logger.error('Error loading run definition:', err)
       }
@@ -35,6 +39,8 @@ export default function RunDefinition() {
       description,
       stochasticMode,
       whatIfMode,
+      numDraws,
+      mcStartPeriod,
       savedAt: new Date().toISOString()
     }
 
@@ -199,6 +205,104 @@ export default function RunDefinition() {
                 </div>
               </div>
             </div>
+
+            {/* Number of Draws (only visible when stochastic mode is on) */}
+            {stochasticMode && (
+              <div style={{
+                marginTop: '16px',
+                marginBottom: '16px',
+                padding: '16px',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: '8px'
+              }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#fff',
+                  marginBottom: '8px'
+                }}>
+                  Number of Monte Carlo Draws
+                </label>
+                <input
+                  type="text"
+                  value={numDraws}
+                  onChange={(e) => setNumDraws(parseInt(e.target.value) || 1000)}
+                  style={{
+                    width: '200px',
+                    padding: '8px 12px',
+                    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(71, 85, 105, 0.6)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                />
+                <div style={{
+                  fontSize: '12px',
+                  color: '#94a3b8',
+                  marginTop: '6px'
+                }}>
+                  Typical range: 1,000 - 10,000 draws. Higher values increase accuracy but take longer to compute.
+                </div>
+              </div>
+            )}
+
+            {/* MC Start Period Slider (only visible when stochastic mode is on) */}
+            {stochasticMode && (
+              <div style={{
+                marginTop: '16px',
+                marginBottom: '16px',
+                padding: '16px',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: '8px'
+              }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#fff',
+                  marginBottom: '12px'
+                }}>
+                  Monte Carlo Start Period: {mcStartPeriod}
+                </label>
+                <input
+                  type="range"
+                  value={mcStartPeriod}
+                  onChange={(e) => setMcStartPeriod(parseInt(e.target.value))}
+                  min={1}
+                  max={20}
+                  step={1}
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    borderRadius: '3px',
+                    backgroundColor: 'rgba(71, 85, 105, 0.5)',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                />
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '11px',
+                  color: '#64748b',
+                  marginTop: '6px'
+                }}>
+                  <span>Period 1</span>
+                  <span>Period 20</span>
+                </div>
+                <div style={{
+                  fontSize: '12px',
+                  color: '#94a3b8',
+                  marginTop: '8px'
+                }}>
+                  Calculation will be deterministic up to this period, then Monte Carlo sampling begins.
+                </div>
+              </div>
+            )}
 
             {/* What-If Mode Switch */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
