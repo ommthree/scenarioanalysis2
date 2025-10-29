@@ -1,8 +1,18 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-10-27
+**Last Updated:** 2025-10-28
 **Total Files:** 79 (27 C++ source, 28 C++ headers, 49 TypeScript/React, 4 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with Validation & Logging System
+**Status:** Production - Unified Engine Architecture with What-If Mode
+
+**Recent Changes (2025-10-28):**
+- ✅ Added What-If Mode Phase 1 - Calculation loop over 2^n action combinations (Session 9)
+- ✅ Added What-If Mode Phase 2 - Delta mode UI with toggle and action selection controls (Session 9)
+- ✅ Added What-If Mode Phase 3 - Dynamic action toggling in C++ engine (Session 9)
+- ✅ Added `parse_whatif_combination()` function in run_calculation.cpp (parses combination strings)
+- ✅ Updated `get_active_actions()` signature - Added `whatif_combination` parameter
+- ✅ Updated ViewResults.tsx - Added absolute/delta mode toggle and action selection UI
+- ✅ Updated PerformCalculation.tsx - Added calculation loop for all combinations
+- ✅ Updated API endpoints - Added `whatIfCombination` parameter filtering
 
 **Recent Changes (2025-10-27):**
 - ✅ Fixed `scenario_mapping` schema - Added `template_code` field (Session 7)
@@ -828,11 +838,19 @@ Options:
 ```
 
 **Functions:**
+- `parse_whatif_combination()` — Parses what-if combination strings (e.g., "ACTION1+ACTION2" → set{"ACTION1", "ACTION2"})
+- `get_active_actions()` — Retrieves and filters active management actions (now accepts `whatif_combination` parameter)
 - Parse command-line arguments
 - Connect to database
 - Run scenario calculation via PeriodRunner
 - Display results summary
 - Exit with status code (0 = success, non-zero = error)
+
+**What-If Mode (Session 9):**
+- `parse_whatif_combination()` splits combination strings by '+' delimiter
+- `get_active_actions()` overrides `is_active` flag based on whatif combination
+- Empty or "BASE" combination = no actions active
+- Each calculation run can have different actions enabled/disabled
 
 **Dependencies:**
 - `period_runner.h`
@@ -1080,11 +1098,25 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Error display
 - Results summary
 - Save run to saved_runs table
+- **What-If Mode (Session 9):**
+  - Generates all 2^n action combinations using power set algorithm
+  - Loops over combinations, calling C++ engine for each
+  - Passes `whatIfCombination` parameter to /api/calculate
+  - Logs progress: "Running combination 1/8: BASE (no actions)"
+  - Each combination stored with unique label in database
 
 **API Endpoints Called:**
-- `POST /api/calculate` — Run calculation
+- `POST /api/calculate` — Run calculation (with optional `whatIfCombination` parameter)
 - `GET /api/calculate/status/:runId` — Check status
 - `GET /api/calculate/results/:runId` — Get results
+
+**What-If Calculation Flow:**
+1. Generate power set of management actions (2^n combinations)
+2. For each combination: Build label (e.g., "ACTION1+ACTION2")
+3. Call POST /api/calculate with { whatIfCombination: label }
+4. C++ engine parses label and overrides which actions are active
+5. Results stored with what_if_combination field
+6. User can compare combinations in ViewResults.tsx
 
 ---
 
@@ -1100,16 +1132,24 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Waterfall chart for driver changes
 - Scenario comparison
 - Export to CSV
+- **What-If Mode (Session 9):**
+  - Absolute/Delta toggle switch for display mode
+  - Action selection controls (blue = displayed run, purple = base case)
+  - Delta calculation: Fetches A and B in parallel, computes A - B
+  - `buildWhatIfCombination()` helper for combination string generation
+  - Reactive updates on control changes
 
 **Data Sources:**
-- `statement_result` table for line item values
-- `statement_result_by_driver` table for decomposition
+- `statement_result` table for line item values (filtered by `what_if_combination`)
+- `statement_result_by_driver` table for decomposition (filtered by `what_if_combination`)
 - `scenario`, `period`, `entity` tables for metadata
+- `management_action` table for available actions
 
 **Key Visualizations:**
 - Table with expandable rows (click to show driver breakdown)
 - Stacked bar chart showing driver contributions
 - Waterfall chart showing period-over-period changes
+- **Delta mode:** Shows (Run A - Run B) differences for all metrics
 
 ---
 

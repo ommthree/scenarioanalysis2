@@ -241,6 +241,9 @@ export default function PerformCalculation() {
         throw new Error(scenResult.error || 'Scenario ingestion failed')
       }
 
+      // Capture mappingId from scenario ingestion for later use
+      const mappingId = scenResult.mappingId
+
       // Step 2: Ingest statements (now that scenarios exist)
       if (verbosity !== 'quiet') {
         addLog('info', 'Step 2: Ingesting statement data from staged files...')
@@ -296,7 +299,11 @@ export default function PerformCalculation() {
         const prepareResponse = await fetch(apiUrl('/api/montecarlo/prepare'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ correlationCsvPath })
+          body: JSON.stringify({
+            correlationCsvPath,
+            dbPath,
+            mappingId
+          })
         })
 
         if (!prepareResponse.ok) {
@@ -319,7 +326,9 @@ export default function PerformCalculation() {
 
         if (verbosity === 'verbose' || verbosity === 'debug') {
           addLog('success', `✓ Cholesky matrix prepared (${prepareResult.dimension}x${prepareResult.dimension})`)
-          addLog('info', `Drivers: ${prepareResult.driverNames.join(', ')}`)
+          if (prepareResult.driverCodes) {
+            addLog('info', `Drivers: ${prepareResult.driverCodes.join(', ')}`)
+          }
         }
 
         // Step 3b: Run deterministic calculation up to MC start period

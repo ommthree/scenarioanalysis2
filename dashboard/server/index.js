@@ -6180,8 +6180,13 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               let scenariosCreated = 0
               let driversInserted = 0
               const errors = []
+              let firstMappingId = null
 
               for (const mapping of mappings) {
+                // Capture the first mapping_id to return to the frontend
+                if (firstMappingId === null) {
+                  firstMappingId = mapping.mapping_id
+                }
             try {
               logVerbose(`Processing CSV file: ${mapping.file_name}`)
               logDebug('Mapping record from scenario_mapping table:', {
@@ -6484,7 +6489,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               if (errors.length > 0) {
                 reject(new Error(errors.join('; ')))
               } else {
-                resolve({ scenarios: scenariosCreated, drivers: driversInserted })
+                resolve({ scenarios: scenariosCreated, drivers: driversInserted, mappingId: firstMappingId })
               }
             }
           )
@@ -7019,14 +7024,26 @@ app.post('/api/whatif/combinations', async (req, res) => {
  * Prepare Monte Carlo simulation: Load correlation matrix and perform Cholesky decomposition
  */
 app.post('/api/montecarlo/prepare', async (req, res) => {
-  const { correlationCsvPath } = req.body
+  const { correlationCsvPath, dbPath, mappingId } = req.body
 
   if (!correlationCsvPath) {
     return res.status(400).json({ error: 'correlationCsvPath is required' })
   }
 
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  if (!mappingId) {
+    return res.status(400).json({ error: 'mappingId is required' })
+  }
+
   if (!fs.existsSync(correlationCsvPath)) {
     return res.status(400).json({ error: 'Correlation CSV file not found' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
   }
 
   try {
@@ -7038,10 +7055,17 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
       return res.status(400).json({ error: 'Correlation CSV must have at least header and one data row' })
     }
 
-    // Parse header to get driver names
+    // Parse header to get CSV column names (skip first column)
     const header = lines[0].split(',')
-    const driverNames = header.slice(1) // Skip first column (Driver label)
-    const n = driverNames.length
+    const csvColumnNames = header.slice(1) // Skip first column (Driver label)
+    const n = csvColumnNames.length
+
+    // Parse row names from first column (should match column names for symmetric matrix)
+    const csvRowNames = []
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',')
+      csvRowNames.push(values[0].trim())
+    }
 
     // Parse correlation matrix
     const correlationMatrix = []
@@ -7062,36 +7086,130 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
       })
     }
 
-    // Perform Cholesky decomposition
-    // L * L^T = Correlation Matrix
-    const L = Array(n).fill(0).map(() => Array(n).fill(0))
+    // Load scenario_mapping to get variable_mappings
+    const db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
 
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j <= i; j++) {
-        let sum = 0
-        for (let k = 0; k < j; k++) {
-          sum += L[i][k] * L[j][k]
+    const mapping = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT variable_mappings, driver_column FROM scenario_mapping WHERE mapping_id = ?',
+        [mappingId],
+        (err, row) => {
+          if (err) reject(err)
+          else if (!row) reject(new Error(`Scenario mapping ${mappingId} not found`))
+          else resolve(row)
+        }
+      )
+    })
+
+    // Get the CSV staging table data to look up row names
+    const stagingTableName = security.createNumberedStagingTableName(
+      await new Promise((resolve, reject) => {
+        db.get(
+          'SELECT file_id FROM scenario_mapping WHERE mapping_id = ?',
+          [mappingId],
+          (err, row) => {
+            if (err) reject(err)
+            else if (!row) reject(new Error('File ID not found'))
+            else resolve(security.validateFileId(row.file_id))
+          }
+        )
+      })
+    )
+
+    const csvData = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT * FROM ${security.quoteIdentifier(stagingTableName)}`,
+        [],
+        (err, rows) => {
+          if (err) reject(err)
+          else resolve(rows)
+        }
+      )
+    })
+
+    // Close database and wait for completion before continuing
+    db.close((closeErr) => {
+      if (closeErr) {
+        return res.status(500).json({ error: 'Failed to close database: ' + closeErr.message })
+      }
+
+      const variableMappings = JSON.parse(mapping.variable_mappings)
+      const driverColumn = mapping.driver_column
+
+      // Map CSV row names to driver codes
+      const driverCodes = []
+      const unmappedRows = []
+
+      for (let i = 0; i < csvRowNames.length; i++) {
+        const csvRowName = csvRowNames[i]
+
+        // Find the CSV row in staging table that matches this row name
+        const csvRow = csvData.find(row => row[driverColumn] === csvRowName)
+
+        if (!csvRow) {
+          unmappedRows.push(csvRowName)
+          driverCodes.push(null)
+          continue
         }
 
-        if (i === j) {
-          const diag = correlationMatrix[i][i] - sum
-          if (diag <= 0) {
-            return res.status(400).json({
-              error: `Matrix is not positive definite (row ${i})`
-            })
-          }
-          L[i][j] = Math.sqrt(diag)
+        // Find the csv_row_index in staging table
+        const csvRowIndex = csvData.indexOf(csvRow)
+
+        // Find the variable mapping for this csv_row_index
+        const varMapping = variableMappings.find(vm => vm.csv_row_index === csvRowIndex)
+
+        if (!varMapping) {
+          unmappedRows.push(csvRowName)
+          driverCodes.push(null)
         } else {
-          L[i][j] = (correlationMatrix[i][j] - sum) / L[j][j]
+          driverCodes.push(varMapping.driver_code)
         }
       }
-    }
 
-    res.json({
-      success: true,
-      choleskyMatrix: L,
-      driverNames: driverNames,
-      dimension: n
+      if (unmappedRows.length > 0) {
+        return res.status(400).json({
+          error: `Failed to map CSV row names to driver codes`,
+          unmappedRows: unmappedRows,
+          hint: 'Please ensure all drivers in the correlation matrix are mapped in the scenario mapping'
+        })
+      }
+
+      // Perform Cholesky decomposition
+      // L * L^T = Correlation Matrix
+      const L = Array(n).fill(0).map(() => Array(n).fill(0))
+
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j <= i; j++) {
+          let sum = 0
+          for (let k = 0; k < j; k++) {
+            sum += L[i][k] * L[j][k]
+          }
+
+          if (i === j) {
+            const diag = correlationMatrix[i][i] - sum
+            if (diag <= 0) {
+              return res.status(400).json({
+                error: `Matrix is not positive definite (row ${i}: ${csvRowNames[i]})`
+              })
+            }
+            L[i][j] = Math.sqrt(diag)
+          } else {
+            L[i][j] = (correlationMatrix[i][j] - sum) / L[j][j]
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        choleskyMatrix: L,
+        driverCodes: driverCodes,
+        csvRowNames: csvRowNames,
+        dimension: n
+      })
     })
   } catch (err) {
     res.status(500).json({ error: `Failed to prepare Monte Carlo: ${err.message}` })
@@ -7270,13 +7388,17 @@ app.post('/api/calculate', async (req, res) => {
             logger.verbose(`Copied statement_result_by_driver to mc_statement_result_by_driver for draw ${mcDrawNumber}`)
             logger.info(`MC draw ${mcDrawNumber} results saved successfully`)
 
-            db.close()
-            res.json({
-              success: true,
-              output: stdout,
-              errors: stderr,
-              logs: logger.getLogs('info'),
-              errorSummary: logger.getErrorSummary()
+            db.close((closeErr) => {
+              if (closeErr) {
+                logger.error('Failed to close database', { error: closeErr.message })
+              }
+              res.json({
+                success: true,
+                output: stdout,
+                errors: stderr,
+                logs: logger.getLogs('info'),
+                errorSummary: logger.getErrorSummary()
+              })
             })
           })
         })
