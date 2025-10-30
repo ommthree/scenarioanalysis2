@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-30 (Session 16-17 - Risk Dashboard with Driver Decomposition)
+**Last Updated:** 2025-10-30 (Session 18 - Risk Dashboard What-If Mode Action Filtering)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, interactive frequency distribution drill-down, flowchart navigation, and Risk Dashboard with cross-filtering drill-down
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, interactive frequency distribution drill-down, flowchart navigation, and Risk Dashboard with cross-filtering drill-down and action filtering
 
 ---
 

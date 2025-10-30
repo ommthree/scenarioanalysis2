@@ -1197,15 +1197,20 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Placeholder stubs for future visualization types
 
 #### `dashboard/src/pages/results/visualizations/RiskDashboard.tsx`
-**Lines:** ~660
-**Purpose:** Interactive risk attribution dashboard with cross-filtering
+**Lines:** ~830
+**Purpose:** Interactive risk attribution dashboard with cross-filtering and action filtering
 **Features:**
 - 4-quadrant layout: Physical/Transition Risk by Country (maps) and Driver (treemaps)
-- Scenario comparison: Test Case vs Base Case delta analysis
+- Scenario comparison: Test Case vs optional Base Case (leave blank for absolute values)
 - Entity filtering across all four quadrants
 - Cross-filtering: Country → Driver and Driver → Country drill-down
 - Auto-zoom choropleth maps with Leaflet
-- Proportional treemap mosaics (width ∝ impact percentage)
+- Proportional treemap mosaics with red-to-green color gradient (width ∝ impact percentage)
+- What-If Mode action filtering: Toggle switches to filter by action combinations
+- Action detection: Reads what-if mode from localStorage, loads management actions
+- Backend whatIfCombination parameter: Filters driver decomposition by action combination
+- Combination format: "BASE", "EV_FLEET", "EV_FLEET+GREEN_SUPPLY+HVAC_UPGRADE" (alphabetically sorted)
+- Absolute/Delta modes: Absolute mode (no base case) shows single scenario, Delta shows difference
 - Backend uses driver-country combinations for dynamic aggregation
 
 ---

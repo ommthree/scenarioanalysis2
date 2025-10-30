@@ -7412,10 +7412,19 @@ app.get('/api/results/mc-distribution', (req, res) => {
  * Risk Dashboard: Compare two scenarios across physical and transition risk dimensions
  */
 app.post('/api/results/risk-dashboard', async (req, res) => {
-  const { dbPath, scenarioA, scenarioB, lineItemCode, periodId, entityId } = req.body
+  const { dbPath, scenarioA, scenarioB, lineItemCode, periodId, entityId, whatIfCombination } = req.body
 
-  if (!dbPath || !scenarioA || !scenarioB || !lineItemCode) {
-    return res.status(400).json({ error: 'dbPath, scenarioA, scenarioB, and lineItemCode are required' })
+  console.log('[risk-dashboard] Request received:', {
+    scenarioA,
+    scenarioB,
+    lineItemCode,
+    periodId,
+    entityId,
+    whatIfCombination
+  })
+
+  if (!dbPath || !scenarioA || !lineItemCode) {
+    return res.status(400).json({ error: 'dbPath, scenarioA, and lineItemCode are required' })
   }
 
   if (!fs.existsSync(dbPath)) {
@@ -7429,9 +7438,34 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
   })
 
   try {
-    // Get driver decomposition results for both scenarios
-    // Calculate delta (Test Case - Base Case) for the specified line item
-    const query = `
+    // Get driver decomposition results
+    // If scenarioB provided: Calculate delta (Test Case - Base Case)
+    // If scenarioB is null: Return absolute values from scenarioA
+    // In what-if mode, filter by action combination
+
+    const isAbsoluteMode = !scenarioB
+
+    const query = isAbsoluteMode ? `
+      -- Absolute mode: just show scenarioA values
+      SELECT
+        srd.driver_code,
+        d.name as driver_name,
+        d.category,
+        e.entity_id,
+        e.json_metadata,
+        SUM(srd.value) as impact
+      FROM statement_result_by_driver srd
+      JOIN driver d ON srd.driver_code = d.code
+      JOIN entity e ON srd.entity_id = e.entity_id
+      WHERE srd.scenario_id = ?
+        AND srd.line_item_code = ?
+        ${periodId ? 'AND srd.period_id = ?' : ''}
+        ${entityId ? 'AND srd.entity_id = ?' : ''}
+        ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
+        AND d.category IN ('physical', 'financial')
+      GROUP BY srd.driver_code, d.name, d.category, e.entity_id, e.json_metadata
+    ` : `
+      -- Delta mode: compare two scenarios
       WITH all_drivers AS (
         SELECT DISTINCT
           srd.driver_code,
@@ -7459,6 +7493,7 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
           AND srd.line_item_code = ?
           ${periodId ? 'AND srd.period_id = ?' : ''}
           ${entityId ? 'AND srd.entity_id = ?' : ''}
+          ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
         GROUP BY srd.driver_code, e.entity_id
       ),
       scenario_b AS (
@@ -7472,6 +7507,7 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
           AND srd.line_item_code = ?
           ${periodId ? 'AND srd.period_id = ?' : ''}
           ${entityId ? 'AND srd.entity_id = ?' : ''}
+          ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
         GROUP BY srd.driver_code, e.entity_id
       )
       SELECT
@@ -7490,35 +7526,32 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
         AND ad.entity_id = b.entity_id
     `
 
-    // Build params array based on optional filters
-    // all_drivers CTE: scenarioA, scenarioB, lineItemCode, [periodId], [entityId]
-    // scenario_a CTE: scenarioA, lineItemCode, [periodId], [entityId]
-    // scenario_b CTE: scenarioB, lineItemCode, [periodId], [entityId]
+    // Build params array based on mode and optional filters
     let params = []
-    if (periodId && entityId) {
-      params = [
-        scenarioA, scenarioB, lineItemCode, periodId, entityId,
-        scenarioA, lineItemCode, periodId, entityId,
-        scenarioB, lineItemCode, periodId, entityId
-      ]
-    } else if (periodId) {
-      params = [
-        scenarioA, scenarioB, lineItemCode, periodId,
-        scenarioA, lineItemCode, periodId,
-        scenarioB, lineItemCode, periodId
-      ]
-    } else if (entityId) {
-      params = [
-        scenarioA, scenarioB, lineItemCode, entityId,
-        scenarioA, lineItemCode, entityId,
-        scenarioB, lineItemCode, entityId
-      ]
+
+    if (isAbsoluteMode) {
+      // Absolute mode: just scenarioA params
+      params = [scenarioA, lineItemCode]
+      if (periodId) params.push(periodId)
+      if (entityId) params.push(entityId)
+      if (whatIfCombination) params.push(whatIfCombination)
     } else {
-      params = [
-        scenarioA, scenarioB, lineItemCode,
-        scenarioA, lineItemCode,
-        scenarioB, lineItemCode
-      ]
+      // Delta mode: all_drivers + scenario_a + scenario_b params
+      const allDriversParams = [scenarioA, scenarioB, lineItemCode]
+      if (periodId) allDriversParams.push(periodId)
+      if (entityId) allDriversParams.push(entityId)
+
+      const scenarioAParams = [scenarioA, lineItemCode]
+      if (periodId) scenarioAParams.push(periodId)
+      if (entityId) scenarioAParams.push(entityId)
+      if (whatIfCombination) scenarioAParams.push(whatIfCombination)
+
+      const scenarioBParams = [scenarioB, lineItemCode]
+      if (periodId) scenarioBParams.push(periodId)
+      if (entityId) scenarioBParams.push(entityId)
+      if (whatIfCombination) scenarioBParams.push(whatIfCombination)
+
+      params = [...allDriversParams, ...scenarioAParams, ...scenarioBParams]
     }
 
     const results = await new Promise((resolve, reject) => {

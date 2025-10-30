@@ -2335,19 +2335,20 @@ The flowchart serves as an alternative to the sidebar menu, accessible from the 
 
 ---
 
-## Appendix F: Risk Dashboard with Cross-Filtering (Session 16-17)
+## Appendix F: Risk Dashboard with Cross-Filtering and Action Filtering (Session 16-18)
 
-The Risk Dashboard provides interactive visualization of scenario comparisons with driver decomposition across physical and transition risk dimensions.
+The Risk Dashboard provides interactive visualization of scenario comparisons with driver decomposition across physical and transition risk dimensions, with optional action filtering for what-if mode calculations.
 
 ### Architecture
 
 **Location:** Results > Explore > Risk Dashboard
 
-**Layout:** 4-quadrant dashboard with cross-filtering capabilities
+**Layout:** 4-quadrant dashboard with cross-filtering and action filtering capabilities
 - Top Left: Physical Risk by Country (choropleth map)
 - Top Right: Transition Risk by Country (choropleth map)
-- Bottom Left: Physical Risk by Driver (treemap mosaic)
-- Bottom Right: Transition Risk by Driver (treemap mosaic)
+- Bottom Left: Physical Risk by Driver (treemap mosaic with red-to-green gradient)
+- Bottom Right: Transition Risk by Driver (treemap mosaic with red-to-green gradient)
+- Action Filter Panel (appears in what-if mode): Toggle switches to filter by action combinations
 
 ### Driver Decomposition Implementation
 
@@ -2365,8 +2366,10 @@ The Risk Dashboard provides interactive visualization of scenario comparisons wi
 ### Cross-Filtering Drill-Down
 
 **Scenario Comparison:**
-- Test Case vs Base Case delta analysis
+- Test Case vs optional Base Case delta analysis (leave Base Case blank for absolute values)
 - Fixed query with all_drivers CTE ensures drivers from both scenarios appear regardless of selection order
+- Absolute mode: Shows single scenario values (no delta calculation)
+- Delta mode: Shows difference between Test Case and Base Case
 
 **Interactive Filtering:**
 - **Country → Driver:** Click country on map → treemap shows only drivers affecting that country
@@ -2374,15 +2377,29 @@ The Risk Dashboard provides interactive visualization of scenario comparisons wi
 - **Entity Filter:** Applies to all four quadrants simultaneously
 - **Clear Filters:** Reset button removes all active filters
 
-**Backend Implementation** (index.js:7531-7607):
+**What-If Mode Action Filtering (Session 18):**
+- **Detection:** Reads `whatIfMode` from localStorage (set after what-if calculation)
+- **Action Loading:** Fetches management actions from GET /api/management-actions
+- **Toggle Switches:** Purple toggle switches (48px × 24px) for each action
+- **Combination Strings:** "BASE" (no actions), "EV_FLEET", "EV_FLEET+GREEN_SUPPLY+HVAC_UPGRADE" (alphabetically sorted)
+- **Backend Filter:** Sends `whatIfCombination` parameter to POST /api/results/risk-dashboard
+- **Database Filtering:** WHERE clause on `statement_result_by_driver.what_if_combination`
+- **State Management:** `useEffect` triggers data reload when `selectedActions` changes
+- **Future-Proofed:** Ready for actions that affect driver-level risks (hedging, insurance, operational risk reduction)
+
+**Backend Implementation** (index.js:7414-7547):
+- Accepts optional `scenarioB` (null for absolute mode)
+- Accepts optional `whatIfCombination` parameter for action filtering
+- Conditional query: Absolute mode (simple SELECT) vs Delta mode (CTE-based comparison)
 - Returns driver-country combinations: `physicalDriverCountries[]` and `transitionDriverCountries[]`
 - Enables frontend dynamic aggregation based on selected filters
 - Preserves raw data for flexible drill-down analysis
 
-**Frontend Implementation** (RiskDashboard.tsx):
+**Frontend Implementation** (RiskDashboard.tsx ~830 lines):
 - Conditional aggregation based on selectedCountry and selectedDriver states
 - Maps auto-zoom to countries with data using Leaflet bounds calculation
 - Treemap mosaic uses proportional width (width ∝ impact percentage, fills 100% of container)
+- Red-to-green color gradient on treemap tiles based on sign and magnitude of impact
 
 ### Visual Design
 
@@ -2394,13 +2411,14 @@ The Risk Dashboard provides interactive visualization of scenario comparisons wi
 
 **Treemap Mosaics:**
 - Horizontal bar layout with proportional widths
+- Red-to-green color gradient based on sign and magnitude of impact
 - Color intensity indicates selection state
 - Zero-value drivers automatically filtered out
 - Hover effects and click-to-select interaction
 
 ---
 
-**Document Version:** 2.4
-**Last Updated:** 2025-10-30 (Session 16-17 - Risk Dashboard with Driver Decomposition)
+**Document Version:** 2.5
+**Last Updated:** 2025-10-30 (Session 18 - Risk Dashboard What-If Mode Action Filtering)
 **Maintained By:** Development Team
 **Next Review:** After major feature additions

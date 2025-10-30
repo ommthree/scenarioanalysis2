@@ -34,6 +34,12 @@ interface CountryImpact {
   impact: number
 }
 
+interface ManagementAction {
+  action_code: string
+  name: string
+  description?: string
+}
+
 export default function RiskDashboard() {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [entities, setEntities] = useState<Entity[]>([])
@@ -54,23 +60,45 @@ export default function RiskDashboard() {
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
   const [selectedDriver, setSelectedDriver] = useState<string | null>(null)
 
+  // What-if mode state
+  const [whatIfMode, setWhatIfMode] = useState<boolean>(false)
+  const [managementActions, setManagementActions] = useState<ManagementAction[]>([])
+  const [selectedActions, setSelectedActions] = useState<Set<string>>(new Set())
+
   useEffect(() => {
     loadScenarios()
     loadEntities()
     loadLineItems()
+
+    // Load last run mode from localStorage (same as ViewResults)
+    const saved = localStorage.getItem('lastRunMode')
+    if (saved) {
+      try {
+        const runMode = JSON.parse(saved)
+        setWhatIfMode(runMode.whatIfMode || false)
+      } catch (err) {
+        console.error('Failed to load last run mode:', err)
+      }
+    }
   }, [])
 
   useEffect(() => {
-    if (scenarioA && scenarioB) {
+    if (scenarioA) {
       loadPeriodRange()
     }
   }, [scenarioA, scenarioB])
 
   useEffect(() => {
-    if (scenarioA && scenarioB && selectedVariable) {
+    if (whatIfMode) {
+      loadManagementActions()
+    }
+  }, [whatIfMode])
+
+  useEffect(() => {
+    if (scenarioA && selectedVariable) {
       loadRiskData()
     }
-  }, [scenarioA, scenarioB, selectedVariable, selectedPeriod, selectedEntity])
+  }, [scenarioA, scenarioB, selectedVariable, selectedPeriod, selectedEntity, selectedActions])
 
   const loadScenarios = async () => {
     try {
@@ -136,22 +164,60 @@ export default function RiskDashboard() {
     }
   }
 
+  const loadManagementActions = async () => {
+    try {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(`${apiUrl('/api/management-actions')}?dbPath=${encodeURIComponent(dbPath)}`)
+      const actions = await response.json()
+      // API returns flat array with action_code and action_name fields
+      const formattedActions = actions.map((a: any) => ({
+        action_code: a.action_code,
+        name: a.action_name,
+        description: a.description
+      }))
+      setManagementActions(formattedActions)
+    } catch (error) {
+      console.error('Failed to load management actions:', error)
+    }
+  }
+
+  const buildWhatIfCombination = (selectedActions: Set<string>): string => {
+    if (selectedActions.size === 0) {
+      return 'BASE'
+    }
+    const sortedActions = Array.from(selectedActions).sort()
+    return sortedActions.join('+')
+  }
+
   const loadRiskData = async () => {
     try {
       const dbPath = getDefaultDbPath()
+      const body: any = {
+        dbPath,
+        scenarioA,
+        scenarioB: scenarioB || null, // Make scenarioB optional
+        lineItemCode: selectedVariable,
+        periodId: selectedPeriod,
+        entityId: selectedEntity
+      }
+
+      // Add what-if combination if in what-if mode
+      if (whatIfMode) {
+        const combination = buildWhatIfCombination(selectedActions)
+        body.whatIfCombination = combination
+        console.log('[RiskDashboard] What-if mode active, combination:', combination, 'selectedActions:', Array.from(selectedActions))
+      }
+
+      console.log('[RiskDashboard] Loading risk data with body:', body)
+
       const response = await fetch(apiUrl('/api/results/risk-dashboard'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dbPath,
-          scenarioA,
-          scenarioB,
-          lineItemCode: selectedVariable,
-          periodId: selectedPeriod,
-          entityId: selectedEntity
-        })
+        body: JSON.stringify(body)
       })
       const result = await response.json()
+
+      console.log('[RiskDashboard] Received result:', result)
 
       if (result.success) {
         setPhysicalDrivers(result.physicalDrivers || [])
@@ -309,6 +375,32 @@ export default function RiskDashboard() {
     const nonZeroDrivers = displayDrivers.filter(d => Math.abs(d.impact) > 1e-10)
     const totalImpact = nonZeroDrivers.reduce((sum, d) => sum + Math.abs(d.impact), 0)
 
+    // Find min and max for color gradient
+    const maxPositiveImpact = Math.max(...nonZeroDrivers.map(d => d.impact), 0)
+    const minNegativeImpact = Math.min(...nonZeroDrivers.map(d => d.impact), 0)
+
+    // Function to get color based on impact value (red for negative, green for positive)
+    const getImpactColor = (impact: number) => {
+      if (impact < 0) {
+        // Negative: scale from light red to dark red based on magnitude
+        const intensity = Math.abs(minNegativeImpact) > 0
+          ? Math.abs(impact) / Math.abs(minNegativeImpact)
+          : 1
+        const opacity = 0.4 + (intensity * 0.6) // Range from 0.4 to 1.0
+        return `rgba(239, 68, 68, ${opacity})` // Red with varying opacity
+      } else if (impact > 0) {
+        // Positive: scale from light green to dark green based on magnitude
+        const intensity = maxPositiveImpact > 0
+          ? impact / maxPositiveImpact
+          : 1
+        const opacity = 0.4 + (intensity * 0.6) // Range from 0.4 to 1.0
+        return `rgba(34, 197, 94, ${opacity})` // Green with varying opacity
+      } else {
+        // Zero impact (shouldn't happen due to filtering, but handle gracefully)
+        return 'rgba(100, 116, 139, 0.3)' // Gray
+      }
+    }
+
     // Calculate mosaic layout - tiles should fill entire space
     const containerWidth = 100 // percentage
     const containerHeight = 200 // pixels
@@ -357,8 +449,8 @@ export default function RiskDashboard() {
                     height: `calc(100% - ${gap * 0}px)`,
                     flexGrow: 0,
                     flexShrink: 0,
-                    backgroundColor: selectedDriver === driver.driver_code ? color : `${color}60`,
-                    border: selectedDriver === driver.driver_code ? `2px solid ${color}` : `1px solid ${color}40`,
+                    backgroundColor: selectedDriver === driver.driver_code ? (driver.impact < 0 ? '#dc2626' : '#16a34a') : getImpactColor(driver.impact),
+                    border: selectedDriver === driver.driver_code ? `2px solid ${driver.impact < 0 ? '#ef4444' : '#22c55e'}` : `1px solid rgba(100, 116, 139, 0.3)`,
                     borderRadius: '4px',
                     padding: '8px',
                     cursor: 'pointer',
@@ -467,7 +559,7 @@ export default function RiskDashboard() {
         marginBottom: '24px'
       }}>
         <CardContent style={{ padding: '24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
             {/* Test Case (Scenario A) */}
             <div>
               <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
@@ -496,7 +588,7 @@ export default function RiskDashboard() {
             {/* Base Case (Scenario B) */}
             <div>
               <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                Base Case
+                Base Case <span style={{ fontSize: '12px', color: '#64748b' }}>(optional - leave blank for absolute values)</span>
               </label>
               <select
                 value={scenarioB || ''}
@@ -517,7 +609,9 @@ export default function RiskDashboard() {
                 ))}
               </select>
             </div>
+          </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
             {/* Variable */}
             <div>
               <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
@@ -589,28 +683,28 @@ export default function RiskDashboard() {
                 }}
               />
             </div>
-
-            {/* Active Filters */}
-            {(selectedCountry || selectedDriver) && (
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
-                <Button
-                  onClick={() => {
-                    setSelectedCountry(null)
-                    setSelectedDriver(null)
-                  }}
-                  size="sm"
-                  style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                    border: '1px solid #ef4444',
-                    color: '#ef4444'
-                  }}
-                >
-                  <Filter className="w-4 h-4 mr-2" />
-                  Clear Filters
-                </Button>
-              </div>
-            )}
           </div>
+
+          {/* Active Filters */}
+          {(selectedCountry || selectedDriver) && (
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <Button
+                onClick={() => {
+                  setSelectedCountry(null)
+                  setSelectedDriver(null)
+                }}
+                size="sm"
+                style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid #ef4444',
+                  color: '#ef4444'
+                }}
+              >
+                <Filter className="w-4 h-4 mr-2" />
+                Clear Filters
+              </Button>
+            </div>
+          )}
 
           {(selectedCountry || selectedDriver) && (
             <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -643,8 +737,96 @@ export default function RiskDashboard() {
         </CardContent>
       </Card>
 
+      {/* What-If Mode Action Toggles */}
+      {whatIfMode && managementActions.length > 0 && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(168, 85, 247, 0.3)',
+          marginBottom: '24px'
+        }}>
+          <CardContent style={{ padding: '24px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '8px' }}>
+                Filter by Actions (What-If Mode)
+              </h3>
+              <p style={{ fontSize: '13px', color: '#94a3b8' }}>
+                Select which actions to include in the displayed results.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              {managementActions.map(action => {
+                const isActive = selectedActions.has(action.action_code)
+                return (
+                  <div
+                    key={action.action_code}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '12px 16px',
+                      backgroundColor: 'rgba(51, 65, 85, 0.3)',
+                      border: '1px solid rgba(100, 116, 139, 0.3)',
+                      borderRadius: '8px',
+                      minWidth: '280px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ flex: 1, marginRight: '12px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>
+                        {action.name}
+                      </div>
+                      {action.description && (
+                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+                          {action.description}
+                        </div>
+                      )}
+                    </div>
+                    {/* Toggle Switch */}
+                    <div
+                      onClick={() => {
+                        const newActions = new Set(selectedActions)
+                        if (isActive) {
+                          newActions.delete(action.action_code)
+                        } else {
+                          newActions.add(action.action_code)
+                        }
+                        setSelectedActions(newActions)
+                      }}
+                      style={{
+                        width: '48px',
+                        height: '24px',
+                        backgroundColor: isActive ? '#a855f7' : 'rgba(100, 116, 139, 0.5)',
+                        borderRadius: '12px',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                        flexShrink: 0
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '20px',
+                          height: '20px',
+                          backgroundColor: '#ffffff',
+                          borderRadius: '50%',
+                          position: 'absolute',
+                          top: '2px',
+                          left: isActive ? '26px' : '2px',
+                          transition: 'all 0.3s',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 4-Quadrant Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', height: 'calc(100vh - 285px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', height: whatIfMode && managementActions.length > 0 ? 'calc(100vh - 600px)' : 'calc(100vh - 285px)' }}>
         {/* Top Left - Physical Risk Map */}
         {renderMap(physicalCountries, physicalDriverCountries, 'Physical Risk by Country', '#ef4444')}
 

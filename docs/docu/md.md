@@ -349,7 +349,7 @@ Archived Background (docs/archive/):
 - Iterates until convergence (max 5 passes), typically 2-3 passes per period
 - Created Risk Dashboard visualization (Results > Explore > Risk Dashboard)
 - 4-quadrant layout: Physical/Transition Risk by Country (choropleth maps) and by Driver (treemap mosaics)
-- Scenario comparison: "Test Case" minus "Base Case" delta analysis
+- Scenario comparison: "Test Case" minus "Base Case" delta analysis (optional base case - leave blank for absolute values)
 - Entity filtering: Filter all four quadrants by selected entity
 - Cross-filtering: Click country → filters drivers, click driver → filters countries
 - Bidirectional drill-down: Interactive exploration of risk attribution
@@ -357,6 +357,13 @@ Archived Background (docs/archive/):
 - Fixed query to use all_drivers CTE: Shows drivers from both scenarios regardless of selection order
 - Backend returns driver-country combinations: Enables dynamic aggregation for cross-filtering
 - Treemap mosaic: Proportional tiles fill 100% of container space (width ∝ impact percentage)
+- Color gradient: Red-to-green gradient on treemap tiles based on sign and magnitude of impact
+- What-If Mode action filtering: Toggle switches to filter results by action combinations
+- Action toggles: Detects what-if mode from localStorage, loads management actions, displays toggle switches
+- Backend whatIfCombination filtering: POST /api/results/risk-dashboard accepts optional whatIfCombination parameter
+- Combination string format: "BASE" (no actions), "EV_FLEET", "EV_FLEET+GREEN_SUPPLY+HVAC_UPGRADE" (alphabetically sorted)
+- Absolute vs Delta modes: Absolute mode (no base case) shows single scenario values, Delta mode shows difference
+- Future-proofed for actions that affect driver-level risks (hedging, insurance, operational risk reduction)
 
 **Last Reviewed:** 2025-10-30
 **Maintainer:** Development Team
