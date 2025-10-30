@@ -7409,6 +7409,309 @@ app.get('/api/results/mc-distribution', (req, res) => {
 })
 
 /**
+ * Risk Dashboard: Compare two scenarios across physical and transition risk dimensions
+ */
+app.post('/api/results/risk-dashboard', async (req, res) => {
+  const { dbPath, scenarioA, scenarioB, lineItemCode, periodId, entityId } = req.body
+
+  if (!dbPath || !scenarioA || !scenarioB || !lineItemCode) {
+    return res.status(400).json({ error: 'dbPath, scenarioA, scenarioB, and lineItemCode are required' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: `Database error: ${err.message}` })
+    }
+  })
+
+  try {
+    // Get driver decomposition results for both scenarios
+    // Calculate delta (Test Case - Base Case) for the specified line item
+    const query = `
+      WITH all_drivers AS (
+        SELECT DISTINCT
+          srd.driver_code,
+          d.name as driver_name,
+          d.category,
+          e.entity_id,
+          e.json_metadata
+        FROM statement_result_by_driver srd
+        JOIN driver d ON srd.driver_code = d.code
+        JOIN entity e ON srd.entity_id = e.entity_id
+        WHERE srd.scenario_id IN (?, ?)
+          AND srd.line_item_code = ?
+          ${periodId ? 'AND srd.period_id = ?' : ''}
+          ${entityId ? 'AND srd.entity_id = ?' : ''}
+          AND d.category IN ('physical', 'financial')
+      ),
+      scenario_a AS (
+        SELECT
+          srd.driver_code,
+          e.entity_id,
+          SUM(srd.value) as total_value
+        FROM statement_result_by_driver srd
+        JOIN entity e ON srd.entity_id = e.entity_id
+        WHERE srd.scenario_id = ?
+          AND srd.line_item_code = ?
+          ${periodId ? 'AND srd.period_id = ?' : ''}
+          ${entityId ? 'AND srd.entity_id = ?' : ''}
+        GROUP BY srd.driver_code, e.entity_id
+      ),
+      scenario_b AS (
+        SELECT
+          srd.driver_code,
+          e.entity_id,
+          SUM(srd.value) as total_value
+        FROM statement_result_by_driver srd
+        JOIN entity e ON srd.entity_id = e.entity_id
+        WHERE srd.scenario_id = ?
+          AND srd.line_item_code = ?
+          ${periodId ? 'AND srd.period_id = ?' : ''}
+          ${entityId ? 'AND srd.entity_id = ?' : ''}
+        GROUP BY srd.driver_code, e.entity_id
+      )
+      SELECT
+        ad.driver_code,
+        ad.driver_name,
+        ad.category,
+        ad.entity_id,
+        ad.json_metadata,
+        (COALESCE(a.total_value, 0) - COALESCE(b.total_value, 0)) as impact
+      FROM all_drivers ad
+      LEFT JOIN scenario_a a
+        ON ad.driver_code = a.driver_code
+        AND ad.entity_id = a.entity_id
+      LEFT JOIN scenario_b b
+        ON ad.driver_code = b.driver_code
+        AND ad.entity_id = b.entity_id
+    `
+
+    // Build params array based on optional filters
+    // all_drivers CTE: scenarioA, scenarioB, lineItemCode, [periodId], [entityId]
+    // scenario_a CTE: scenarioA, lineItemCode, [periodId], [entityId]
+    // scenario_b CTE: scenarioB, lineItemCode, [periodId], [entityId]
+    let params = []
+    if (periodId && entityId) {
+      params = [
+        scenarioA, scenarioB, lineItemCode, periodId, entityId,
+        scenarioA, lineItemCode, periodId, entityId,
+        scenarioB, lineItemCode, periodId, entityId
+      ]
+    } else if (periodId) {
+      params = [
+        scenarioA, scenarioB, lineItemCode, periodId,
+        scenarioA, lineItemCode, periodId,
+        scenarioB, lineItemCode, periodId
+      ]
+    } else if (entityId) {
+      params = [
+        scenarioA, scenarioB, lineItemCode, entityId,
+        scenarioA, lineItemCode, entityId,
+        scenarioB, lineItemCode, entityId
+      ]
+    } else {
+      params = [
+        scenarioA, scenarioB, lineItemCode,
+        scenarioA, lineItemCode,
+        scenarioB, lineItemCode
+      ]
+    }
+
+    const results = await new Promise((resolve, reject) => {
+      db.all(query, params, (err, rows) => {
+        if (err) reject(err)
+        else resolve(rows)
+      })
+    })
+
+    // Process results into physical/transition + country/driver breakdown
+    // Store driver-country combinations for cross-filtering
+    const physicalDriverCountries = [] // Array of { driver_code, driver_name, country, impact }
+    const transitionDriverCountries = []
+    const physicalCountries = new Map()
+    const transitionCountries = new Map()
+
+    results.forEach(row => {
+      const metadata = typeof row.json_metadata === 'string'
+        ? JSON.parse(row.json_metadata)
+        : row.json_metadata
+      const countries = metadata?.countries || []
+      const isPhysical = row.category?.toLowerCase() === 'physical'
+      const isTransition = row.category?.toLowerCase() === 'financial'
+
+      // Store driver-country combinations
+      countries.forEach(country => {
+        if (isPhysical) {
+          physicalDriverCountries.push({
+            driver_code: row.driver_code,
+            driver_name: row.driver_name,
+            country: country,
+            impact: row.impact
+          })
+          const current = physicalCountries.get(country) || 0
+          physicalCountries.set(country, current + row.impact)
+        } else if (isTransition) {
+          transitionDriverCountries.push({
+            driver_code: row.driver_code,
+            driver_name: row.driver_name,
+            country: country,
+            impact: row.impact
+          })
+          const current = transitionCountries.get(country) || 0
+          transitionCountries.set(country, current + row.impact)
+        }
+      })
+    })
+
+    // Aggregate drivers (sum across all countries for each driver)
+    const aggregateDrivers = (driverCountryList) => {
+      const driverMap = new Map()
+      driverCountryList.forEach(item => {
+        const key = item.driver_code
+        if (!driverMap.has(key)) {
+          driverMap.set(key, {
+            driver_code: item.driver_code,
+            driver_name: item.driver_name,
+            impact: 0
+          })
+        }
+        driverMap.get(key).impact += item.impact
+      })
+      return Array.from(driverMap.values())
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+    }
+
+    const formatCountryData = (countryMap) => {
+      return Array.from(countryMap.entries())
+        .map(([country, impact]) => ({
+          country: country,
+          impact: impact
+        }))
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+    }
+
+    db.close()
+    res.json({
+      success: true,
+      physicalDrivers: aggregateDrivers(physicalDriverCountries),
+      transitionDrivers: aggregateDrivers(transitionDriverCountries),
+      physicalCountries: formatCountryData(physicalCountries),
+      transitionCountries: formatCountryData(transitionCountries),
+      // Include driver-country detail for cross-filtering
+      physicalDriverCountries,
+      transitionDriverCountries
+    })
+  } catch (err) {
+    db.close()
+    res.status(500).json({ error: `Failed to load risk dashboard data: ${err.message}` })
+  }
+})
+
+/**
+ * Get period range for scenarios
+ */
+app.get('/api/results/period-range', async (req, res) => {
+  const { dbPath, scenarioIds } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: `Database error: ${err.message}` })
+    }
+  })
+
+  try {
+    const ids = scenarioIds ? scenarioIds.split(',') : []
+    const placeholders = ids.length > 0 ? ids.map(() => '?').join(',') : '?'
+    const params = ids.length > 0 ? ids : [0]
+
+    const query = `
+      SELECT MIN(period_id) as min_period, MAX(period_id) as max_period
+      FROM statement_result
+      WHERE scenario_id IN (${placeholders})
+    `
+
+    const result = await new Promise((resolve, reject) => {
+      db.get(query, params, (err, row) => {
+        if (err) reject(err)
+        else resolve(row)
+      })
+    })
+
+    db.close()
+    res.json({
+      success: true,
+      minPeriod: result.min_period || 1,
+      maxPeriod: result.max_period || 20
+    })
+  } catch (err) {
+    db.close()
+    res.status(500).json({ error: `Failed to get period range: ${err.message}` })
+  }
+})
+
+/**
+ * Get available line items for risk dashboard
+ */
+app.get('/api/results/risk-line-items', async (req, res) => {
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: `Database error: ${err.message}` })
+    }
+  })
+
+  try {
+    // Only return line items that have driver decomposition data
+    const query = `
+      SELECT DISTINCT srd.line_item_code as code
+      FROM statement_result_by_driver srd
+      ORDER BY srd.line_item_code
+    `
+
+    const results = await new Promise((resolve, reject) => {
+      db.all(query, [], (err, rows) => {
+        if (err) reject(err)
+        else resolve(rows)
+      })
+    })
+
+    const lineItems = results.map(row => ({
+      code: row.code,
+      name: row.code.split('_').map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ')
+    }))
+
+    db.close()
+    res.json({ success: true, lineItems })
+  } catch (err) {
+    db.close()
+    res.status(500).json({ error: `Failed to load line items: ${err.message}` })
+  }
+})
+
+/**
  * Generate what-if combinations
  */
 app.post('/api/whatif/combinations', async (req, res) => {

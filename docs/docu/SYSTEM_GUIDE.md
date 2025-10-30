@@ -2335,7 +2335,72 @@ The flowchart serves as an alternative to the sidebar menu, accessible from the 
 
 ---
 
-**Document Version:** 2.3
-**Last Updated:** 2025-10-30 (Session 14 - Flowchart Navigation Redesign)
+## Appendix F: Risk Dashboard with Cross-Filtering (Session 16-17)
+
+The Risk Dashboard provides interactive visualization of scenario comparisons with driver decomposition across physical and transition risk dimensions.
+
+### Architecture
+
+**Location:** Results > Explore > Risk Dashboard
+
+**Layout:** 4-quadrant dashboard with cross-filtering capabilities
+- Top Left: Physical Risk by Country (choropleth map)
+- Top Right: Transition Risk by Country (choropleth map)
+- Bottom Left: Physical Risk by Driver (treemap mosaic)
+- Bottom Right: Transition Risk by Driver (treemap mosaic)
+
+### Driver Decomposition Implementation
+
+**Iterative Decomposition Algorithm** (run_calculation.cpp:1204-1331):
+1. **Pass 1:** Direct driver decompositions via "with and without" calculation (unified_engine.cpp:340-403)
+2. **Pass 2+:** Propagate driver impacts through formula dependencies
+   - Extract line item dependencies from formulas (exclude drivers, BASE:, [t-1] references)
+   - Check if all dependencies have decomposition
+   - Aggregate driver contributions from dependencies
+   - Mark as decomposed and save to statement_result_by_driver
+3. **Convergence:** Iteration stops when no new decompositions added (typically 2-3 passes)
+
+**Result:** Derived line items (NET_INCOME, RETAINED_EARNINGS, etc.) now have complete driver decomposition alongside directly-driven line items (REVENUE, EXPENSES)
+
+### Cross-Filtering Drill-Down
+
+**Scenario Comparison:**
+- Test Case vs Base Case delta analysis
+- Fixed query with all_drivers CTE ensures drivers from both scenarios appear regardless of selection order
+
+**Interactive Filtering:**
+- **Country → Driver:** Click country on map → treemap shows only drivers affecting that country
+- **Driver → Country:** Click driver in treemap → map shows only countries affected by that driver
+- **Entity Filter:** Applies to all four quadrants simultaneously
+- **Clear Filters:** Reset button removes all active filters
+
+**Backend Implementation** (index.js:7531-7607):
+- Returns driver-country combinations: `physicalDriverCountries[]` and `transitionDriverCountries[]`
+- Enables frontend dynamic aggregation based on selected filters
+- Preserves raw data for flexible drill-down analysis
+
+**Frontend Implementation** (RiskDashboard.tsx):
+- Conditional aggregation based on selectedCountry and selectedDriver states
+- Maps auto-zoom to countries with data using Leaflet bounds calculation
+- Treemap mosaic uses proportional width (width ∝ impact percentage, fills 100% of container)
+
+### Visual Design
+
+**Choropleth Maps:**
+- Red (negative impact) vs Green (positive impact) color scale
+- Opacity scaled by magnitude
+- Auto-zoom to bounding box of countries with data
+- Interactive tooltips with formatted values
+
+**Treemap Mosaics:**
+- Horizontal bar layout with proportional widths
+- Color intensity indicates selection state
+- Zero-value drivers automatically filtered out
+- Hover effects and click-to-select interaction
+
+---
+
+**Document Version:** 2.4
+**Last Updated:** 2025-10-30 (Session 16-17 - Risk Dashboard with Driver Decomposition)
 **Maintained By:** Development Team
 **Next Review:** After major feature additions

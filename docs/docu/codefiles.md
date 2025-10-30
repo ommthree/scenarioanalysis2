@@ -1188,17 +1188,40 @@ All map pages follow similar pattern: Column mapping → validation → producti
 ---
 
 #### `dashboard/src/pages/results/Explore.tsx`
-**Lines:** ~420
-**Purpose:** Interactive data exploration
+**Lines:** ~230
+**Purpose:** Interactive data exploration hub
 **Features:**
-- Pivot table configuration
-- Chart type selection (line, bar, area, scatter)
-- Filter by scenario/period/entity
-- Aggregation functions (sum, avg, min, max)
+- Visualization type selector (10 types including Risk Dashboard)
+- Collapsible menu with icon-based navigation
+- Risk Dashboard: 4-quadrant scenario comparison with cross-filtering drill-down
+- Placeholder stubs for future visualization types
+
+#### `dashboard/src/pages/results/visualizations/RiskDashboard.tsx`
+**Lines:** ~660
+**Purpose:** Interactive risk attribution dashboard with cross-filtering
+**Features:**
+- 4-quadrant layout: Physical/Transition Risk by Country (maps) and Driver (treemaps)
+- Scenario comparison: Test Case vs Base Case delta analysis
+- Entity filtering across all four quadrants
+- Cross-filtering: Country → Driver and Driver → Country drill-down
+- Auto-zoom choropleth maps with Leaflet
+- Proportional treemap mosaics (width ∝ impact percentage)
+- Backend uses driver-country combinations for dynamic aggregation
 
 ---
 
 ### Visualization Components (✅ Complete)
+
+#### `dashboard/src/components/visualizations/CountryChoroplethMap.tsx`
+**Lines:** ~172
+**Purpose:** Interactive choropleth map for country-level risk visualization
+**Features:**
+- Leaflet-based map with GeoJSON country boundaries
+- Red/green color scale with opacity based on magnitude
+- Auto-zoom to bounding box of countries with data
+- Click-to-select interaction with country highlighting
+- Tooltips with formatted impact values
+- Supports selectedCountry prop for cross-filtering
 
 #### `dashboard/src/components/visualizations/LocationMap.tsx`
 **Lines:** ~280

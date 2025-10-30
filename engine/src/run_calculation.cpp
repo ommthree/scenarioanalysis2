@@ -1200,6 +1200,135 @@ int main(int argc, char* argv[]) {
 
                     std::cout << "✓ Saved " << driver_saved_count << " driver contributions" << std::endl;
                 }
+
+                // Iterative decomposition for derived line items
+                // Pass 2+: Propagate driver impacts through formulas
+                if (period_id > 0) {
+                    std::cout << "Computing derived line item decompositions..." << std::endl;
+
+                    // Track which line items have decomposition: entity_id -> line_item_code -> set of drivers
+                    std::map<std::string, std::map<std::string, std::set<std::string>>> decomposed_items;
+
+                    // Initialize with direct driver decompositions
+                    for (const auto& [entity_id, line_item_code, driver_code, value] : all_driver_contributions) {
+                        decomposed_items[entity_id][line_item_code].insert(driver_code);
+                    }
+
+                    // Iterative passes until no new decompositions
+                    int pass = 2;
+                    bool added_new = true;
+                    while (added_new && pass <= 5) {  // Max 5 passes to prevent infinite loops
+                        added_new = false;
+                        std::cout << "  Pass " << pass << "..." << std::endl;
+
+                        // Try to decompose each line item that doesn't have decomposition yet
+                        for (const auto& line_item : line_items) {
+                            // Skip if no formula (direct driver items)
+                            if (!line_item.formula.has_value() || line_item.formula->empty()) {
+                                continue;
+                            }
+
+                            // Extract formula dependencies (line item references, not drivers)
+                            core::FormulaEvaluator evaluator;
+                            auto dependencies = evaluator.extract_dependencies(line_item.formula.value());
+
+                            // Filter to only line item dependencies (not drivers, not BASE:, not time-shifted)
+                            std::vector<std::string> line_item_deps;
+                            for (const auto& dep : dependencies) {
+                                // Skip driver references
+                                if (dep.length() > 7 && dep.substr(0, 7) == "driver:") continue;
+                                // Skip BASE references
+                                if (dep.length() > 5 && dep.substr(0, 5) == "BASE:") continue;
+                                // Skip time-shifted references [t-1]
+                                if (dep.length() > 5 && dep.substr(dep.length() - 5) == "[t-1]") continue;
+
+                                line_item_deps.push_back(dep);
+                            }
+
+                            // If no line item dependencies, skip
+                            if (line_item_deps.empty()) continue;
+
+                            // For each entity
+                            for (const auto& [entity_id, line_item_map] : period_results) {
+                                // Check if this line item already has decomposition for this entity
+                                if (decomposed_items[entity_id].find(line_item.code) != decomposed_items[entity_id].end()) {
+                                    continue;  // Already decomposed
+                                }
+
+                                // Check if ALL dependencies have decompositions
+                                bool all_deps_decomposed = true;
+                                for (const auto& dep_code : line_item_deps) {
+                                    if (decomposed_items[entity_id].find(dep_code) == decomposed_items[entity_id].end()) {
+                                        all_deps_decomposed = false;
+                                        break;
+                                    }
+                                }
+
+                                if (!all_deps_decomposed) continue;
+
+                                // Aggregate driver contributions from dependencies
+                                // For simple formulas like "A - B" or "A + B", we aggregate the drivers
+                                // TODO: Parse formula structure to handle +/- correctly
+                                // For now, simple heuristic: if formula contains the dep, aggregate its drivers
+
+                                std::map<std::string, double> aggregated_drivers;
+
+                                for (const auto& dep_code : line_item_deps) {
+                                    // Find all driver contributions for this dependency
+                                    for (const auto& [e_id, li_code, dr_code, value] : all_driver_contributions) {
+                                        if (e_id == entity_id && li_code == dep_code) {
+                                            // Simple aggregation: sum all (we'll refine this)
+                                            // TODO: Determine if we should add or subtract based on formula
+                                            aggregated_drivers[dr_code] += value;
+                                        }
+                                    }
+                                }
+
+                                // Save aggregated decompositions
+                                if (!aggregated_drivers.empty()) {
+                                    for (const auto& [driver_code, agg_value] : aggregated_drivers) {
+                                        if (std::abs(agg_value) > 1e-10) {  // Only non-zero
+                                            all_driver_contributions.push_back(
+                                                std::make_tuple(entity_id, line_item.code, driver_code, agg_value)
+                                            );
+
+                                            // Save to database immediately
+                                            ParamMap driver_params;
+                                            driver_params["entity_id"] = entity_id;
+                                            driver_params["scenario_id"] = scenario_id;
+                                            driver_params["period_id"] = period_id;
+                                            driver_params["line_item_code"] = line_item.code;
+                                            driver_params["driver_code"] = driver_code;
+                                            driver_params["value"] = agg_value;
+                                            driver_params["what_if_combination"] = whatif_combination;
+
+                                            try {
+                                                db->execute_update(
+                                                    "INSERT OR REPLACE INTO statement_result_by_driver "
+                                                    "(entity_id, scenario_id, period_id, line_item_code, driver_code, value, what_if_combination) "
+                                                    "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :driver_code, :value, :what_if_combination)",
+                                                    driver_params
+                                                );
+                                            } catch (const std::exception& e) {
+                                                std::cerr << "Warning: Failed to save derived contribution: " << e.what() << std::endl;
+                                            }
+                                        }
+                                    }
+
+                                    // Mark as decomposed
+                                    for (const auto& [driver_code, _] : aggregated_drivers) {
+                                        decomposed_items[entity_id][line_item.code].insert(driver_code);
+                                    }
+                                    added_new = true;
+                                }
+                            }
+                        }
+
+                        pass++;
+                    }
+
+                    std::cout << "✓ Derived decompositions complete" << std::endl;
+                }
             }
 
             // Cleanup: Delete temporary templates created for this scenario

@@ -342,6 +342,22 @@ Archived Background (docs/archive/):
 
 ---
 
+**2025-10-30 (Session 16 & 17 - Risk Dashboard with Driver Decomposition):**
+- Implemented iterative driver decomposition: extends "with and without" calculation to derived line items
+- Pass 1: Direct driver decompositions (existing logic in unified_engine.cpp:340-403)
+- Pass 2+: Propagate driver impacts through formula dependencies (NET_INCOME, RETAINED_EARNINGS, etc.)
+- Iterates until convergence (max 5 passes), typically 2-3 passes per period
+- Created Risk Dashboard visualization (Results > Explore > Risk Dashboard)
+- 4-quadrant layout: Physical/Transition Risk by Country (choropleth maps) and by Driver (treemap mosaics)
+- Scenario comparison: "Test Case" minus "Base Case" delta analysis
+- Entity filtering: Filter all four quadrants by selected entity
+- Cross-filtering: Click country → filters drivers, click driver → filters countries
+- Bidirectional drill-down: Interactive exploration of risk attribution
+- Auto-zoom maps: Choropleth maps automatically zoom to countries with impact data
+- Fixed query to use all_drivers CTE: Shows drivers from both scenarios regardless of selection order
+- Backend returns driver-country combinations: Enables dynamic aggregation for cross-filtering
+- Treemap mosaic: Proportional tiles fill 100% of container space (width ∝ impact percentage)
+
 **Last Reviewed:** 2025-10-30
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

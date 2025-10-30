@@ -1,11 +1,44 @@
 import { useState, useEffect } from 'react'
 import { logger } from '@/utils/logger'
-import { Building2, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Upload, Download } from 'lucide-react'
+import { Building2, Plus, Edit2, Trash2, ChevronRight, ChevronDown, Save, Upload, Download, X } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { apiUrl, getDefaultDbPath } from '@/config'
+
+const COUNTRIES = [
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
+  'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia',
+  'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi',
+  'Cambodia', 'Cameroon', 'Canada', 'Cape Verde', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia',
+  'Comoros', 'Congo', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus', 'Czech Republic',
+  'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic',
+  'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Ethiopia',
+  'Fiji', 'Finland', 'France',
+  'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana',
+  'Haiti', 'Honduras', 'Hungary',
+  'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy',
+  'Jamaica', 'Japan', 'Jordan',
+  'Kazakhstan', 'Kenya', 'Kiribati', 'Kuwait', 'Kyrgyzstan',
+  'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg',
+  'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania', 'Mauritius',
+  'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar',
+  'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway',
+  'Oman',
+  'Pakistan', 'Palau', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal',
+  'Qatar',
+  'Romania', 'Russia', 'Rwanda',
+  'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa', 'San Marino', 'Sao Tome and Principe',
+  'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia', 'Slovenia', 'Solomon Islands',
+  'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria',
+  'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia', 'Turkey',
+  'Turkmenistan', 'Tuvalu',
+  'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan',
+  'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam',
+  'Yemen',
+  'Zambia', 'Zimbabwe'
+]
 
 interface Entity {
   entity_id?: number
@@ -89,24 +122,65 @@ export default function DefineEntities() {
     return roots
   }
 
+  const findEntityById = (entityList: Entity[], id: number): Entity | null => {
+    for (const entity of entityList) {
+      if (entity.entity_id === id) return entity
+      if (entity.children) {
+        const found = findEntityById(entity.children, id)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
   const handleSave = async () => {
     try {
       const dbPath = getDefaultDbPath()
-      const response = await fetch(apiUrl('/api/entities/save'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbPath, entity: formData })
-      })
-      const result = await response.json()
-      if (result.success) {
-        setSaveMessage('Entity saved successfully!')
-        setTimeout(() => setSaveMessage(''), 3000)
-        loadEntities()
-        setIsEditing(false)
-        resetForm()
-      } else {
-        setSaveMessage(`Error: ${result.error}`)
+
+      // If this entity has a parent and countries are being added, propagate to parent
+      let entitiesToUpdate = [formData]
+      if (formData.parent_entity_id && formData.json_metadata.countries) {
+        const parentEntity = findEntityById(entities, formData.parent_entity_id)
+        if (parentEntity) {
+          const parentCountries = parentEntity.json_metadata.countries || []
+          const childCountries = formData.json_metadata.countries || []
+          const newParentCountries = [...new Set([...parentCountries, ...childCountries])]
+
+          // Only update parent if new countries were added
+          if (newParentCountries.length > parentCountries.length) {
+            const updatedParent = {
+              ...parentEntity,
+              json_metadata: {
+                ...parentEntity.json_metadata,
+                countries: newParentCountries
+              }
+            }
+            entitiesToUpdate.push(updatedParent)
+          }
+        }
       }
+
+      // Save all entities (child first, then parent)
+      for (const entity of entitiesToUpdate) {
+        const response = await fetch(apiUrl('/api/entities/save'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dbPath, entity })
+        })
+        const result = await response.json()
+
+        if (!result.success) {
+          setSaveMessage(`Error: ${result.error}`)
+          return
+        }
+      }
+
+      // All saves successful
+      setSaveMessage('Entity saved successfully!')
+      setTimeout(() => setSaveMessage(''), 3000)
+      loadEntities()
+      setIsEditing(false)
+      resetForm()
     } catch (error) {
       logger.error('Save error:', error)
       setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Failed to save'}`)
@@ -418,17 +492,83 @@ export default function DefineEntities() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-muted-foreground">Geography (metadata)</label>
-                  <Input
-                    value={formData.json_metadata.geography || ''}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      json_metadata: { ...formData.json_metadata, geography: e.target.value }
-                    })}
-                    placeholder="e.g., Global"
-                    className="h-8"
-                    style={{ marginTop: '4px', color: '#ffffff' }}
-                  />
+                  <label className="text-sm text-muted-foreground">Countries (metadata)</label>
+
+                  {/* Selected countries */}
+                  {formData.json_metadata.countries && formData.json_metadata.countries.length > 0 && (
+                    <div style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '6px',
+                      marginTop: '8px',
+                      marginBottom: '8px'
+                    }}>
+                      {formData.json_metadata.countries.map((country: string) => (
+                        <div
+                          key={country}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '4px 8px',
+                            backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                            border: '1px solid rgba(34, 197, 94, 0.4)',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            color: '#22c55e'
+                          }}
+                        >
+                          {country}
+                          <X
+                            className="w-3 h-3 cursor-pointer"
+                            onClick={() => {
+                              const newCountries = formData.json_metadata.countries.filter((c: string) => c !== country)
+                              setFormData({
+                                ...formData,
+                                json_metadata: { ...formData.json_metadata, countries: newCountries }
+                              })
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Country selector */}
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const currentCountries = formData.json_metadata.countries || []
+                        if (!currentCountries.includes(e.target.value)) {
+                          setFormData({
+                            ...formData,
+                            json_metadata: {
+                              ...formData.json_metadata,
+                              countries: [...currentCountries, e.target.value]
+                            }
+                          })
+                        }
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      marginTop: '4px',
+                      padding: '10px 12px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                      color: '#ffffff',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      borderRadius: '6px'
+                    }}
+                  >
+                    <option value="">Select country to add...</option>
+                    {COUNTRIES.filter(country => {
+                      const currentCountries = formData.json_metadata.countries || []
+                      return !currentCountries.includes(country)
+                    }).map(country => (
+                      <option key={country} value={country}>{country}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {saveMessage && (
