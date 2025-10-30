@@ -7715,11 +7715,12 @@ app.get('/api/results/risk-line-items', async (req, res) => {
   })
 
   try {
-    // Only return line items that have driver decomposition data
+    // Return all line items from statement_result (includes carbon and financial)
+    // Note: Some line items may not have driver decomposition data
     const query = `
-      SELECT DISTINCT srd.line_item_code as code
-      FROM statement_result_by_driver srd
-      ORDER BY srd.line_item_code
+      SELECT DISTINCT line_item_code as code
+      FROM statement_result
+      ORDER BY line_item_code
     `
 
     const results = await new Promise((resolve, reject) => {
