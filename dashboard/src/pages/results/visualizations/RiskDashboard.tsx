@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { apiUrl, getDefaultDbPath } from '@/config'
@@ -64,6 +64,9 @@ export default function RiskDashboard() {
   const [whatIfMode, setWhatIfMode] = useState<boolean>(false)
   const [managementActions, setManagementActions] = useState<ManagementAction[]>([])
   const [selectedActions, setSelectedActions] = useState<Set<string>>(new Set())
+
+  // Tooltip state
+  const [tooltip, setTooltip] = useState<{visible: boolean; x: number; y: number; content: string} | null>(null)
 
   useEffect(() => {
     loadScenarios()
@@ -458,14 +461,30 @@ export default function RiskDashboard() {
                     flexDirection: 'column',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    transition: 'all 0.2s',
-                    overflow: 'hidden'
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    overflow: 'hidden',
+                    boxShadow: selectedDriver === driver.driver_code ? '0 8px 16px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+                    willChange: 'transform, box-shadow'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = '0.8'
+                    e.currentTarget.style.transform = 'scale(1.03)'
+                    e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.4)'
+                    e.currentTarget.style.zIndex = '10'
+                    setTooltip({
+                      visible: true,
+                      x: e.clientX,
+                      y: e.clientY,
+                      content: `${driver.driver_name}: ${formatNumber(driver.impact)}`
+                    })
+                  }}
+                  onMouseMove={(e) => {
+                    setTooltip(prev => prev ? {...prev, x: e.clientX, y: e.clientY} : null)
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = '1'
+                    e.currentTarget.style.transform = 'scale(1) translateY(0)'
+                    e.currentTarget.style.boxShadow = selectedDriver === driver.driver_code ? '0 8px 16px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)'
+                    e.currentTarget.style.zIndex = selectedDriver === driver.driver_code ? '5' : '1'
+                    setTooltip(null)
                   }}
                 >
                   <div style={{
@@ -521,17 +540,23 @@ export default function RiskDashboard() {
                   borderRadius: '4px',
                   marginBottom: '4px',
                   cursor: 'pointer',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: selectedDriver === driver.driver_code ? '0 4px 8px rgba(0,0,0,0.2)' : 'none',
+                  willChange: 'transform, box-shadow'
                 }}
                 onMouseEnter={(e) => {
                   if (selectedDriver !== driver.driver_code) {
                     e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.3)'
                   }
+                  e.currentTarget.style.transform = 'translateX(2px)'
+                  e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)'
                 }}
                 onMouseLeave={(e) => {
                   if (selectedDriver !== driver.driver_code) {
                     e.currentTarget.style.backgroundColor = 'transparent'
                   }
+                  e.currentTarget.style.transform = 'translateX(0)'
+                  e.currentTarget.style.boxShadow = selectedDriver === driver.driver_code ? '0 4px 8px rgba(0,0,0,0.2)' : 'none'
                 }}
               >
                 <span style={{ fontSize: '14px', color: '#fff' }}>{driver.driver_name}</span>
@@ -552,11 +577,43 @@ export default function RiskDashboard() {
 
   return (
     <div style={{ padding: '24px', height: '100%' }}>
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        @keyframes simpleFade {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+      `}</style>
+
       {/* Controls */}
       <Card style={{
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
         border: '1px solid rgba(59, 130, 246, 0.3)',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        animation: 'fadeIn 0.4s ease-out'
       }}>
         <CardContent style={{ padding: '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -686,8 +743,9 @@ export default function RiskDashboard() {
           </div>
 
           {/* Active Filters */}
-          {(selectedCountry || selectedDriver) && (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', marginTop: '16px' }}>
+          <div style={{ minHeight: '56px', marginTop: '16px' }}>
+            {(selectedCountry || selectedDriver) && (
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
               <Button
                 onClick={() => {
                   setSelectedCountry(null)
@@ -734,6 +792,7 @@ export default function RiskDashboard() {
               )}
             </div>
           )}
+          </div>
         </CardContent>
       </Card>
 
@@ -742,7 +801,9 @@ export default function RiskDashboard() {
         <Card style={{
           backgroundColor: 'rgba(15, 23, 42, 0.9)',
           border: '1px solid rgba(168, 85, 247, 0.3)',
-          marginBottom: '24px'
+          marginBottom: '24px',
+          animation: 'fadeIn 0.5s ease-out 0.1s both',
+          minHeight: '140px'
         }}>
           <CardContent style={{ padding: '24px' }}>
             <div style={{ marginBottom: '16px' }}>
@@ -828,17 +889,51 @@ export default function RiskDashboard() {
       {/* 4-Quadrant Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', height: whatIfMode && managementActions.length > 0 ? 'calc(100vh - 600px)' : 'calc(100vh - 285px)' }}>
         {/* Top Left - Physical Risk Map */}
-        {renderMap(physicalCountries, physicalDriverCountries, 'Physical Risk by Country', '#ef4444')}
+        <div style={{ animation: 'fadeInScale 0.6s ease-out 0.2s both' }}>
+          {renderMap(physicalCountries, physicalDriverCountries, 'Physical Risk by Country', '#ef4444')}
+        </div>
 
         {/* Top Right - Transition Risk Map */}
-        {renderMap(transitionCountries, transitionDriverCountries, 'Transition Risk by Country', '#8b5cf6')}
+        <div style={{ animation: 'fadeInScale 0.6s ease-out 0.3s both' }}>
+          {renderMap(transitionCountries, transitionDriverCountries, 'Transition Risk by Country', '#8b5cf6')}
+        </div>
 
         {/* Bottom Left - Physical Risk Drivers */}
-        {renderDriverBreakdown(physicalDrivers, physicalDriverCountries, 'Physical Risk by Driver', '#ef4444')}
+        <div style={{ animation: 'fadeInScale 0.6s ease-out 0.4s both' }}>
+          {renderDriverBreakdown(physicalDrivers, physicalDriverCountries, 'Physical Risk by Driver', '#ef4444')}
+        </div>
 
         {/* Bottom Right - Transition Risk Drivers */}
-        {renderDriverBreakdown(transitionDrivers, transitionDriverCountries, 'Transition Risk by Driver', '#8b5cf6')}
+        <div style={{ animation: 'fadeInScale 0.6s ease-out 0.5s both' }}>
+          {renderDriverBreakdown(transitionDrivers, transitionDriverCountries, 'Transition Risk by Driver', '#8b5cf6')}
+        </div>
       </div>
+
+      {/* Tooltip */}
+      {tooltip && tooltip.visible && (
+        <div
+          style={{
+            position: 'fixed',
+            left: `${tooltip.x + 15}px`,
+            top: `${tooltip.y + 15}px`,
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            color: '#ffffff',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: '500',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            boxShadow: '0 8px 16px rgba(0,0,0,0.4)',
+            pointerEvents: 'none',
+            zIndex: 9999,
+            whiteSpace: 'nowrap',
+            transition: 'opacity 0.2s',
+            opacity: 1
+          }}
+        >
+          {tooltip.content}
+        </div>
+      )}
     </div>
   )
 }
