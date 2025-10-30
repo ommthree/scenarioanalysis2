@@ -2228,7 +2228,114 @@ The Monte Carlo Distribution Visualization feature provides interactive drill-do
 
 ---
 
-**Document Version:** 2.2
-**Last Updated:** 2025-10-30 (Session 13 - Interactive Monte Carlo Distribution Visualization)
+## Appendix E: Flowchart Navigation (Session 14)
+
+### Overview
+
+The flowchart navigation component provides an interactive visual representation of the system's data flow, offering an alternative to the traditional sidebar menu. Users can click nodes to navigate to different pages while maintaining context of how data flows through the system.
+
+### Layout Architecture
+
+**8-Column Grid Structure:**
+- **Column 1 (Define Basics):** Statements, Entities, Scenarios
+- **Column 2 (Additional Definitions):** Formulae, Validation, Actions
+- **Column 3 (Load):** Load CSV data for all entity types
+- **Column 4 (Map):** Map loaded data to internal schema
+- **Column 5 (Data):** Database and Stored Runs
+- **Column 6 (Run):** Run Definition and Run Calculation
+- **Column 7 (Results):** Results viewing
+- **Column 8 (Explore):** Data exploration
+
+**Grid Positioning:**
+- Row spacing: 140px vertical increment
+- Node dimensions: 220px × 120px
+- Consistent column alignment with proper horizontal spacing
+- Total: 22 interactive nodes representing the complete workflow
+
+### Visual Design
+
+**Node Styling:**
+- Color-coded by category (blue=Define, cyan=Additional, teal=Load, green=Map, emerald=Data, amber=Run, orange=Results, pink=Explore)
+- Gradient backgrounds for depth
+- Larger icons (w-7 h-7) and text (text-base for labels, text-sm for sublabels)
+- Hover effects with border color transition
+
+**Arrow Connections:**
+- Animated orange arrows (#f97316, 4px stroke width)
+- Smooth-step routing for aesthetic flow
+- Vertical arrows for stacked nodes (Run Definition → Run Calc, Stored Runs → Database)
+- Horizontal arrows for workflow progression
+
+### Data Flow Visualization
+
+The flowchart shows the complete data journey:
+
+1. **Definition Phase:** Define core structures (entities, statements, scenarios) and rules (formulae, validation, actions)
+2. **Ingestion Phase:** Load CSV files and map to internal schema
+3. **Storage Phase:** Data consolidated in database, with ability to restore from stored runs
+4. **Execution Phase:** Define run parameters and execute calculations
+5. **Analysis Phase:** View results and explore data
+
+### Technical Implementation
+
+**Component:** `dashboard/src/components/layout/FlowchartNav.tsx` (619 lines)
+
+**Key Features:**
+- React Flow (@xyflow/react) library for interactive flowchart rendering
+- Custom node component with handle positioning (top, bottom, left, right)
+- Unique handle IDs for proper edge routing
+- Auto-fit viewport on load (20% padding, max zoom 0.8)
+- Click navigation integrated with React Router
+- Compact info panel (0.75rem padding) with "Data Flow" title
+
+**Node Definition Pattern:**
+```typescript
+{
+  id: 'node-identifier',
+  type: 'custom',
+  position: { x: columnX, y: rowY },
+  data: {
+    label: 'Node Name',
+    sublabel: 'Category',
+    icon: LucideIcon,
+    onClick: () => navigate('/route')
+  }
+}
+```
+
+**Edge Definition Pattern:**
+```typescript
+{
+  id: 'edge-id',
+  source: 'source-node-id',
+  sourceHandle: 'bottom',  // Optional for vertical routing
+  target: 'target-node-id',
+  targetHandle: 'top',      // Optional for vertical routing
+  type: 'smoothstep',
+  animated: true,
+  style: { stroke: '#f97316', strokeWidth: 4 }
+}
+```
+
+### Navigation Integration
+
+The flowchart serves as an alternative to the sidebar menu, accessible from the home page. It provides:
+- Visual context of where each page fits in the workflow
+- Clear understanding of data dependencies
+- Quick navigation without hierarchical menu drilling
+- Educational value for new users learning the system
+
+### Use Cases
+
+1. **Onboarding:** New users can understand the complete workflow at a glance
+2. **Training:** Visual representation aids in explaining system architecture
+3. **Quick Navigation:** Jump to any workflow stage with spatial context
+4. **Workflow Validation:** Ensures users follow proper data preparation sequence
+5. **Documentation:** Self-documenting interface showing system structure
+
+---
+
+**Document Version:** 2.3
+**Last Updated:** 2025-10-30 (Session 14 - Flowchart Navigation Redesign)
 **Maintained By:** Development Team
 **Next Review:** After major feature additions

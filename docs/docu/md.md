@@ -170,6 +170,20 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-10-30 (Session 14 - Flowchart Navigation Redesign):**
+- Redesigned flowchart navigation component for improved data flow visualization
+- Implemented 8-column grid layout (Define → Load → Map → Database → Run → Results → Explore)
+- Grid positioning: 140px row spacing, consistent column alignment across all nodes
+- Enhanced node styling: removed icon circles, increased icon (w-7 h-7) and text sizes (text-base)
+- Vertical arrow connections for Run Definition → Run Calc and Stored Runs → Database stacks
+- Added unique handle IDs to all node edges (top, bottom, left, right) for proper vertical routing
+- Auto-fit viewport on load with 20% padding for optimal screen utilization
+- Compact info panel styling (0.75rem vertical padding) in top-left position
+- Component: dashboard/src/components/layout/FlowchartNav.tsx (619 lines)
+- Node dimensions: 220px × 120px with gradient backgrounds per category (blue, cyan, teal, green, emerald, amber, orange, pink)
+- 22 interactive nodes across workflow stages with smooth animated orange arrows (#f97316, 4px width)
+- Flowchart provides alternative navigation to traditional sidebar menu
+
 **2025-10-30 (Session 13 - Interactive Monte Carlo Distribution Visualization):**
 - Implemented interactive Monte Carlo distribution visualization feature for drill-down analysis
 - Added GET /api/results/mc-distribution endpoint (index.js:7309-7409) returning all MC draws with statistics

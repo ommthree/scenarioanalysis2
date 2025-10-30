@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-10-30 (Session 13 - Interactive MC Distribution Visualization)
+**Last Updated:** 2025-10-30 (Session 14 - Flowchart Navigation Redesign)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, and interactive frequency distribution drill-down
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, interactive frequency distribution drill-down, and flowchart navigation
 
 ---
 
