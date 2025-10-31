@@ -79,12 +79,15 @@ export default function Explore() {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img src="/daedalus2.png" alt="Logo" style={{ height: '90px', width: 'auto' }} />
+            <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>
+              Explore visualisations
+            </span>
             {menuOpen ? (
               <ChevronUp style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
             ) : (
               <ChevronDown style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
             )}
+            <img src="/daedalus2.png" alt="Logo" style={{ height: '90px', width: 'auto', transform: 'translateY(7px)' }} />
           </div>
         </button>
 
