@@ -1,21 +1,30 @@
 import { useState } from 'react'
 import {
-  LineChart,
+  Database,
+  DollarSign,
   TrendingUp,
+  Map,
+  MapPin,
+  Activity,
+  BarChart2,
   BarChart3,
   PieChart,
-  ScatterChart,
-  Network,
-  BarChart2,
-  Layers,
-  MapPin,
   ChevronDown,
   ChevronUp,
-  LayoutDashboard
+  LayoutDashboard,
+  Network,
+  Leaf
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import RiskDashboard from './visualizations/RiskDashboard'
 import WaterfallChart from './visualizations/WaterfallChart'
+import ScenariosPanel from './visualizations/ScenariosPanel'
+import CorrelationsPanel from './visualizations/CorrelationsPanel'
+import HazardMapsPanel from './visualizations/HazardMapsPanel'
+import LocationsPanel from './visualizations/LocationsPanel'
+import DamageCurvesPanel from './visualizations/DamageCurvesPanel'
+import MACAnalysisPanel from './visualizations/MACAnalysisPanel'
+import ROIAnalysisPanel from './visualizations/ROIAnalysisPanel'
 
 export default function Explore() {
   const [selectedViz, setSelectedViz] = useState<string | null>(null)
@@ -24,13 +33,13 @@ export default function Explore() {
   const vizOptions = [
     { id: 'risk-dashboard', icon: LayoutDashboard, label: 'Risk Dashboard', color: '#ef4444' },
     { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316' },
-    { id: 'timeseries', icon: LineChart, label: 'Time Series', color: '#3b82f6' },
-    { id: 'trends', icon: TrendingUp, label: 'Trends', color: '#10b981' },
-    { id: 'comparison', icon: BarChart3, label: 'Comparison', color: '#8b5cf6' },
-    { id: 'distribution', icon: PieChart, label: 'Distribution', color: '#f59e0b' },
-    { id: 'scatter', icon: ScatterChart, label: 'Scatter', color: '#ec4899' },
-    { id: 'network', icon: Network, label: 'Network', color: '#06b6d4' },
-    { id: 'stacked', icon: Layers, label: 'Stacked', color: '#84cc16' },
+    { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6' },
+    { id: 'correlations', icon: Network, label: 'Correlations', color: '#10b981' },
+    { id: 'mac-analysis', icon: Leaf, label: 'MAC Analysis', color: '#22c55e' },
+    { id: 'roi-analysis', icon: TrendingUp, label: 'ROI Analysis', color: '#f97316' },
+    { id: 'hazard-maps', icon: Map, label: 'Hazard Maps', color: '#ec4899' },
+    { id: 'locations', icon: MapPin, label: 'Locations', color: '#06b6d4' },
+    { id: 'damage-curves', icon: TrendingUp, label: 'Damage Curves', color: '#8b5cf6' },
     { id: 'geospatial', icon: MapPin, label: 'Geospatial', color: '#14b8a6' },
   ]
 
@@ -74,7 +83,7 @@ export default function Explore() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {(() => {
               const selected = selectedViz ? vizOptions.find(v => v.id === selectedViz) : null
-              const IconComponent = selected ? selected.icon : LineChart
+              const IconComponent = selected ? selected.icon : BarChart2
               const iconColor = selected ? selected.color : '#3b82f6'
               return <IconComponent style={{ width: '24px', height: '24px', color: iconColor }} />
             })()}
@@ -170,11 +179,25 @@ export default function Explore() {
       </div>
 
       {/* Content Area */}
-      <div style={{ padding: selectedViz === 'risk-dashboard' || selectedViz === 'waterfall' ? '0' : '48px' }}>
+      <div style={{ padding: ['risk-dashboard', 'waterfall', 'mac-analysis', 'roi-analysis', 'scenarios', 'correlations', 'hazard-maps', 'locations', 'damage-curves'].includes(selectedViz || '') ? '0' : '48px' }}>
         {selectedViz === 'risk-dashboard' ? (
           <RiskDashboard />
         ) : selectedViz === 'waterfall' ? (
           <WaterfallChart />
+        ) : selectedViz === 'scenarios' ? (
+          <ScenariosPanel />
+        ) : selectedViz === 'correlations' ? (
+          <CorrelationsPanel />
+        ) : selectedViz === 'mac-analysis' ? (
+          <MACAnalysisPanel />
+        ) : selectedViz === 'roi-analysis' ? (
+          <ROIAnalysisPanel />
+        ) : selectedViz === 'hazard-maps' ? (
+          <HazardMapsPanel />
+        ) : selectedViz === 'locations' ? (
+          <LocationsPanel />
+        ) : selectedViz === 'damage-curves' ? (
+          <DamageCurvesPanel />
         ) : selectedViz ? (
           <Card style={{
             backgroundColor: 'rgba(15, 23, 42, 0.9)',

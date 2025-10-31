@@ -4909,65 +4909,141 @@ app.get('/api/scenarios/list', (req, res) => {
     }
   })
 
-  // Get scenarios and extract file_id from code (format: SCENARIO_X_FILEY)
-  db.all('SELECT scenario_id, code, name, description FROM scenario ORDER BY name', [], (err, rows) => {
+  // Get scenarios with num_periods and extract file_id from code (format: SCENARIO_X_FILEY)
+  db.all('SELECT scenario_id, code, name, description, statement_template_id FROM scenario ORDER BY name', [], (err, rows) => {
     if (err) {
       db.close()
       return res.status(500).json({ error: 'Failed to fetch scenarios: ' + err.message })
     }
 
-    // Parse codes to extract file IDs and fetch file names
-    const fileIds = new Set()
-    rows.forEach(row => {
-      const match = row.code.match(/FILE(\d+)/i)
-      if (match) {
-        fileIds.add(parseInt(match[1]))
-      }
-    })
-
-    if (fileIds.size === 0) {
-      db.close()
-      return res.json({ success: true, scenarios: rows })
-    }
-
-    // Fetch file names for the extracted file IDs
-    const placeholders = Array.from(fileIds).map(() => '?').join(',')
+    // Get period counts for all scenarios
     db.all(
-      `SELECT file_id, file_name FROM staged_file WHERE file_id IN (${placeholders})`,
-      Array.from(fileIds),
-      (err, files) => {
-        db.close()
+      `SELECT scenario_id, COUNT(DISTINCT period_id) as num_periods
+       FROM statement_result
+       GROUP BY scenario_id`,
+      [],
+      (err, periodCounts) => {
         if (err) {
-          console.error('Error fetching file names:', err)
-          return res.json({ success: true, scenarios: rows })
+          db.close()
+          return res.status(500).json({ error: 'Failed to fetch period counts: ' + err.message })
         }
 
-        // Create a map of file_id -> file_name
-        const fileMap = {}
-        files.forEach(f => {
-          fileMap[f.file_id] = f.file_name
+        // Create period count map
+        const periodMap = {}
+        periodCounts.forEach(p => {
+          periodMap[p.scenario_id] = p.num_periods
         })
 
-        // Add file info to scenarios
-        const enrichedScenarios = rows.map(row => {
-          const match = row.code.match(/SCENARIO_(\d+)_FILE(\d+)/i)
+        // Parse codes to extract file IDs and fetch file names
+        const fileIds = new Set()
+        rows.forEach(row => {
+          const match = row.code.match(/FILE(\d+)/i)
           if (match) {
-            const scenarioNum = match[1]
-            const fileId = parseInt(match[2])
-            return {
-              ...row,
-              scenario_number: scenarioNum,
-              source_file_id: fileId,
-              source_file_name: fileMap[fileId] || 'unknown'
-            }
+            fileIds.add(parseInt(match[1]))
           }
-          return row
         })
 
-        res.json({ success: true, scenarios: enrichedScenarios })
+        if (fileIds.size === 0) {
+          // Add num_periods to scenarios even if no files
+          const scenariosWithPeriods = rows.map(row => ({
+            ...row,
+            num_periods: periodMap[row.scenario_id] || 0
+          }))
+          db.close()
+          return res.json({ success: true, scenarios: scenariosWithPeriods })
+        }
+
+        // Fetch file names for the extracted file IDs
+        const placeholders = Array.from(fileIds).map(() => '?').join(',')
+        db.all(
+          `SELECT file_id, file_name FROM staged_file WHERE file_id IN (${placeholders})`,
+          Array.from(fileIds),
+          (err, files) => {
+            db.close()
+            if (err) {
+              console.error('Error fetching file names:', err)
+              const scenariosWithPeriods = rows.map(row => ({
+                ...row,
+                num_periods: periodMap[row.scenario_id] || 0
+              }))
+              return res.json({ success: true, scenarios: scenariosWithPeriods })
+            }
+
+            // Create a map of file_id -> file_name
+            const fileMap = {}
+            files.forEach(f => {
+              fileMap[f.file_id] = f.file_name
+            })
+
+            // Add file info and num_periods to scenarios
+            const enrichedScenarios = rows.map(row => {
+              const match = row.code.match(/SCENARIO_(\d+)_FILE(\d+)/i)
+              if (match) {
+                const scenarioNum = match[1]
+                const fileId = parseInt(match[2])
+                return {
+                  ...row,
+                  scenario_number: scenarioNum,
+                  source_file_id: fileId,
+                  source_file_name: fileMap[fileId] || 'unknown',
+                  num_periods: periodMap[row.scenario_id] || 0
+                }
+              }
+              return {
+                ...row,
+                num_periods: periodMap[row.scenario_id] || 0
+              }
+            })
+
+            res.json({ success: true, scenarios: enrichedScenarios })
+          }
+        )
       }
     )
   })
+})
+
+/**
+ * Get scenario drivers with their values across all periods
+ * GET /api/scenarios/:scenarioId/drivers
+ */
+app.get('/api/scenarios/:scenarioId/drivers', (req, res) => {
+  const { scenarioId } = req.params
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Get all scenario_drivers with driver names
+  db.all(
+    `SELECT
+      sd.scenario_driver_id,
+      sd.scenario_id,
+      sd.period_id,
+      sd.driver_code,
+      sd.value,
+      sd.unit_code,
+      d.name as driver_name
+    FROM scenario_drivers sd
+    LEFT JOIN driver d ON sd.driver_code = d.code
+    WHERE sd.scenario_id = ?
+    ORDER BY sd.driver_code, sd.period_id`,
+    [scenarioId],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch scenario drivers: ' + err.message })
+      }
+      res.json({ success: true, drivers: rows })
+    }
+  )
 })
 
 /**
