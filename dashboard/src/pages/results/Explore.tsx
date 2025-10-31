@@ -35,7 +35,7 @@ export default function Explore() {
 
   const handleVizSelect = (id: string) => {
     setSelectedViz(id)
-    setMenuOpen(false)
+    // Keep menu open after selection
   }
 
   return (
@@ -54,7 +54,7 @@ export default function Explore() {
           onClick={() => setMenuOpen(!menuOpen)}
           style={{
             width: '100%',
-            padding: '16px 48px',
+            padding: '10px 48px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -78,11 +78,14 @@ export default function Explore() {
                 : 'Select Visualization'}
             </span>
           </div>
-          {menuOpen ? (
-            <ChevronUp style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
-          ) : (
-            <ChevronDown style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <img src="/daedalus2.png" alt="Logo" style={{ height: '90px', width: 'auto' }} />
+            {menuOpen ? (
+              <ChevronUp style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
+            ) : (
+              <ChevronDown style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
+            )}
+          </div>
         </button>
 
         {/* Dropdown Menu */}

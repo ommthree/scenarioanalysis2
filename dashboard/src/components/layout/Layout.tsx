@@ -226,8 +226,8 @@ export default function Layout({ children }: LayoutProps) {
           backgroundColor: '#0f172a'
         }}
       >
-        {/* Logo - shown on all screens except home */}
-        {location.pathname !== '/' && (
+        {/* Logo - shown on all screens except home and explore */}
+        {location.pathname !== '/' && location.pathname !== '/results/explore' && (
           <img
             src="/daedalus2.png"
             alt="Logo"

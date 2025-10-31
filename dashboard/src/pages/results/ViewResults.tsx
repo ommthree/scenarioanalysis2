@@ -479,15 +479,15 @@ export default function ViewResults() {
           ])
 
           if (dataA.success && dataB.success) {
-            // Build lookup map for base case values
-            const baseCaseMap = new Map<string, number>()
+            // Build lookup map for base scenario values
+            const baseScenarioMap = new Map<string, number>()
             dataB.lineItems.forEach((item: LineItem) => {
-              baseCaseMap.set(item.code, item.value)
+              baseScenarioMap.set(item.code, item.value)
             })
 
             // Calculate delta: A - B for each line item
             const deltaLineItems = dataA.lineItems.map((item: LineItem) => {
-              const baseValue = baseCaseMap.get(item.code) || 0
+              const baseValue = baseScenarioMap.get(item.code) || 0
               return {
                 ...item,
                 value: item.value - baseValue
@@ -613,15 +613,15 @@ export default function ViewResults() {
         ])
 
         if (dataA.success && dataB.success) {
-          // Build lookup map for base case driver values
-          const baseCaseDriverMap = new Map<string, number>()
+          // Build lookup map for base scenario driver values
+          const baseScenarioDriverMap = new Map<string, number>()
           dataB.drivers.forEach((driver: DriverContribution) => {
-            baseCaseDriverMap.set(driver.driver_code, driver.value)
+            baseScenarioDriverMap.set(driver.driver_code, driver.value)
           })
 
           // Calculate delta: A - B for each driver
           const deltaDrivers = dataA.drivers.map((driver: DriverContribution) => {
-            const baseValue = baseCaseDriverMap.get(driver.driver_code) || 0
+            const baseValue = baseScenarioDriverMap.get(driver.driver_code) || 0
             return {
               ...driver,
               value: driver.value - baseValue
@@ -702,15 +702,15 @@ export default function ViewResults() {
           ])
 
           if (dataA.success && dataB.success) {
-            // Build lookup map for base case driver values
-            const baseCaseDriverMap = new Map<string, number>()
+            // Build lookup map for base scenario driver values
+            const baseScenarioDriverMap = new Map<string, number>()
             dataB.drivers?.forEach((driver: DriverContribution) => {
-              baseCaseDriverMap.set(driver.driver_code, driver.value)
+              baseScenarioDriverMap.set(driver.driver_code, driver.value)
             })
 
             // Calculate delta: A - B for each driver
             const deltaDrivers = dataA.drivers?.map((driver: DriverContribution) => {
-              const baseValue = baseCaseDriverMap.get(driver.driver_code) || 0
+              const baseValue = baseScenarioDriverMap.get(driver.driver_code) || 0
               return {
                 ...driver,
                 value: driver.value - baseValue
@@ -1044,11 +1044,11 @@ export default function ViewResults() {
                 </div>
               </div>
 
-              {/* Base Case Action Toggles (only in Delta mode) - Purple Theme */}
+              {/* Base Scenario Action Toggles (only in Delta mode) - Purple Theme */}
               {displayMode === 'delta' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <label style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>
-                    Base case:
+                    Base scenario:
                   </label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginLeft: '16px' }}>
                     {managementActions.map((action) => (

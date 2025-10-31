@@ -617,10 +617,10 @@ export default function RiskDashboard() {
       }}>
         <CardContent style={{ padding: '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-            {/* Test Case (Scenario A) */}
+            {/* Test Scenario (Scenario A) */}
             <div>
               <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                Test Case
+                Test Scenario
               </label>
               <select
                 value={scenarioA || ''}
@@ -635,17 +635,17 @@ export default function RiskDashboard() {
                   fontSize: '14px'
                 }}
               >
-                <option value="">Select test case...</option>
+                <option value="">Select test scenario...</option>
                 {scenarios.map(s => (
                   <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
                 ))}
               </select>
             </div>
 
-            {/* Base Case (Scenario B) */}
+            {/* Base Scenario (Scenario B) */}
             <div>
               <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                Base Case <span style={{ fontSize: '12px', color: '#64748b' }}>(optional - leave blank for absolute values)</span>
+                Base Scenario <span style={{ fontSize: '12px', color: '#64748b' }}>(optional - leave blank for absolute values)</span>
               </label>
               <select
                 value={scenarioB || ''}
@@ -660,7 +660,7 @@ export default function RiskDashboard() {
                   fontSize: '14px'
                 }}
               >
-                <option value="">Select base case...</option>
+                <option value="">Select base scenario...</option>
                 {scenarios.map(s => (
                   <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
                 ))}
