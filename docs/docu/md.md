@@ -1,6 +1,6 @@
 # Markdown Documentation Index
 
-**Last Updated:** 2025-10-30
+**Last Updated:** 2025-10-31
 **Total Active Documents:** 7
 **Total Archived Documents:** 7
 
@@ -341,6 +341,31 @@ Archived Background (docs/archive/):
 - Consolidated architecture into TARGET_STATE.md
 
 ---
+
+**2025-10-31 (Session 18 - Waterfall Visualization with AI Descriptions):**
+- Implemented three-mode waterfall visualization for driver attribution analysis
+- **Period-to-Period Mode**: Shows how driver changes explain value transitions between periods
+  - Displays bar chart with start value, driver contributions (positive/negative), and end value
+  - Green bars for positive impacts, red for negative, gray for constants/residuals
+  - Interactive hover tooltips showing driver details
+- **Scenario-to-Scenario Mode**: Compares driver contributions across different scenarios
+  - Shows how alternative scenarios differ in driver impacts for same period
+  - Useful for understanding scenario sensitivity to driver assumptions
+- **Action-Impact Mode**: Visualizes impact of individual management actions (what-if analysis)
+  - Baseline bar → Individual action impacts → Final value with all actions
+  - Fetches all what-if combinations for selected line item
+  - New API endpoint: GET /api/results/what-if-values (index.js:7842-7875)
+  - Filters single-action combinations, calculates marginal impact vs BASE
+- **AI Description Panel**: Claude-powered narrative explanations of waterfall changes
+  - Automatically generated after waterfall renders
+  - Contextual prompt with scenario/entity/period/line item details
+  - Describes driver changes, categorizes positive/negative impacts
+  - Uses Anthropic API with concise, executive-friendly narratives
+  - Collapsible panel with Sparkles icon and loading states
+- Frontend: WaterfallChart.tsx (dashboard/src/pages/results/visualizations/WaterfallChart.tsx)
+- Backend: What-if values endpoint queries statement_result by what_if_combination
+- Accessible via Explore → Waterfall visualization option
+- Debug logging for troubleshooting API responses and data grouping
 
 **2025-10-30 (Session 16 & 17 - Risk Dashboard with Driver Decomposition):**
 - Implemented iterative driver decomposition: extends "with and without" calculation to derived line items

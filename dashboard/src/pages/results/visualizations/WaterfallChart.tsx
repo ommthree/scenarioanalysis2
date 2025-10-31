@@ -1,0 +1,1299 @@
+import { useState, useEffect, useRef } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Sparkles } from 'lucide-react'
+
+interface Scenario {
+  scenario_id: number
+  name: string
+}
+
+interface LineItem {
+  code: string
+  display_name: string
+}
+
+interface Entity {
+  entity_id: number
+  name: string
+}
+
+interface DriverContribution {
+  driver_code: string
+  driver_name: string
+  value: number
+  category?: string
+}
+
+interface ActionImpact {
+  action_code: string
+  action_name: string
+  impact: number
+}
+
+type WaterfallMode = 'period-to-period' | 'scenario-to-scenario' | 'action-impact'
+
+export default function WaterfallChart() {
+  const dbPath = '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+
+  // State
+  const [mode, setMode] = useState<WaterfallMode>('period-to-period')
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [periods, setPeriods] = useState<number[]>([])
+
+  // Mode 1: Period-to-Period
+  const [p2pScenario, setP2pScenario] = useState<number | null>(null)
+  const [p2pEntity, setP2pEntity] = useState<number | null>(null)
+  const [p2pPeriod1, setP2pPeriod1] = useState<number | null>(null)
+  const [p2pPeriod2, setP2pPeriod2] = useState<number | null>(null)
+  const [p2pLineItem, setP2pLineItem] = useState<string>('')
+
+  // Mode 2: Scenario-to-Scenario
+  const [s2sPeriod, setS2sPeriod] = useState<number | null>(null)
+  const [s2sEntity, setS2sEntity] = useState<number | null>(null)
+  const [s2sScenario1, setS2sScenario1] = useState<number | null>(null)
+  const [s2sScenario2, setS2sScenario2] = useState<number | null>(null)
+  const [s2sLineItem, setS2sLineItem] = useState<string>('')
+
+  // Mode 3: Action Impact
+  const [aiScenario, setAiScenario] = useState<number | null>(null)
+  const [aiEntity, setAiEntity] = useState<number | null>(null)
+  const [aiPeriod, setAiPeriod] = useState<number | null>(null)
+  const [aiLineItem, setAiLineItem] = useState<string>('')
+
+  // Data
+  const [waterfallData, setWaterfallData] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [hoveredBar, setHoveredBar] = useState<number | null>(null)
+  const [tooltip, setTooltip] = useState<{x: number, y: number, content: any} | null>(null)
+
+  // AI Description
+  const [aiDescription, setAiDescription] = useState<string>('')
+  const [aiLoading, setAiLoading] = useState(false)
+
+  // Load initial data
+  useEffect(() => {
+    loadScenarios()
+    loadLineItems()
+    loadEntities()
+    loadPeriods()
+  }, [])
+
+  const loadScenarios = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+      if (data.success) {
+        setScenarios(data.scenarios || [])
+      }
+    } catch (error) {
+      console.error('Failed to load scenarios:', error)
+    }
+  }
+
+  const loadLineItems = async () => {
+    try {
+      // Use the risk-line-items endpoint
+      const response = await fetch(`http://localhost:3001/api/results/risk-line-items?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+      if (data.success && data.lineItems) {
+        const items = data.lineItems.map((item: any) => ({
+          code: item.code,
+          display_name: item.name
+        }))
+        setLineItems(items)
+      }
+    } catch (error) {
+      console.error('Failed to load line items:', error)
+    }
+  }
+
+  const loadEntities = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+      // API returns array directly, not wrapped in {success, entities}
+      if (Array.isArray(data)) {
+        // Map entity_name to name for consistency
+        const mappedEntities = data.map((e: any) => ({
+          entity_id: e.entity_id,
+          name: e.entity_name
+        }))
+        setEntities(mappedEntities)
+      }
+    } catch (error) {
+      console.error('Failed to load entities:', error)
+    }
+  }
+
+  const loadPeriods = async () => {
+    // Periods 0-5 based on database query
+    setPeriods([0, 1, 2, 3, 4, 5])
+  }
+
+  // Auto-generate waterfall when all required fields are filled
+  useEffect(() => {
+    const canGenerate =
+      (mode === 'period-to-period' && p2pScenario && p2pEntity && p2pPeriod1 !== null && p2pPeriod2 !== null && p2pLineItem) ||
+      (mode === 'scenario-to-scenario' && s2sPeriod !== null && s2sEntity && s2sScenario1 && s2sScenario2 && s2sLineItem) ||
+      (mode === 'action-impact' && aiScenario && aiEntity && aiPeriod !== null && aiLineItem)
+
+    if (canGenerate && !loading) {
+      loadWaterfallData()
+    }
+  }, [mode, p2pScenario, p2pEntity, p2pPeriod1, p2pPeriod2, p2pLineItem, s2sPeriod, s2sEntity, s2sScenario1, s2sScenario2, s2sLineItem, aiScenario, aiEntity, aiPeriod, aiLineItem])
+
+  const loadWaterfallData = async () => {
+    setLoading(true)
+    try {
+      if (mode === 'period-to-period' && p2pScenario && p2pEntity && p2pPeriod1 !== null && p2pPeriod2 !== null && p2pLineItem) {
+        await loadPeriodToPeriodData()
+      } else if (mode === 'scenario-to-scenario' && s2sPeriod !== null && s2sEntity && s2sScenario1 && s2sScenario2 && s2sLineItem) {
+        await loadScenarioToScenarioData()
+      } else if (mode === 'action-impact' && aiScenario && aiEntity && aiPeriod !== null && aiLineItem) {
+        await loadActionImpactData()
+      }
+    } catch (error) {
+      console.error('Failed to load waterfall data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadPeriodToPeriodData = async () => {
+    // Fetch driver decomposition for both periods
+    const [response1, response2] = await Promise.all([
+      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${p2pPeriod1}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`),
+      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${p2pPeriod2}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
+    ])
+
+    const [data1, data2] = await Promise.all([response1.json(), response2.json()])
+
+    if (data1.success && data2.success) {
+      const drivers1 = data1.drivers || []
+      const drivers2 = data2.drivers || []
+
+      // Create a map of driver changes
+      const driverMap = new Map<string, { name: string; change: number; category: string }>()
+
+      // Check all drivers from both periods
+      const allDriverCodes = new Set([
+        ...drivers1.map((d: DriverContribution) => d.driver_code),
+        ...drivers2.map((d: DriverContribution) => d.driver_code)
+      ])
+
+      // If line item has negative sign convention, driver contributions are inverted
+      // (e.g., EXPENSES contributions are negative, but we want to show absolute expense changes)
+      const signMultiplier = data1.signConvention === 'negative' ? -1 : 1
+
+      allDriverCodes.forEach((code) => {
+        const d1 = drivers1.find((d: DriverContribution) => d.driver_code === code)
+        const d2 = drivers2.find((d: DriverContribution) => d.driver_code === code)
+        const d1Value = (d1?.value || 0) * signMultiplier
+        const d2Value = (d2?.value || 0) * signMultiplier
+        const change = d2Value - d1Value
+
+        if (Math.abs(change) > 0.01) {
+          driverMap.set(code, {
+            name: d2?.driver_name || d1?.driver_name || code,
+            change,
+            category: d2?.category || d1?.category || 'Other'
+          })
+        }
+      })
+
+      // Build waterfall data
+      const startValue = data1.lineItemValue || 0
+      const endValue = data2.lineItemValue || 0
+
+      console.log('=== Period-to-Period Waterfall Debug ===')
+      console.log('Line Item:', p2pLineItem)
+      console.log('Entity:', p2pEntity)
+      console.log('Scenario:', p2pScenario)
+      console.log('Period 1:', p2pPeriod1, '→ Period 2:', p2pPeriod2)
+      console.log('')
+      console.log('Sign Convention:', data1.signConvention)
+      console.log('Sign Multiplier:', signMultiplier, '(1 = use as-is, -1 = flip sign)')
+      console.log('')
+      console.log('Start Value (Period 1):', startValue)
+      console.log('End Value (Period 2):', endValue)
+      console.log('Actual Difference:', endValue - startValue)
+      console.log('')
+      console.log('Driver Contributions (Period 1):')
+      drivers1.forEach((d: DriverContribution) => {
+        console.log(`  ${d.driver_code}: ${d.value} × ${signMultiplier} = ${d.value * signMultiplier}`)
+      })
+      console.log('')
+      console.log('Driver Contributions (Period 2):')
+      drivers2.forEach((d: DriverContribution) => {
+        console.log(`  ${d.driver_code}: ${d.value} × ${signMultiplier} = ${d.value * signMultiplier}`)
+      })
+      console.log('')
+      console.log('Driver Changes:')
+      Array.from(driverMap.entries()).forEach(([code, data]) => {
+        const d1 = drivers1.find((d: DriverContribution) => d.driver_code === code)
+        const d2 = drivers2.find((d: DriverContribution) => d.driver_code === code)
+        const d1Val = (d1?.value || 0) * signMultiplier
+        const d2Val = (d2?.value || 0) * signMultiplier
+        console.log(`  ${code}: ${d2Val} - ${d1Val} = ${data.change}`)
+      })
+      console.log('')
+      const sumDriverChanges = Array.from(driverMap.values()).reduce((sum, d) => sum + d.change, 0)
+      console.log('Sum of Driver Changes:', sumDriverChanges)
+      console.log('Calculated End Value:', startValue + sumDriverChanges)
+      console.log('Actual End Value:', endValue)
+      console.log('Residual:', endValue - (startValue + sumDriverChanges))
+      console.log('==========================================')
+      console.log('')
+
+      const waterfallItems = [
+        { type: 'start', label: `Period ${p2pPeriod1}`, value: startValue, cumulative: startValue }
+      ]
+
+      let cumulative = startValue
+      Array.from(driverMap.entries()).forEach(([code, data]) => {
+        cumulative += data.change
+        waterfallItems.push({
+          type: 'driver',
+          label: data.name,
+          value: data.change,
+          cumulative,
+          category: data.category
+        })
+      })
+
+      // Add residual/constant if there's a difference between calculated and actual end value
+      const calculatedEnd = cumulative
+      const residual = endValue - calculatedEnd
+      if (Math.abs(residual) > 0.01) {
+        cumulative += residual
+        waterfallItems.push({
+          type: 'driver',
+          label: 'Constant/Residual',
+          value: residual,
+          cumulative,
+          category: 'Other'
+        })
+      }
+
+      waterfallItems.push({
+        type: 'end',
+        label: `Period ${p2pPeriod2}`,
+        value: endValue,
+        cumulative: endValue
+      })
+
+      setWaterfallData(waterfallItems)
+    }
+  }
+
+  const loadScenarioToScenarioData = async () => {
+    // Fetch driver decomposition for both scenarios
+    const [response1, response2] = await Promise.all([
+      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario1}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`),
+      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario2}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`)
+    ])
+
+    const [data1, data2] = await Promise.all([response1.json(), response2.json()])
+
+    if (data1.success && data2.success) {
+      const drivers1 = data1.drivers || []
+      const drivers2 = data2.drivers || []
+
+      // Create a map of driver changes
+      const driverMap = new Map<string, { name: string; change: number; category: string }>()
+
+      // Check all drivers from both scenarios
+      const allDriverCodes = new Set([
+        ...drivers1.map((d: DriverContribution) => d.driver_code),
+        ...drivers2.map((d: DriverContribution) => d.driver_code)
+      ])
+
+      // If line item has negative sign convention, driver contributions are inverted
+      // (e.g., EXPENSES contributions are negative, but we want to show absolute expense changes)
+      const signMultiplier = data1.signConvention === 'negative' ? -1 : 1
+
+      allDriverCodes.forEach((code) => {
+        const d1 = drivers1.find((d: DriverContribution) => d.driver_code === code)
+        const d2 = drivers2.find((d: DriverContribution) => d.driver_code === code)
+        const d1Value = (d1?.value || 0) * signMultiplier
+        const d2Value = (d2?.value || 0) * signMultiplier
+        const change = d2Value - d1Value
+
+        if (Math.abs(change) > 0.01) {
+          driverMap.set(code, {
+            name: d2?.driver_name || d1?.driver_name || code,
+            change,
+            category: d2?.category || d1?.category || 'Other'
+          })
+        }
+      })
+
+      // Build waterfall data
+      const scenario1Name = scenarios.find(s => s.scenario_id === s2sScenario1)?.name || `Scenario ${s2sScenario1}`
+      const scenario2Name = scenarios.find(s => s.scenario_id === s2sScenario2)?.name || `Scenario ${s2sScenario2}`
+      const startValue = data1.lineItemValue || 0
+      const endValue = data2.lineItemValue || 0
+
+      console.log('=== Scenario-to-Scenario Waterfall Debug ===')
+      console.log('Line Item:', s2sLineItem)
+      console.log('Entity:', s2sEntity)
+      console.log('Period:', s2sPeriod)
+      console.log('Scenario 1:', s2sScenario1, '→ Scenario 2:', s2sScenario2)
+      console.log('')
+      console.log('Sign Convention:', data1.signConvention)
+      console.log('Sign Multiplier:', signMultiplier, '(1 = use as-is, -1 = flip sign)')
+      console.log('')
+      console.log('Start Value (Scenario 1):', startValue)
+      console.log('End Value (Scenario 2):', endValue)
+      console.log('Actual Difference:', endValue - startValue)
+      console.log('')
+      console.log('Driver Contributions (Scenario 1):')
+      drivers1.forEach((d: DriverContribution) => {
+        console.log(`  ${d.driver_code}: ${d.value} × ${signMultiplier} = ${d.value * signMultiplier}`)
+      })
+      console.log('')
+      console.log('Driver Contributions (Scenario 2):')
+      drivers2.forEach((d: DriverContribution) => {
+        console.log(`  ${d.driver_code}: ${d.value} × ${signMultiplier} = ${d.value * signMultiplier}`)
+      })
+      console.log('')
+      console.log('Driver Changes:')
+      Array.from(driverMap.entries()).forEach(([code, data]) => {
+        const d1 = drivers1.find((d: DriverContribution) => d.driver_code === code)
+        const d2 = drivers2.find((d: DriverContribution) => d.driver_code === code)
+        const d1Val = (d1?.value || 0) * signMultiplier
+        const d2Val = (d2?.value || 0) * signMultiplier
+        console.log(`  ${code}: ${d2Val} - ${d1Val} = ${data.change}`)
+      })
+      console.log('')
+      const sumDriverChanges = Array.from(driverMap.values()).reduce((sum, d) => sum + d.change, 0)
+      console.log('Sum of Driver Changes:', sumDriverChanges)
+      console.log('Calculated End Value:', startValue + sumDriverChanges)
+      console.log('Actual End Value:', endValue)
+      console.log('Residual:', endValue - (startValue + sumDriverChanges))
+      console.log('==========================================')
+      console.log('')
+      const waterfallItems = [
+        { type: 'start', label: scenario1Name, value: startValue, cumulative: startValue }
+      ]
+
+      let cumulative = startValue
+      Array.from(driverMap.entries()).forEach(([code, data]) => {
+        cumulative += data.change
+        waterfallItems.push({
+          type: 'driver',
+          label: data.name,
+          value: data.change,
+          cumulative,
+          category: data.category
+        })
+      })
+
+      // Add residual/constant if there's a difference between calculated and actual end value
+      const calculatedEnd = cumulative
+      const residual = endValue - calculatedEnd
+      if (Math.abs(residual) > 0.01) {
+        cumulative += residual
+        waterfallItems.push({
+          type: 'driver',
+          label: 'Constant/Residual',
+          value: residual,
+          cumulative,
+          category: 'Other'
+        })
+      }
+
+      waterfallItems.push({
+        type: 'end',
+        label: scenario2Name,
+        value: endValue,
+        cumulative: endValue
+      })
+
+      setWaterfallData(waterfallItems)
+    }
+  }
+
+  const loadActionImpactData = async () => {
+    // Fetch all what-if combinations for this scenario
+    const url = `http://localhost:3001/api/results/what-if-values?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${aiScenario}&entityId=${aiEntity}&period=${aiPeriod}&lineItemCode=${aiLineItem}`
+    console.log('Action Impact API URL:', url)
+
+    const response = await fetch(url)
+    const data = await response.json()
+
+    console.log('Action Impact API Response:', data)
+
+    if (!data.success || !data.results) {
+      console.log('No results found:', data)
+      setWaterfallData([])
+      return
+    }
+
+    // Group by what-if combination
+    const byCombo: Record<string, number> = {}
+    data.results.forEach((row: any) => {
+      const combo = row.what_if_combination || 'BASE'
+      byCombo[combo] = row.value
+    })
+
+    console.log('Grouped by what-if combination:', byCombo)
+
+    // Get BASE value
+    const baseValue = byCombo['BASE'] || 0
+
+    // Get individual actions (single action combinations)
+    const actions: Array<{code: string, name: string, value: number}> = []
+    Object.keys(byCombo).forEach(combo => {
+      if (combo !== 'BASE' && !combo.includes('+')) {
+        actions.push({
+          code: combo,
+          name: combo.replace(/_/g, ' '),
+          value: byCombo[combo]
+        })
+      }
+    })
+
+    console.log('Individual actions found:', actions)
+
+    // Build waterfall
+    const waterfallItems: any[] = []
+
+    // Start bar
+    waterfallItems.push({
+      type: 'start',
+      label: 'Baseline',
+      value: baseValue,
+      cumulative: baseValue
+    })
+
+    let cumulative = baseValue
+
+    // Action bars - show impact of each action
+    actions.forEach(action => {
+      const impact = action.value - baseValue
+      cumulative += impact
+
+      waterfallItems.push({
+        type: 'driver',
+        label: action.name,
+        value: impact,
+        cumulative,
+        category: impact < 0 ? 'Negative' : 'Positive'
+      })
+    })
+
+    // End bar (should match sum of all actions if available)
+    const allActionsCombo = actions.map(a => a.code).sort().join('+')
+    const finalValue = byCombo[allActionsCombo] || cumulative
+
+    waterfallItems.push({
+      type: 'end',
+      label: 'With Actions',
+      value: finalValue,
+      cumulative: finalValue
+    })
+
+    console.log('Waterfall items:', waterfallItems)
+    setWaterfallData(waterfallItems)
+  }
+
+  const generateAIDescription = async () => {
+    if (waterfallData.length === 0) return
+
+    setAiLoading(true)
+    try {
+      // Build context based on mode
+      let contextDescription = ''
+      if (mode === 'period-to-period') {
+        const scenario = scenarios.find(s => s.scenario_id === p2pScenario)
+        const entity = entities.find(e => e.entity_id === p2pEntity)
+        const lineItem = lineItems.find(li => li.code === p2pLineItem)
+        contextDescription = `Analyzing ${lineItem?.display_name || p2pLineItem} for ${entity?.name || 'entity'} in scenario "${scenario?.name || ''}" from Period ${p2pPeriod1} to Period ${p2pPeriod2}.`
+      } else if (mode === 'scenario-to-scenario') {
+        const scenario1 = scenarios.find(s => s.scenario_id === s2sScenario1)
+        const scenario2 = scenarios.find(s => s.scenario_id === s2sScenario2)
+        const entity = entities.find(e => e.entity_id === s2sEntity)
+        const lineItem = lineItems.find(li => li.code === s2sLineItem)
+        contextDescription = `Comparing ${lineItem?.display_name || s2sLineItem} for ${entity?.name || 'entity'} between scenario "${scenario1?.name || ''}" and "${scenario2?.name || ''}" in Period ${s2sPeriod}.`
+      }
+
+      // Extract driver changes
+      const driverChanges = waterfallData
+        .filter(item => item.type === 'driver' && item.label !== 'Constant/Residual')
+        .map(item => ({
+          driver: item.label,
+          change: item.value,
+          category: item.category
+        }))
+
+      const startValue = waterfallData.find(item => item.type === 'start')?.value || 0
+      const endValue = waterfallData.find(item => item.type === 'end')?.value || 0
+      const totalChange = endValue - startValue
+
+      const prompt = `You are a financial and climate risk analysis expert. Analyze this waterfall chart data and provide a concise, insightful summary paragraph (2-4 sentences).
+
+Context: ${contextDescription}
+
+Waterfall Data:
+- Start Value: ${startValue.toFixed(0)}
+- End Value: ${endValue.toFixed(0)}
+- Total Change: ${totalChange.toFixed(0)}
+
+Driver Contributions:
+${driverChanges.map(d => `- ${d.driver}: ${d.change > 0 ? '+' : ''}${d.change.toFixed(0)} (${d.category || 'Other'})`).join('\n')}
+
+Provide a narrative summary that:
+1. Explains the overall change and direction
+2. Highlights the most significant drivers (positive or negative)
+3. Identifies any interesting patterns or insights
+4. Uses business-friendly language
+
+Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
+
+      const response = await fetch('http://localhost:3001/api/claude/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        throw new Error('AI description failed')
+      }
+
+      const result = await response.json()
+      const description = result.content[0].text
+      setAiDescription(description)
+
+    } catch (error) {
+      console.error('AI description error:', error)
+      setAiDescription('Unable to generate AI description. Please try again.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const renderWaterfall = () => {
+    if (waterfallData.length === 0) return null
+
+    const maxValue = Math.max(...waterfallData.map(d => Math.abs(d.cumulative)))
+    const chartHeight = 400
+    const chartWidth = 900
+    const barWidth = (chartWidth - 100) / waterfallData.length
+    const margin = { top: 40, right: 40, bottom: 80, left: 100 }
+
+    const yScale = (value: number) => {
+      return margin.top + (chartHeight - margin.top - margin.bottom) * (1 - (value / (maxValue * 1.2)))
+    }
+
+    const getBarColor = (item: any) => {
+      if (item.type === 'start' || item.type === 'end') return '#64748b'
+      return item.value >= 0 ? '#10b981' : '#ef4444'
+    }
+
+    return (
+      <div style={{ marginTop: '32px', overflowX: 'auto' }}>
+        <svg width={chartWidth} height={chartHeight + margin.bottom}>
+          {/* Y-axis */}
+          <line
+            x1={margin.left}
+            y1={margin.top}
+            x2={margin.left}
+            y2={chartHeight - margin.bottom}
+            stroke="#475569"
+            strokeWidth={2}
+          />
+
+          {/* Zero line */}
+          <line
+            x1={margin.left}
+            y1={yScale(0)}
+            x2={chartWidth - margin.right}
+            y2={yScale(0)}
+            stroke="#475569"
+            strokeWidth={1}
+            strokeDasharray="4"
+          />
+
+          {/* Bars */}
+          {waterfallData.map((item, i) => {
+            const x = margin.left + i * barWidth + barWidth * 0.1
+            const width = barWidth * 0.8
+
+            let barY, barHeight
+            if (item.type === 'start' || item.type === 'end') {
+              barY = yScale(item.value)
+              barHeight = yScale(0) - yScale(item.value)
+            } else {
+              const prevCumulative = i > 0 ? waterfallData[i - 1].cumulative : 0
+              const currentCumulative = item.cumulative
+              barY = yScale(Math.max(prevCumulative, currentCumulative))
+              barHeight = Math.abs(yScale(currentCumulative) - yScale(prevCumulative))
+            }
+
+            // Connector line to next bar
+            const showConnector = i < waterfallData.length - 1 && item.type !== 'end'
+            const nextX = margin.left + (i + 1) * barWidth + barWidth * 0.1
+
+            const isHovered = hoveredBar === i
+
+            return (
+              <g key={i}>
+                {/* Bar */}
+                <rect
+                  x={x}
+                  y={barY}
+                  width={width}
+                  height={Math.abs(barHeight)}
+                  fill={getBarColor(item)}
+                  stroke={isHovered ? '#60a5fa' : '#1e293b'}
+                  strokeWidth={isHovered ? 2 : 1}
+                  style={{
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    filter: isHovered ? 'brightness(1.2) drop-shadow(0 0 8px rgba(59, 130, 246, 0.6))' : 'none',
+                    opacity: isHovered ? 1 : 0.95,
+                    animation: `barGrow 0.6s ease-out ${i * 0.05}s both`
+                  }}
+                  onMouseEnter={(e) => {
+                    setHoveredBar(i)
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setTooltip({
+                      x: rect.left + rect.width / 2,
+                      y: rect.top,
+                      content: item
+                    })
+                  }}
+                  onMouseMove={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setTooltip({
+                      x: rect.left + rect.width / 2,
+                      y: rect.top,
+                      content: item
+                    })
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredBar(null)
+                    setTooltip(null)
+                  }}
+                />
+
+                {/* Connector line */}
+                {showConnector && (
+                  <line
+                    x1={x + width}
+                    y1={yScale(item.cumulative)}
+                    x2={nextX}
+                    y2={yScale(item.cumulative)}
+                    stroke="#94a3b8"
+                    strokeWidth={1}
+                    strokeDasharray="2"
+                  />
+                )}
+
+                {/* Value label */}
+                <text
+                  x={x + width / 2}
+                  y={barY - 5}
+                  textAnchor="middle"
+                  fill="#ffffff"
+                  fontSize="12"
+                  fontWeight="500"
+                >
+                  {item.value.toFixed(0)}
+                </text>
+
+                {/* X-axis label */}
+                <text
+                  x={x + width / 2}
+                  y={chartHeight - margin.bottom + 20}
+                  textAnchor="end"
+                  transform={`rotate(-45, ${x + width / 2}, ${chartHeight - margin.bottom + 20})`}
+                  fill="#94a3b8"
+                  fontSize="11"
+                >
+                  {item.label}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding: '24px', minHeight: '100vh', position: 'relative' }}>
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes barGrow {
+          from {
+            transform: scaleY(0);
+            opacity: 0;
+          }
+          to {
+            transform: scaleY(1);
+            opacity: 1;
+          }
+        }
+        @keyframes tooltipFadeIn {
+          from {
+            opacity: 0;
+            transform: translate(-50%, -90%);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, -100%);
+          }
+        }
+      `}</style>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          style={{
+            position: 'fixed',
+            left: tooltip.x,
+            top: tooltip.y - 10,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: 'rgba(15, 23, 42, 0.98)',
+            border: '2px solid #3b82f6',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            color: '#fff',
+            fontSize: '14px',
+            fontWeight: '500',
+            pointerEvents: 'none',
+            zIndex: 1000,
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(59, 130, 246, 0.4)',
+            whiteSpace: 'nowrap',
+            animation: 'tooltipFadeIn 0.15s ease-out'
+          }}
+        >
+          <div style={{ fontWeight: '600', marginBottom: '4px', color: '#60a5fa', fontSize: '13px' }}>
+            {tooltip.content.label}
+          </div>
+          <div style={{ color: '#cbd5e1', fontSize: '12px', marginBottom: '4px' }}>
+            Value: <span style={{ color: '#fff', fontWeight: '600' }}>{tooltip.content.value?.toFixed(0)}</span>
+          </div>
+          {tooltip.content.cumulative !== undefined && (
+            <div style={{ color: '#cbd5e1', fontSize: '12px' }}>
+              Cumulative: <span style={{ color: '#fff', fontWeight: '600' }}>{tooltip.content.cumulative?.toFixed(0)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#fff', marginBottom: '24px' }}>
+        Waterfall Analysis
+      </h1>
+
+      {/* Mode Selection */}
+      <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginBottom: '24px' }}>
+        <CardContent style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+            <button
+              onClick={() => setMode('period-to-period')}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: mode === 'period-to-period' ? '#3b82f6' : 'rgba(30, 41, 59, 0.8)',
+                color: '#ffffff',
+                border: mode === 'period-to-period' ? '2px solid #3b82f6' : '1px solid rgba(71, 85, 105, 0.5)',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              Period to Period
+            </button>
+            <button
+              onClick={() => setMode('scenario-to-scenario')}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: mode === 'scenario-to-scenario' ? '#3b82f6' : 'rgba(30, 41, 59, 0.8)',
+                color: '#ffffff',
+                border: mode === 'scenario-to-scenario' ? '2px solid #3b82f6' : '1px solid rgba(71, 85, 105, 0.5)',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              Scenario to Scenario
+            </button>
+            <button
+              onClick={() => setMode('action-impact')}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: mode === 'action-impact' ? '#3b82f6' : 'rgba(30, 41, 59, 0.8)',
+                color: '#ffffff',
+                border: mode === 'action-impact' ? '2px solid #3b82f6' : '1px solid rgba(71, 85, 105, 0.5)',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              Action Impact (What-If)
+            </button>
+          </div>
+
+          {/* Period to Period Mode */}
+          {mode === 'period-to-period' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Scenario
+                </label>
+                <select
+                  value={p2pScenario || ''}
+                  onChange={(e) => setP2pScenario(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select scenario...</option>
+                  {scenarios.map(s => (
+                    <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <select
+                  value={p2pEntity || ''}
+                  onChange={(e) => setP2pEntity(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select entity...</option>
+                  {entities.map(e => (
+                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  From Period
+                </label>
+                <select
+                  value={p2pPeriod1 ?? ''}
+                  onChange={(e) => setP2pPeriod1(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select period...</option>
+                  {periods.map(p => (
+                    <option key={p} value={p}>Period {p}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  To Period
+                </label>
+                <select
+                  value={p2pPeriod2 ?? ''}
+                  onChange={(e) => setP2pPeriod2(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select period...</option>
+                  {periods.map(p => (
+                    <option key={p} value={p}>Period {p}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Line Item
+                </label>
+                <select
+                  value={p2pLineItem}
+                  onChange={(e) => setP2pLineItem(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select line item...</option>
+                  {lineItems.map(li => (
+                    <option key={li.code} value={li.code}>{li.display_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Scenario to Scenario Mode */}
+          {mode === 'scenario-to-scenario' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Period
+                </label>
+                <select
+                  value={s2sPeriod ?? ''}
+                  onChange={(e) => setS2sPeriod(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select period...</option>
+                  {periods.map(p => (
+                    <option key={p} value={p}>Period {p}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <select
+                  value={s2sEntity || ''}
+                  onChange={(e) => setS2sEntity(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select entity...</option>
+                  {entities.map(e => (
+                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  From Scenario
+                </label>
+                <select
+                  value={s2sScenario1 || ''}
+                  onChange={(e) => setS2sScenario1(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select scenario...</option>
+                  {scenarios.map(s => (
+                    <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  To Scenario
+                </label>
+                <select
+                  value={s2sScenario2 || ''}
+                  onChange={(e) => setS2sScenario2(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select scenario...</option>
+                  {scenarios.map(s => (
+                    <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Line Item
+                </label>
+                <select
+                  value={s2sLineItem}
+                  onChange={(e) => setS2sLineItem(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select line item...</option>
+                  {lineItems.map(li => (
+                    <option key={li.code} value={li.code}>{li.display_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Action Impact Mode */}
+          {mode === 'action-impact' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Scenario (What-If)
+                </label>
+                <select
+                  value={aiScenario || ''}
+                  onChange={(e) => setAiScenario(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select scenario...</option>
+                  {scenarios.map(s => (
+                    <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <select
+                  value={aiEntity || ''}
+                  onChange={(e) => setAiEntity(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select entity...</option>
+                  {entities.map(e => (
+                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Period
+                </label>
+                <select
+                  value={aiPeriod || ''}
+                  onChange={(e) => setAiPeriod(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select period...</option>
+                  {periods.map(p => (
+                    <option key={p} value={p}>Period {p}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Line Item
+                </label>
+                <select
+                  value={aiLineItem}
+                  onChange={(e) => setAiLineItem(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    color: '#ffffff',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select line item...</option>
+                  {lineItems.map(li => (
+                    <option key={li.code} value={li.code}>{li.display_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {loading && (
+            <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '14px', fontStyle: 'italic' }}>
+              Generating waterfall...
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Waterfall Chart */}
+      {waterfallData.length > 0 && (
+        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+          <CardContent style={{ padding: '24px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
+              Driver Waterfall
+            </h2>
+            {renderWaterfall()}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Description Panel */}
+      {waterfallData.length > 0 && (
+        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginTop: '32px' }}>
+          <CardContent style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff' }}>
+                AI Insights
+              </h2>
+              <button
+                onClick={generateAIDescription}
+                disabled={aiLoading}
+                style={{
+                  backgroundColor: aiLoading ? '#64748b' : '#8b5cf6',
+                  padding: '10px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: aiLoading ? 'not-allowed' : 'pointer',
+                  color: '#ffffff',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!aiLoading) {
+                    e.currentTarget.style.backgroundColor = '#7c3aed'
+                    e.currentTarget.style.transform = 'scale(1.02)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!aiLoading) {
+                    e.currentTarget.style.backgroundColor = '#8b5cf6'
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }
+                }}
+              >
+                {aiLoading ? (
+                  <>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid rgba(255, 255, 255, 0.3)',
+                      borderTopColor: '#ffffff',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite'
+                    }} />
+                    <style>{`
+                      @keyframes spin {
+                        to { transform: rotate(360deg); }
+                      }
+                    `}</style>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles style={{ width: '16px', height: '16px' }} />
+                    Generate AI Description
+                  </>
+                )}
+              </button>
+            </div>
+
+            {aiDescription ? (
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                borderRadius: '8px',
+                color: '#e2e8f0',
+                fontSize: '15px',
+                lineHeight: '1.6'
+              }}>
+                {aiDescription}
+              </div>
+            ) : (
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                border: '1px solid rgba(71, 85, 105, 0.5)',
+                borderRadius: '8px',
+                color: '#94a3b8',
+                fontSize: '14px',
+                fontStyle: 'italic',
+                textAlign: 'center'
+              }}>
+                Click the button above to generate AI-powered insights about this waterfall analysis
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}

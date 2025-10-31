@@ -1,19 +1,17 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-10-30
-**Total Files:** 79 (27 C++ source, 28 C++ headers, 49 TypeScript/React, 4 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with What-If Mode and Interactive MC Distribution Visualization
+**Last Updated:** 2025-10-31
+**Total Files:** 80 (27 C++ source, 28 C++ headers, 50 TypeScript/React, 4 JavaScript server, 2 config/utility files)
+**Status:** Production - Unified Engine Architecture with What-If Mode, Interactive MC Distribution Visualization, and Three-Mode Waterfall with AI Descriptions
 
-**Recent Changes (2025-10-30):**
-- ✅ Added interactive Monte Carlo distribution visualization (Session 13)
-- ✅ Added GET /api/results/mc-distribution endpoint in index.js (lines 7309-7409)
-- ✅ Updated ViewResults.tsx with KDE curve visualization (lines 2662-2961)
-- ✅ Added React state for hover interactions (hoveredDraw, hoverPos, hoveredPercentile at lines 137-139)
-- ✅ Implemented Gaussian KDE with Silverman's bandwidth rule
-- ✅ Interactive percentile hover with extended full-height hit areas
-- ✅ Draw markers positioned on KDE curve via interpolation
-- ✅ Zero variance protection for all-identical MC draws
-- ✅ Statistics panel: mean, median, std dev, skewness, kurtosis, percentiles
+**Recent Changes (2025-10-31):**
+- ✅ Added three-mode waterfall visualization (Session 18)
+- ✅ Added WaterfallChart.tsx (~1280 lines) with period-to-period, scenario-to-scenario, and action-impact modes
+- ✅ Added GET /api/results/what-if-values endpoint in index.js (lines 7842-7875)
+- ✅ Integrated AI description panel with Claude API for automatic waterfall explanations
+- ✅ Interactive hover tooltips showing driver details
+- ✅ Color-coded bars: green (positive), red (negative), gray (constant/residual)
+- ✅ Action-impact mode fetches what-if combinations and calculates marginal impacts vs BASE
 
 **Recent Changes (2025-10-28):**
 - ✅ Added What-If Mode Phase 1 - Calculation loop over 2^n action combinations (Session 9)

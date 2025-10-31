@@ -6817,29 +6817,86 @@ app.get('/api/results/driver-decomposition', (req, res) => {
   const whatIfFilter = whatIfCombination ? ' AND what_if_combination = ?' : ''
 
   if (scenarioId) {
-    query = `SELECT driver_code, value
-             FROM statement_result_by_driver
-             WHERE period_id = ? AND entity_id = ? AND line_item_code = ? AND scenario_id = ?${whatIfFilter}
-             ORDER BY driver_code`
+    query = `SELECT
+               srbd.driver_code,
+               srbd.value,
+               d.name as driver_name,
+               d.category
+             FROM statement_result_by_driver srbd
+             LEFT JOIN driver d ON srbd.driver_code = d.code
+             WHERE srbd.period_id = ? AND srbd.entity_id = ? AND srbd.line_item_code = ? AND srbd.scenario_id = ?${whatIfFilter}
+             ORDER BY srbd.driver_code`
     params = whatIfCombination ? [period, entityId, lineItemCode, scenarioId, whatIfCombination] : [period, entityId, lineItemCode, scenarioId]
   } else {
     // Default to latest scenario for backward compatibility
-    query = `SELECT driver_code, value
-             FROM statement_result_by_driver
-             WHERE period_id = ? AND entity_id = ? AND line_item_code = ?${whatIfFilter}
-             AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result_by_driver)
-             ORDER BY driver_code`
+    query = `SELECT
+               srbd.driver_code,
+               srbd.value,
+               d.name as driver_name,
+               d.category
+             FROM statement_result_by_driver srbd
+             LEFT JOIN driver d ON srbd.driver_code = d.code
+             WHERE srbd.period_id = ? AND srbd.entity_id = ? AND srbd.line_item_code = ?${whatIfFilter}
+             AND srbd.scenario_id = (SELECT MAX(scenario_id) FROM statement_result_by_driver)
+             ORDER BY srbd.driver_code`
     params = whatIfCombination ? [period, entityId, lineItemCode, whatIfCombination] : [period, entityId, lineItemCode]
   }
 
   db.all(query, params, (err, rows) => {
-    db.close()
-
     if (err) {
+      db.close()
       return res.status(500).json({ error: err.message })
     }
 
-    res.json({ success: true, drivers: rows || [] })
+    // Get line item total value and sign convention
+    const lineItemQuery = `
+      SELECT AVG(value) as value
+      FROM statement_result
+      WHERE scenario_id = ? AND period_id = ? AND entity_id = ? AND line_item_code = ?
+    `
+
+    // Get sign convention from template
+    const templateQuery = `
+      SELECT st.json_structure
+      FROM statement_template st
+      JOIN scenario s ON s.statement_template_id = st.template_id
+      WHERE s.scenario_id = ?
+    `
+
+    db.get(lineItemQuery, [scenarioId, period, entityId, lineItemCode], (err2, lineItemRow) => {
+      if (err2) {
+        db.close()
+        return res.status(500).json({ error: err2.message })
+      }
+
+      db.get(templateQuery, [scenarioId], (err3, templateRow) => {
+        db.close()
+
+        if (err3) {
+          return res.status(500).json({ error: err3.message })
+        }
+
+        let signConvention = 'positive'
+        if (templateRow && templateRow.json_structure) {
+          try {
+            const template = JSON.parse(templateRow.json_structure)
+            const lineItem = template.line_items?.find(li => li.code === lineItemCode)
+            if (lineItem) {
+              signConvention = lineItem.sign_convention || 'positive'
+            }
+          } catch (e) {
+            console.error('Failed to parse template JSON:', e)
+          }
+        }
+
+        res.json({
+          success: true,
+          drivers: rows || [],
+          lineItemValue: lineItemRow?.value || 0,
+          signConvention: signConvention
+        })
+      })
+    })
   })
 })
 
@@ -7775,6 +7832,46 @@ app.post('/api/whatif/combinations', async (req, res) => {
     db.close()
     res.status(500).json({ error: `Failed to generate combinations: ${err.message}` })
   }
+})
+
+/**
+ * GET /api/results/what-if-values
+ * Returns all what-if combination values for a specific line item
+ * Query params: dbPath, scenarioId, entityId, period, lineItemCode
+ */
+app.get('/api/results/what-if-values', async (req, res) => {
+  const { dbPath, scenarioId, entityId, period, lineItemCode } = req.query
+
+  if (!dbPath || !scenarioId || !entityId || period === undefined || !lineItemCode) {
+    return res.status(400).json({ error: 'dbPath, scenarioId, entityId, period, and lineItemCode are required' })
+  }
+
+  if (!fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Database not found' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: `Database error: ${err.message}` })
+    }
+  })
+
+  const query = `
+    SELECT what_if_combination, value
+    FROM statement_result
+    WHERE scenario_id = ? AND entity_id = ? AND period_id = ? AND line_item_code = ?
+    ORDER BY what_if_combination
+  `
+
+  db.all(query, [scenarioId, entityId, period, lineItemCode], (err, rows) => {
+    db.close()
+
+    if (err) {
+      return res.status(500).json({ error: `Query error: ${err.message}` })
+    }
+
+    res.json({ success: true, results: rows })
+  })
 })
 
 /**

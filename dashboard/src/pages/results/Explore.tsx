@@ -6,29 +6,30 @@ import {
   PieChart,
   ScatterChart,
   Network,
-  GitBranch,
+  BarChart2,
   Layers,
   MapPin,
   ChevronDown,
   ChevronUp,
-  AlertTriangle
+  LayoutDashboard
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import RiskDashboard from './visualizations/RiskDashboard'
+import WaterfallChart from './visualizations/WaterfallChart'
 
 export default function Explore() {
   const [selectedViz, setSelectedViz] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(true)
 
   const vizOptions = [
-    { id: 'risk-dashboard', icon: AlertTriangle, label: 'Risk Dashboard', color: '#ef4444' },
+    { id: 'risk-dashboard', icon: LayoutDashboard, label: 'Risk Dashboard', color: '#ef4444' },
+    { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316' },
     { id: 'timeseries', icon: LineChart, label: 'Time Series', color: '#3b82f6' },
     { id: 'trends', icon: TrendingUp, label: 'Trends', color: '#10b981' },
     { id: 'comparison', icon: BarChart3, label: 'Comparison', color: '#8b5cf6' },
     { id: 'distribution', icon: PieChart, label: 'Distribution', color: '#f59e0b' },
     { id: 'scatter', icon: ScatterChart, label: 'Scatter', color: '#ec4899' },
     { id: 'network', icon: Network, label: 'Network', color: '#06b6d4' },
-    { id: 'waterfall', icon: GitBranch, label: 'Waterfall', color: '#f97316' },
     { id: 'stacked', icon: Layers, label: 'Stacked', color: '#84cc16' },
     { id: 'geospatial', icon: MapPin, label: 'Geospatial', color: '#14b8a6' },
   ]
@@ -71,7 +72,12 @@ export default function Explore() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <LineChart style={{ width: '24px', height: '24px', color: '#3b82f6' }} />
+            {(() => {
+              const selected = selectedViz ? vizOptions.find(v => v.id === selectedViz) : null
+              const IconComponent = selected ? selected.icon : LineChart
+              const iconColor = selected ? selected.color : '#3b82f6'
+              return <IconComponent style={{ width: '24px', height: '24px', color: iconColor }} />
+            })()}
             <span style={{ fontSize: '18px', fontWeight: '600', color: '#fff' }}>
               {selectedViz
                 ? vizOptions.find(v => v.id === selectedViz)?.label
@@ -164,9 +170,11 @@ export default function Explore() {
       </div>
 
       {/* Content Area */}
-      <div style={{ padding: selectedViz === 'risk-dashboard' ? '0' : '48px' }}>
+      <div style={{ padding: selectedViz === 'risk-dashboard' || selectedViz === 'waterfall' ? '0' : '48px' }}>
         {selectedViz === 'risk-dashboard' ? (
           <RiskDashboard />
+        ) : selectedViz === 'waterfall' ? (
+          <WaterfallChart />
         ) : selectedViz ? (
           <Card style={{
             backgroundColor: 'rgba(15, 23, 42, 0.9)',

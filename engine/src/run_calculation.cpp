@@ -988,6 +988,12 @@ int main(int argc, char* argv[]) {
 
                     // Process each entity at this level
                     for (const auto& entity_id : current_level) {
+                        // Skip non-leaf entities - they only receive rolled-up values from children
+                        if (hierarchy && !hierarchy->is_leaf(entity_id)) {
+                            std::cout << "    Entity " << entity_id << ": (parent - skipping direct calculation)" << std::endl;
+                            continue;
+                        }
+
                         std::cout << "    Entity " << entity_id << ": ";
 
                         // Set prior period values for this entity (for [t-1] references)
@@ -1055,12 +1061,15 @@ int main(int argc, char* argv[]) {
                                 // Success! Store result
                                 period_results[entity_id][line_item.code] = {value, true};
 
-                                // Capture driver contributions for this line item
-                                auto driver_contribs = engine.get_last_driver_contributions();
-                                for (const auto& contrib : driver_contribs) {
-                                    all_driver_contributions.push_back(
-                                        std::make_tuple(entity_id, contrib.line_item_code, contrib.driver_code, contrib.value)
-                                    );
+                                // Capture driver contributions ONLY for leaf entities
+                                // Parent entities will receive rolled-up contributions from children
+                                if (hierarchy && hierarchy->is_leaf(entity_id)) {
+                                    auto driver_contribs = engine.get_last_driver_contributions();
+                                    for (const auto& contrib : driver_contribs) {
+                                        all_driver_contributions.push_back(
+                                            std::make_tuple(entity_id, contrib.line_item_code, contrib.driver_code, contrib.value)
+                                        );
+                                    }
                                 }
 
                                 // Roll up to parent immediately after each successful calculation
@@ -1101,6 +1110,15 @@ int main(int argc, char* argv[]) {
                                                         }
                                                     }
                                                 }
+
+                                                // Remove any existing parent contributions for this line item to avoid double-counting
+                                                all_driver_contributions.erase(
+                                                    std::remove_if(all_driver_contributions.begin(), all_driver_contributions.end(),
+                                                        [&parent_id, &line_item](const auto& contrib) {
+                                                            return std::get<0>(contrib) == parent_id && std::get<1>(contrib) == line_item.code;
+                                                        }),
+                                                    all_driver_contributions.end()
+                                                );
 
                                                 // Add parent's aggregated driver contributions
                                                 for (const auto& [key, sum_value] : parent_driver_sums) {

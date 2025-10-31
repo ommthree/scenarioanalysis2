@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { Globe, BarChart3, Filter } from 'lucide-react'
+import { Globe, BarChart3, Filter, Sparkles } from 'lucide-react'
 import CountryChoroplethMap from '@/components/visualizations/CountryChoroplethMap'
 
 interface Scenario {
@@ -67,6 +67,10 @@ export default function RiskDashboard() {
 
   // Tooltip state
   const [tooltip, setTooltip] = useState<{visible: boolean; x: number; y: number; content: string} | null>(null)
+
+  // AI description state
+  const [aiDescription, setAiDescription] = useState<string>('')
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     loadScenarios()
@@ -232,6 +236,100 @@ export default function RiskDashboard() {
       }
     } catch (error) {
       console.error('Failed to load risk data:', error)
+    }
+  }
+
+  const generateAIDescription = async () => {
+    // Only generate if we have risk data
+    if (physicalDrivers.length === 0 && transitionDrivers.length === 0) return
+
+    setAiLoading(true)
+    try {
+      // Build context based on current selections
+      const scenarioAName = scenarios.find(s => s.scenario_id === scenarioA)?.name || 'Scenario A'
+      const scenarioBName = scenarioB ? scenarios.find(s => s.scenario_id === scenarioB)?.name : null
+      const entityName = entities.find(e => e.entity_id === selectedEntity)?.name || 'entity'
+      const variableName = lineItems.find(li => li.code === selectedVariable)?.name || selectedVariable
+
+      let contextDescription = `Analyzing ${variableName} for ${entityName} in ${scenarioAName}`
+      if (scenarioBName) {
+        contextDescription += ` compared to ${scenarioBName}`
+      }
+      contextDescription += ` for Period ${selectedPeriod}.`
+
+      // Add what-if context if applicable
+      if (whatIfMode && selectedActions.size > 0) {
+        const actionNames = Array.from(selectedActions)
+          .map(code => managementActions.find(a => a.action_code === code)?.name || code)
+          .join(', ')
+        contextDescription += ` Management actions applied: ${actionNames}.`
+      }
+
+      // Extract physical risk data
+      const physicalTotal = physicalDrivers.reduce((sum, d) => sum + d.impact, 0)
+      const topPhysicalDrivers = [...physicalDrivers]
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+        .slice(0, 5)
+        .map(d => `${d.driver_name}: ${d.impact.toFixed(0)}`)
+
+      const topPhysicalCountries = [...physicalCountries]
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+        .slice(0, 5)
+        .map(c => `${c.country}: ${c.impact.toFixed(0)}`)
+
+      // Extract transition risk data
+      const transitionTotal = transitionDrivers.reduce((sum, d) => sum + d.impact, 0)
+      const topTransitionDrivers = [...transitionDrivers]
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+        .slice(0, 5)
+        .map(d => `${d.driver_name}: ${d.impact.toFixed(0)}`)
+
+      const topTransitionCountries = [...transitionCountries]
+        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+        .slice(0, 5)
+        .map(c => `${c.country}: ${c.impact.toFixed(0)}`)
+
+      const prompt = `You are a financial and climate risk analysis expert. Analyze this risk dashboard data and provide a concise, insightful summary paragraph (2-4 sentences).
+
+Context: ${contextDescription}
+
+Physical Risk:
+- Total Impact: ${physicalTotal.toFixed(0)}
+- Top Drivers: ${topPhysicalDrivers.join(', ') || 'None'}
+- Top Countries: ${topPhysicalCountries.join(', ') || 'None'}
+
+Transition Risk:
+- Total Impact: ${transitionTotal.toFixed(0)}
+- Top Drivers: ${topTransitionDrivers.join(', ') || 'None'}
+- Top Countries: ${topTransitionCountries.join(', ') || 'None'}
+
+Provide a narrative summary that:
+1. Compares physical vs transition risk prominence
+2. Highlights the most significant drivers and geographic exposures
+3. Identifies any interesting patterns or insights
+4. Uses business-friendly language
+
+Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
+
+      const response = await fetch('http://localhost:3001/api/claude/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        throw new Error('AI description failed')
+      }
+
+      const result = await response.json()
+      const description = result.content[0].text
+      setAiDescription(description)
+
+    } catch (error) {
+      console.error('AI description error:', error)
+      setAiDescription('Unable to generate AI description. Please try again.')
+    } finally {
+      setAiLoading(false)
     }
   }
 
@@ -908,6 +1006,100 @@ export default function RiskDashboard() {
           {renderDriverBreakdown(transitionDrivers, transitionDriverCountries, 'Transition Risk by Driver', '#8b5cf6')}
         </div>
       </div>
+
+      {/* AI Description Panel */}
+      {(physicalDrivers.length > 0 || transitionDrivers.length > 0) && (
+        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginTop: '180px', position: 'relative', zIndex: 10 }}>
+          <CardContent style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff' }}>
+                AI Insights
+              </h2>
+              <button
+                onClick={generateAIDescription}
+                disabled={aiLoading}
+                style={{
+                  backgroundColor: aiLoading ? '#64748b' : '#8b5cf6',
+                  padding: '10px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: aiLoading ? 'not-allowed' : 'pointer',
+                  color: '#ffffff',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!aiLoading) {
+                    e.currentTarget.style.backgroundColor = '#7c3aed'
+                    e.currentTarget.style.transform = 'scale(1.02)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!aiLoading) {
+                    e.currentTarget.style.backgroundColor = '#8b5cf6'
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }
+                }}
+              >
+                {aiLoading ? (
+                  <>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid rgba(255, 255, 255, 0.3)',
+                      borderTopColor: '#ffffff',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite'
+                    }} />
+                    <style>{`
+                      @keyframes spin {
+                        to { transform: rotate(360deg); }
+                      }
+                    `}</style>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles style={{ width: '16px', height: '16px' }} />
+                    Generate AI Description
+                  </>
+                )}
+              </button>
+            </div>
+
+            {aiDescription ? (
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                borderRadius: '8px',
+                color: '#e2e8f0',
+                fontSize: '15px',
+                lineHeight: '1.6'
+              }}>
+                {aiDescription}
+              </div>
+            ) : (
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                border: '1px solid rgba(71, 85, 105, 0.5)',
+                borderRadius: '8px',
+                color: '#94a3b8',
+                fontSize: '14px',
+                fontStyle: 'italic',
+                textAlign: 'center'
+              }}>
+                Click the button above to generate AI-powered insights about this risk analysis
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tooltip */}
       {tooltip && tooltip.visible && (
