@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Map, Box } from 'lucide-react'
+import { Map, Box, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import HazardMap from '@/components/visualizations/HazardMap'
 import HazardSurface3D from '@/components/visualizations/HazardSurface3D'
@@ -29,10 +29,11 @@ interface HazardPoint {
 
 interface Entity {
   entity_id: number
-  entity_code: string
-  entity_name: string
-  parent_id: number | null
-  level: string
+  code: string
+  name: string
+  granularity_level: string
+  parent_entity_id: number | null
+  children?: Entity[]
   lat?: number
   lng?: number
 }
@@ -53,7 +54,10 @@ export default function HazardMapsPanel() {
   const [loading, setLoading] = useState(true)
   const [entities, setEntities] = useState<Entity[]>([])
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<number>>(new Set())
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
+  const [currentEntity, setCurrentEntity] = useState<number | null>(null)
   const [entityLocations, setEntityLocations] = useState<EntityLocation[]>([])
+  const [showLocations, setShowLocations] = useState(false)
 
   useEffect(() => {
     fetchStagedFiles()
@@ -125,29 +129,116 @@ export default function HazardMapsPanel() {
     return { headers, rows }
   }
 
+  const buildEntityTree = (entities: any[]): Entity[] => {
+    const entityMap: { [key: number]: Entity } = {}
+    const rootEntities: Entity[] = []
+
+    // Convert API format to component format
+    entities.forEach((entity) => {
+      entityMap[entity.entity_id] = {
+        entity_id: entity.entity_id,
+        code: entity.entity_code,
+        name: entity.entity_name,
+        granularity_level: entity.level,
+        parent_entity_id: entity.parent_id,
+        lat: entity.lat,
+        lng: entity.lng,
+        children: []
+      }
+    })
+
+    // Build tree structure
+    entities.forEach((entity) => {
+      if (entity.parent_id === null) {
+        rootEntities.push(entityMap[entity.entity_id])
+      } else if (entityMap[entity.parent_id]) {
+        entityMap[entity.parent_id].children!.push(entityMap[entity.entity_id])
+      }
+    })
+
+    return rootEntities
+  }
+
   const fetchEntities = async () => {
     try {
       const dbPath = getDefaultDbPath()
       const response = await fetch(apiUrl(`/api/entities?dbPath=${encodeURIComponent(dbPath)}`))
-      const entities = await response.json()
+      const flatEntities = await response.json()
 
-      if (Array.isArray(entities)) {
-        setEntities(entities)
+      if (Array.isArray(flatEntities)) {
+        const tree = buildEntityTree(flatEntities)
+        setEntities(tree)
+        if (tree.length > 0) {
+          setCurrentEntity(tree[0].entity_id)
+          setSelectedEntityIds(new Set([tree[0].entity_id]))
+        }
       }
     } catch (error) {
       logger.error('Failed to fetch entities:', error)
     }
   }
 
+  // Helper to collect all descendant entity IDs
+  const collectDescendantIds = (entityId: number, allEntities: Entity[]): number[] => {
+    const ids: number[] = [entityId]
+    const flatEntities: Entity[] = []
+
+    // Flatten entity tree
+    const flatten = (nodes: Entity[]) => {
+      nodes.forEach(node => {
+        flatEntities.push(node)
+        if (node.children && node.children.length > 0) {
+          flatten(node.children)
+        }
+      })
+    }
+    flatten(allEntities)
+
+    // Find children recursively
+    const findChildren = (parentId: number) => {
+      flatEntities.forEach(entity => {
+        if (entity.parent_entity_id === parentId && !ids.includes(entity.entity_id)) {
+          ids.push(entity.entity_id)
+          findChildren(entity.entity_id)
+        }
+      })
+    }
+
+    findChildren(entityId)
+    return ids
+  }
+
   const fetchEntityLocations = async () => {
     try {
       const dbPath = getDefaultDbPath()
-      const entityIds = Array.from(selectedEntityIds).join(',')
-      const response = await fetch(apiUrl(`/api/entity-locations?dbPath=${encodeURIComponent(dbPath)}&entityIds=${entityIds}`))
-      const result = await response.json()
 
-      if (result.success) {
-        setEntityLocations(result.locations || [])
+      // Collect all entity IDs including descendants
+      const allEntityIds: number[] = []
+      selectedEntityIds.forEach(entityId => {
+        const descendantIds = collectDescendantIds(entityId, entities)
+        descendantIds.forEach(id => {
+          if (!allEntityIds.includes(id)) {
+            allEntityIds.push(id)
+          }
+        })
+      })
+
+      const entityIds = allEntityIds.join(',')
+      const response = await fetch(apiUrl(`/api/locations?dbPath=${encodeURIComponent(dbPath)}&entityIds=${entityIds}`))
+      const locations = await response.json()
+
+      if (Array.isArray(locations)) {
+        // Transform location data to match EntityLocation interface
+        const transformedLocations: EntityLocation[] = locations
+          .filter(loc => loc.latitude != null && loc.longitude != null)
+          .map(loc => ({
+            entity_id: loc.entity_id,
+            entity_code: loc.location_code,
+            entity_name: loc.location_name || loc.location_code,
+            lat: loc.latitude,
+            lng: loc.longitude
+          }))
+        setEntityLocations(transformedLocations)
       }
     } catch (error) {
       logger.error('Failed to fetch entity locations:', error)
@@ -155,28 +246,81 @@ export default function HazardMapsPanel() {
     }
   }
 
-  const handleEntityToggle = (entityId: number, parentId: number | null) => {
-    const newSelection = new Set(selectedEntityIds)
-
-    if (newSelection.has(entityId)) {
-      // Deselecting - remove this entity
-      newSelection.delete(entityId)
-    } else {
-      // Selecting - check for parent/child conflicts
-      // Remove parent if selecting child
-      if (parentId) {
-        newSelection.delete(parentId)
+  const toggleNode = (entityId: number) => {
+    setExpandedNodes((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(entityId)) {
+        newSet.delete(entityId)
+      } else {
+        newSet.add(entityId)
       }
-      // Remove children if selecting parent
-      entities.forEach(e => {
-        if (e.parent_id === entityId) {
-          newSelection.delete(e.entity_id)
-        }
-      })
-      newSelection.add(entityId)
-    }
+      return newSet
+    })
+  }
 
-    setSelectedEntityIds(newSelection)
+  const handleEntitySelect = (entityId: number) => {
+    setCurrentEntity(entityId)
+    setSelectedEntityIds(new Set([entityId]))
+  }
+
+  const renderEntityTree = (entities: Entity[], level = 0): React.ReactElement => {
+    return (
+      <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
+        {entities.map((entity) => {
+          const hasChildren = entity.children && entity.children.length > 0
+          const isExpanded = entity.entity_id ? expandedNodes.has(entity.entity_id) : false
+          const isSelected = currentEntity === entity.entity_id
+
+          return (
+            <div key={entity.entity_id}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '10px 12px',
+                  backgroundColor: isSelected ? 'rgba(236, 72, 153, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+                  border: `1px solid ${isSelected ? 'rgba(236, 72, 153, 0.5)' : 'rgba(236, 72, 153, 0.2)'}`,
+                  borderRadius: '6px',
+                  marginBottom: '6px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => handleEntitySelect(entity.entity_id)}
+              >
+                {hasChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (entity.entity_id) toggleNode(entity.entity_id)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: '8px' }}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown style={{ width: '16px', height: '16px', color: '#ec4899' }} />
+                    ) : (
+                      <ChevronRight style={{ width: '16px', height: '16px', color: '#ec4899' }} />
+                    )}
+                  </button>
+                )}
+                {!hasChildren && <div style={{ width: '24px' }} />}
+
+                <Building2 style={{ width: '16px', height: '16px', color: '#ec4899', marginRight: '8px' }} />
+
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '14px', fontWeight: isSelected ? '600' : '400', color: '#fff' }}>
+                    {entity.name}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                    {entity.code} • {entity.granularity_level}
+                  </div>
+                </div>
+              </div>
+
+              {hasChildren && isExpanded && renderEntityTree(entity.children!, level + 1)}
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   const getHazardPoints = (): HazardPoint[] => {
@@ -227,7 +371,7 @@ export default function HazardMapsPanel() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
             <Map style={{ width: '32px', height: '32px', color: '#ec4899' }} />
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#fff', margin: 0 }}>
-              Hazard Maps
+              Physical Risk
             </h2>
           </div>
           <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '24px' }}>
@@ -238,83 +382,70 @@ export default function HazardMapsPanel() {
           {entities.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', color: '#94a3b8', fontSize: '14px', marginBottom: '12px' }}>
-                Select Entities to Display ({selectedEntityIds.size} selected)
+                Select Entity to Display
               </label>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                gap: '12px'
-              }}>
-                {entities.map(entity => {
-                  const isSelected = selectedEntityIds.has(entity.entity_id)
-                  const isParent = entity.parent_id === null
-                  const hasChildren = entities.some(e => e.parent_id === entity.entity_id)
-                  const childrenSelected = entities.filter(e =>
-                    e.parent_id === entity.entity_id && selectedEntityIds.has(e.entity_id)
-                  ).length
+              {renderEntityTree(entities)}
+            </div>
+          )}
 
-                  return (
-                    <button
-                      key={entity.entity_id}
-                      onClick={() => handleEntityToggle(entity.entity_id, entity.parent_id)}
+          {/* Location Toggle */}
+          {selectedEntityIds.size > 0 && (
+            <div style={{ marginBottom: '24px' }}>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation()
+                  console.log('Toggle clicked, current state:', showLocations, 'locations:', entityLocations.length)
+                  if (entityLocations.length > 0) {
+                    setShowLocations(prev => {
+                      console.log('Setting showLocations to:', !prev)
+                      return !prev
+                    })
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  color: entityLocations.length > 0 ? '#94a3b8' : '#64748b',
+                  fontSize: '14px',
+                  cursor: entityLocations.length > 0 ? 'pointer' : 'not-allowed',
+                  userSelect: 'none',
+                  opacity: entityLocations.length > 0 ? 1 : 0.5
+                }}
+              >
+                <div style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: showLocations ? 'rgba(59, 130, 246, 0.8)' : 'rgba(71, 85, 105, 0.5)',
+                      transition: 'background-color 0.3s',
+                      borderRadius: '24px',
+                      border: '1px solid rgba(59, 130, 246, 0.3)'
+                    }}
+                  >
+                    <div
                       style={{
-                        padding: '12px',
-                        backgroundColor: isSelected
-                          ? 'rgba(236, 72, 153, 0.2)'
-                          : 'rgba(30, 41, 59, 0.5)',
-                        border: isSelected
-                          ? '2px solid rgba(236, 72, 153, 0.6)'
-                          : '1px solid rgba(71, 85, 105, 0.5)',
-                        borderRadius: '8px',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        textAlign: 'left',
-                        position: 'relative'
+                        position: 'absolute',
+                        height: '18px',
+                        width: '18px',
+                        left: showLocations ? '23px' : '3px',
+                        bottom: '2px',
+                        backgroundColor: '#fff',
+                        transition: 'left 0.3s',
+                        borderRadius: '50%',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                       }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.8)'
-                          e.currentTarget.style.borderColor = 'rgba(236, 72, 153, 0.4)'
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.5)'
-                          e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.5)'
-                        }
-                      }}
-                    >
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: isParent ? '#ec4899' : '#3b82f6', marginBottom: '4px' }}>
-                        {entity.entity_code}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>
-                        {entity.entity_name}
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>
-                        {isParent ? (
-                          hasChildren ? `Group (${childrenSelected > 0 ? childrenSelected + ' child selected' : 'has children'})` : 'Group'
-                        ) : (
-                          'Company'
-                        )}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-              {selectedEntityIds.size > 0 && entityLocations.length === 0 && (
-                <div style={{
-                  marginTop: '12px',
-                  padding: '12px',
-                  backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                  border: '1px solid rgba(251, 191, 36, 0.3)',
-                  borderRadius: '6px',
-                  color: '#fbbf24',
-                  fontSize: '12px'
-                }}>
-                  Selected entities have no location data. Add latitude/longitude to entity metadata to display on map.
+                    />
+                  </div>
                 </div>
-              )}
+                <span style={{ fontWeight: '500', color: showLocations ? '#fff' : '#94a3b8' }}>
+                  Show Locations ({entityLocations.length})
+                </span>
+              </div>
             </div>
           )}
 
@@ -390,7 +521,16 @@ export default function HazardMapsPanel() {
                   2D Heatmap View
                 </h3>
               </div>
-              <HazardMap points={hazardPoints} height="700px" />
+              <HazardMap
+                points={hazardPoints}
+                pinnedPoints={showLocations ? entityLocations.map(loc => ({
+                  lat: loc.lat,
+                  lng: loc.lng,
+                  intensity: 0,
+                  label: loc.entity_name || loc.entity_code
+                })) : []}
+                height="700px"
+              />
               <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
                 Showing {hazardPoints.length} hazard data points • Heatmap visualization with smooth gradient interpolation
               </div>
@@ -409,7 +549,7 @@ export default function HazardMapsPanel() {
                 Interactive 3D visualization • Drag to rotate • Scroll to zoom • Fly over the hazard surface with map base
               </p>
               {hazardPoints.length > 0 ? (
-                <HazardSurface3D points={hazardPoints} entityLocations={entityLocations} height="700px" />
+                <HazardSurface3D points={hazardPoints} entityLocations={showLocations ? entityLocations : []} height="700px" />
               ) : (
                 <div style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
                   No hazard points available for 3D visualization

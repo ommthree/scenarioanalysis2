@@ -1,6 +1,6 @@
 # Database Schema Documentation
 
-**Last Updated:** 2025-10-29
+**Last Updated:** 2025-11-01
 **Schema Version:** 1.0.0
 **Database Engine:** SQLite 3.42+ with JSON1 extension
 **Production Database:** `/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db`
@@ -453,6 +453,11 @@ This database supports a unified financial modeling engine with:
 - `json_values` stores asset values for different value types (PPE, BI, inventory)
 - `archetype` matches to damage_curve entries
 - Physical risk calculation aggregates damage to entity level
+- **API Integration:** GET /api/locations endpoint (server/index.js:3144-3191) fetches locations by entity IDs
+  - Query parameters: dbPath, entityIds (comma-separated)
+  - Returns: location_code, location_name, latitude, longitude, entity_id, archetype
+  - Used by Physical Risk page to display location markers on 2D heatmaps and 3D terrain visualizations
+  - Supports hierarchical entity queries (parent entities inherit child locations)
 
 ---
 

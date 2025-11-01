@@ -37,7 +37,7 @@ export default function Explore() {
     { id: 'correlations', icon: Network, label: 'Correlations', color: '#10b981' },
     { id: 'mac-analysis', icon: Leaf, label: 'MAC Analysis', color: '#22c55e' },
     { id: 'roi-analysis', icon: TrendingUp, label: 'ROI Analysis', color: '#f97316' },
-    { id: 'hazard-maps', icon: Map, label: 'Hazard Maps', color: '#ec4899' },
+    { id: 'hazard-maps', icon: Map, label: 'Physical Risk', color: '#ec4899' },
     { id: 'locations', icon: MapPin, label: 'Locations', color: '#06b6d4' },
     { id: 'damage-curves', icon: TrendingUp, label: 'Damage Curves', color: '#8b5cf6' },
     { id: 'geospatial', icon: MapPin, label: 'Geospatial', color: '#14b8a6' },

@@ -170,6 +170,21 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-11-01 (Session 16 - Physical Risk Page with Location Display):**
+- Renamed "Hazard Maps" to "Physical Risk" in Explore navigation (Explore.tsx:40)
+- Replaced grid-based entity selector with hierarchical tree selector (matching ViewResults pattern)
+- Fixed API field mapping: entity_code→code, entity_name→name, parent_id→parent_entity_id, level→granularity_level
+- Created GET /api/locations endpoint (server/index.js:3144-3191) to fetch locations by entity IDs
+- Location query: returns location_code, location_name, latitude, longitude, entity_id, archetype
+- Added location markers to 2D heatmap: blue Leaflet pins with entity name popups (HazardMap.tsx)
+- Added location markers to 3D terrain: blue Plotly diamonds on map layer (HazardSurface3D.tsx:332-361)
+- Implemented toggle slider to show/hide locations (HazardMapsPanel.tsx:349-403)
+- Toggle features: smooth CSS animations (0.3s), defaults to OFF, enabled only when locations available
+- Location inheritance: parent entities show locations from all descendant entities via collectDescendantIds helper
+- Recursive entity traversal: gathers all child entity IDs for location aggregation
+- Components: HazardMapsPanel.tsx, HazardMap.tsx, HazardSurface3D.tsx
+- Backend: GET /api/locations with dbPath and entityIds query parameters
+
 **2025-11-01 (Session 15 - Scenario Visualization & Physical Risk Fixes):**
 - Fixed scenario visualization page chart rendering issue (ResponsiveContainer needed parent with explicit dimensions)
 - Removed default driver pre-selection - users now manually select drivers/statements to plot

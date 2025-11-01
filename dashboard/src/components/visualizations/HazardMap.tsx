@@ -17,9 +17,9 @@ interface HazardMapProps {
   height?: string
 }
 
-// Create custom pin icon
+// Create custom pin icon (blue for entity locations)
 const pinIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -201,8 +201,6 @@ export default function HazardMap({ points, pinnedPoints = [], height = '500px' 
                   <strong>{point.label}</strong>
                   <br />
                   Lat: {point.lat.toFixed(4)}, Lng: {point.lng.toFixed(4)}
-                  <br />
-                  Intensity: {point.intensity.toFixed(2)}
                 </div>
               </Popup>
             </Marker>

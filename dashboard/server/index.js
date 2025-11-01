@@ -3142,6 +3142,55 @@ app.post('/api/locations/save-mapping', async (req, res) => {
 })
 
 /**
+ * Get locations by entity IDs
+ * GET /api/locations
+ * Query params: dbPath, entityIds (comma-separated)
+ */
+app.get('/api/locations', (req, res) => {
+  const { dbPath, entityIds } = req.query
+
+  if (!dbPath || !fs.existsSync(dbPath)) {
+    return res.status(400).json({ error: 'Invalid database path' })
+  }
+
+  if (!entityIds) {
+    return res.status(400).json({ error: 'entityIds parameter is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  const entityIdArray = entityIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+  const placeholders = entityIdArray.map(() => '?').join(',')
+
+  const query = `
+    SELECT
+      location_id,
+      location_code,
+      location_name,
+      latitude,
+      longitude,
+      entity_id,
+      archetype
+    FROM location
+    WHERE entity_id IN (${placeholders})
+      AND is_active = 1
+    ORDER BY entity_id, location_code
+  `
+
+  db.all(query, entityIdArray, (err, rows) => {
+    db.close()
+    if (err) {
+      return res.status(500).json({ error: 'Failed to fetch locations: ' + err.message })
+    }
+    res.json(rows)
+  })
+})
+
+/**
  * Get full location staging data (all rows)
  * GET /api/locations/staging-full
  * Query params: dbPath, tableName

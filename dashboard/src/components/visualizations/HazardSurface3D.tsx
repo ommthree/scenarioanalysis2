@@ -329,36 +329,29 @@ export default function HazardSurface3D({ points, entityLocations = [], height =
   // Create second flat surface even lower for the actual map layer
   const mapZ = z.map(row => row.map(() => minIntensity - intensityRange * 0.35))
 
-  // Create entity location markers (if any)
+  // Create entity location markers (if any) - positioned on the map layer
   const entityMarkers = entityLocations.length > 0 ? {
     type: 'scatter3d',
     mode: 'markers+text',
     x: entityLocations.map(e => e.lng),
     y: entityLocations.map(e => e.lat),
-    z: entityLocations.map(e => {
-      // Find z value at this location (or slightly above max intensity)
-      const xIdx = x.findIndex(val => Math.abs(val - e.lng) < 0.5)
-      const yIdx = y.findIndex(val => Math.abs(val - e.lat) < 0.5)
-      if (xIdx >= 0 && yIdx >= 0 && !isNaN(z[yIdx][xIdx])) {
-        return z[yIdx][xIdx] * 1.1 // 10% above surface
-      }
-      return maxIntensity * 1.1 // Default to above max
-    }),
+    z: entityLocations.map(() => minIntensity - intensityRange * 0.30), // Slightly above map layer
     marker: {
-      size: 8,
-      color: 'rgba(236, 72, 153, 0.9)',
+      size: 10,
+      color: 'rgba(59, 130, 246, 0.95)', // Blue to match theme
       symbol: 'diamond',
       line: {
-        color: 'rgba(255, 255, 255, 0.8)',
+        color: 'rgba(255, 255, 255, 0.9)',
         width: 2
       }
     },
-    text: entityLocations.map(e => e.entity_code),
+    text: entityLocations.map(e => e.entity_name || e.entity_code),
     textposition: 'top center',
     textfont: {
-      size: 10,
+      size: 11,
       color: '#fff',
-      family: 'Arial, sans-serif'
+      family: 'Arial, sans-serif',
+      weight: 600
     },
     hovertemplate: '<b>%{text}</b><br>' +
                    'Lat: %{y:.4f}<br>' +

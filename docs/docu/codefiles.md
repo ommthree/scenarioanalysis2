@@ -1,8 +1,19 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-10-31
+**Last Updated:** 2025-11-01
 **Total Files:** 80 (27 C++ source, 28 C++ headers, 50 TypeScript/React, 4 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with What-If Mode, Interactive MC Distribution Visualization, and Three-Mode Waterfall with AI Descriptions
+**Status:** Production - Unified Engine Architecture with What-If Mode, Interactive MC Distribution Visualization, Three-Mode Waterfall with AI Descriptions, and Physical Risk Page with Location Display
+
+**Recent Changes (2025-11-01):**
+- ✅ Physical Risk page enhancements (Session 16)
+- ✅ Renamed "Hazard Maps" to "Physical Risk" in Explore.tsx navigation
+- ✅ Replaced grid entity selector with hierarchical tree (HazardMapsPanel.tsx)
+- ✅ Added GET /api/locations endpoint (index.js:3144-3191) for location queries by entity IDs
+- ✅ Enhanced HazardMap.tsx - Blue Leaflet pins for entity locations with popups
+- ✅ Enhanced HazardSurface3D.tsx - Blue Plotly diamonds on map layer (lines 332-361)
+- ✅ Added location toggle slider with CSS animations (HazardMapsPanel.tsx:349-403)
+- ✅ Implemented collectDescendantIds helper for hierarchical location inheritance
+- ✅ Location display supports parent entities showing all child locations
 
 **Recent Changes (2025-10-31):**
 - ✅ Added three-mode waterfall visualization (Session 18)
@@ -1242,13 +1253,20 @@ All map pages follow similar pattern: Column mapping → validation → producti
 ---
 
 #### `dashboard/src/components/visualizations/HazardMap.tsx`
-**Lines:** ~320
-**Purpose:** Hazard map visualization
+**Lines:** ~244
+**Purpose:** 2D hazard map visualization with location markers
 **Features:**
-- Heatmap overlay for hazard intensity
-- Color scale legend
-- Peril selection
-- Scenario selection
+- Grid-based heatmap overlay for hazard intensity (color-coded green→orange→red)
+- Blue Leaflet pins for entity locations (pinnedPoints prop)
+- Interactive popups showing entity name and coordinates
+- Color scale legend with min/mid/max intensity values
+- OpenStreetMap tile layer integration
+- Continuous grid rendering with 0.09° resolution
+**Props:**
+- `points: HazardPoint[]` - Hazard intensity grid data
+- `pinnedPoints: HazardPoint[]` - Entity locations to display as markers
+- `height: string` - Map container height (default "500px")
+**Updated (2025-11-01):** Added location marker support for Physical Risk page
 
 ---
 

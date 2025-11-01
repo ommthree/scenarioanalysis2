@@ -1,8 +1,8 @@
 # Financial Scenario Analysis System - Technical Guide
 
-**Version:** 2.2
-**Last Updated:** 2025-10-30
-**Status:** Production System with Interactive Monte Carlo Distribution Visualization
+**Version:** 2.3
+**Last Updated:** 2025-11-01
+**Status:** Production System with Interactive MC Distribution, Three-Mode Waterfall, and Physical Risk Location Display
 **Target Audience:** Technical users, analysts, system administrators
 
 ---

@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-11-01 (Session 19 - Scenario Viz & Physical Risk Fixes)
+**Last Updated:** 2025-11-01 (Session 16 - Physical Risk Page with Location Display)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with cross-filtering drill-down and action filtering, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, and physical risk hazard maps with entity location overlay
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with cross-filtering drill-down and action filtering, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, and Physical Risk page with hierarchical entity selector, 2D/3D location markers, and toggle controls
 
 ---
 
