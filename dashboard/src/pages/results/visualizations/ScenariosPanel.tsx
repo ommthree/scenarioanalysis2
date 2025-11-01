@@ -417,7 +417,7 @@ export default function ScenariosPanel() {
                     ? `Scenario: ${scenarios.find(s => s.scenario_id === Array.from(selectedScenarios)[0])?.name}`
                     : `Comparing ${selectedScenarios.size} Scenarios`}
                 </h3>
-                <div style={{ width: '100%', height: '450px' }}>
+                <div style={{ width: 'calc(100% - 10px)', height: '450px' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart
                     data={scenarioData}
@@ -441,7 +441,7 @@ export default function ScenariosPanel() {
                         orientation="right"
                         stroke="#a855f7"
                         domain={['auto', 'auto']}
-                        label={{ value: 'Statements', angle: 90, position: 'insideRight', fill: '#a855f7', offset: 20 }}
+                        label={{ value: 'Statements', angle: 90, position: 'insideRight', fill: '#a855f7', offset: -30 }}
                       />
                     )}
                     <Tooltip
