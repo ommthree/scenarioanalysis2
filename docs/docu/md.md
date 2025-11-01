@@ -1,6 +1,6 @@
 # Markdown Documentation Index
 
-**Last Updated:** 2025-10-31
+**Last Updated:** 2025-11-01
 **Total Active Documents:** 7
 **Total Archived Documents:** 7
 
@@ -169,6 +169,21 @@ Archived Background (docs/archive/):
 ---
 
 ## Recent Updates
+
+**2025-11-01 (Session 15 - Scenario Visualization & Physical Risk Fixes):**
+- Fixed scenario visualization page chart rendering issue (ResponsiveContainer needed parent with explicit dimensions)
+- Removed default driver pre-selection - users now manually select drivers/statements to plot
+- Chart now renders properly with explicit container div (width: 100%, height: 450px) wrapping ResponsiveContainer
+- Dual-axis chart: drivers as lines on left Y-axis, statements as bars on right Y-axis (single selection mode)
+- Enhanced visual styling: 6-color variation for statement buttons (#a855f7, #ec4899, #d946ef, #c026d3, #7c3aed, #9333ea)
+- Interactive features: button hover effects (scale 1.05, glow), bar hover effects (brightness 1.2, opacity 1)
+- Component: dashboard/src/pages/results/visualizations/ScenariosPanel.tsx
+- Backend: GET /api/scenarios/:id/results endpoint serves statement_result data
+- Fixed physical risk hazard maps page - entity selector with lat/lng overlay on 3D hazard surface
+- HazardMapsPanel: entity location markers displayed on HazardSurface3D component
+- Entity selection: parent/child conflict resolution (selecting parent removes children, vice versa)
+- Warning message when selected entities have no location data
+- Component: dashboard/src/pages/results/visualizations/HazardMapsPanel.tsx
 
 **2025-10-30 (Session 14 - Flowchart Navigation Redesign):**
 - Redesigned flowchart navigation component for improved data flow visualization

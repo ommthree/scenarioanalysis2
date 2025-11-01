@@ -5047,6 +5047,46 @@ app.get('/api/scenarios/:scenarioId/drivers', (req, res) => {
 })
 
 /**
+ * Get statement results for a scenario
+ * GET /api/scenarios/:scenarioId/results
+ */
+app.get('/api/scenarios/:scenarioId/results', (req, res) => {
+  const { scenarioId } = req.params
+  const { dbPath } = req.query
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+    }
+  })
+
+  // Get all statement results for this scenario
+  db.all(
+    `SELECT
+      sr.scenario_id,
+      sr.period_id,
+      sr.line_item_code as item_code,
+      sr.line_item_code as item_name,
+      sr.value
+    FROM statement_result sr
+    WHERE sr.scenario_id = ?
+    ORDER BY sr.line_item_code, sr.period_id`,
+    [scenarioId],
+    (err, rows) => {
+      db.close()
+      if (err) {
+        return res.status(500).json({ error: 'Failed to fetch scenario results: ' + err.message })
+      }
+      res.json({ success: true, results: rows })
+    }
+  )
+})
+
+/**
  * Get all management actions
  * GET /api/management-actions
  */

@@ -13,6 +13,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Bar,
+  ComposedChart,
 } from 'recharts'
 
 interface Scenario {
@@ -30,13 +32,21 @@ interface LineItem {
   item_name: string
 }
 
+interface StatementItem {
+  item_code: string
+  item_name: string
+}
+
 export default function ScenariosPanel() {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [selectedScenarios, setSelectedScenarios] = useState<Set<number>>(new Set())
   const [scenarioData, setScenarioData] = useState<any[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([])
-  const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set(['REVENUE']))
+  const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set())
   const [allDriversData, setAllDriversData] = useState<Map<number, any[]>>(new Map())
+  const [statementItems, setStatementItems] = useState<StatementItem[]>([])
+  const [selectedStatements, setSelectedStatements] = useState<Set<string>>(new Set())
+  const [allStatementsData, setAllStatementsData] = useState<Map<number, any[]>>(new Map())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -44,10 +54,10 @@ export default function ScenariosPanel() {
   }, [])
 
   useEffect(() => {
-    if (allDriversData.size > 0) {
+    if (allDriversData.size > 0 || allStatementsData.size > 0) {
       buildChartData()
     }
-  }, [selectedDrivers, selectedScenarios, allDriversData])
+  }, [selectedDrivers, selectedScenarios, allDriversData, selectedStatements, allStatementsData])
 
   const loadScenarios = async () => {
     try {
@@ -102,13 +112,43 @@ export default function ScenariosPanel() {
           setLineItems(Array.from(uniqueDrivers.values()))
         }
       }
+
+      // Load statement line items for this scenario
+      const statementsResponse = await fetch(
+        apiUrl(`/api/scenarios/${scenarioId}/results?dbPath=${encodeURIComponent(dbPath)}`)
+      )
+      const statementsData = await statementsResponse.json()
+
+      if (statementsData.success && statementsData.results && statementsData.results.length > 0) {
+        // Store all statements data in Map indexed by scenario_id
+        const newStmtData = new Map(allStatementsData)
+        newStmtData.set(scenarioId, statementsData.results)
+        setAllStatementsData(newStmtData)
+
+        // Populate statement items list if not already loaded
+        if (statementItems.length === 0) {
+          // Get unique statement line items with their names
+          const uniqueStatements = new Map()
+          statementsData.results.forEach((s: any) => {
+            if (!uniqueStatements.has(s.item_code)) {
+              uniqueStatements.set(s.item_code, {
+                item_code: s.item_code,
+                item_name: s.item_name || s.item_code
+              })
+            }
+          })
+          setStatementItems(Array.from(uniqueStatements.values()))
+        }
+      }
     } catch (error) {
       logger.error('Failed to load scenario data:', error)
     }
   }
 
   const buildChartData = () => {
-    if (allDriversData.size === 0 || selectedDrivers.size === 0 || selectedScenarios.size === 0) {
+    if ((allDriversData.size === 0 && allStatementsData.size === 0) ||
+        (selectedDrivers.size === 0 && selectedStatements.size === 0) ||
+        selectedScenarios.size === 0) {
       setScenarioData([])
       return
     }
@@ -120,24 +160,42 @@ export default function ScenariosPanel() {
     // Iterate through all selected scenarios
     selectedScenarios.forEach(scenarioId => {
       const scenarioDrivers = allDriversData.get(scenarioId)
-      if (!scenarioDrivers) return
+      const scenarioStatements = allStatementsData.get(scenarioId)
 
       const scenario = scenarios.find(s => s.scenario_id === scenarioId)
       const scenarioPrefix = scenarios.length > 1 && selectedScenarios.size > 1
         ? `${scenario?.code || scenario?.name || `S${scenarioId}`} - `
         : ''
 
-      scenarioDrivers.forEach((d: any) => {
-        if (selectedDrivers.has(d.driver_code)) {
-          if (!periodMap.has(d.period_id)) {
-            periodMap.set(d.period_id, { period: d.period_id })
+      // Add driver data
+      if (scenarioDrivers) {
+        scenarioDrivers.forEach((d: any) => {
+          if (selectedDrivers.has(d.driver_code)) {
+            if (!periodMap.has(d.period_id)) {
+              periodMap.set(d.period_id, { period: d.period_id })
+            }
+            const driverName = d.driver_name || d.driver_code
+            const seriesName = `${scenarioPrefix}${driverName}`
+            allSeriesNames.add(seriesName)
+            periodMap.get(d.period_id)[seriesName] = d.value || 0
           }
-          const driverName = d.driver_name || d.driver_code
-          const seriesName = `${scenarioPrefix}${driverName}`
-          allSeriesNames.add(seriesName)
-          periodMap.get(d.period_id)[seriesName] = d.value || 0
-        }
-      })
+        })
+      }
+
+      // Add statement data
+      if (scenarioStatements) {
+        scenarioStatements.forEach((s: any) => {
+          if (selectedStatements.has(s.item_code)) {
+            if (!periodMap.has(s.period_id)) {
+              periodMap.set(s.period_id, { period: s.period_id })
+            }
+            const statementName = s.item_name || s.item_code
+            const seriesName = `${scenarioPrefix}${statementName}`
+            allSeriesNames.add(seriesName)
+            periodMap.get(s.period_id)[seriesName] = s.value || 0
+          }
+        })
+      }
     })
 
     // Convert to array and sort by period
@@ -156,8 +214,6 @@ export default function ScenariosPanel() {
       return filledData
     })
 
-    console.log('Chart data (all):', JSON.stringify(chartData, null, 2))
-    console.log('Period IDs:', chartData.map(d => d.period))
     setScenarioData(chartData)
   }
 
@@ -171,6 +227,15 @@ export default function ScenariosPanel() {
     setSelectedDrivers(newSelected)
   }
 
+  const toggleStatement = (statementCode: string) => {
+    // Only allow one statement at a time
+    if (selectedStatements.has(statementCode)) {
+      setSelectedStatements(new Set())
+    } else {
+      setSelectedStatements(new Set([statementCode]))
+    }
+  }
+
   const toggleScenario = (scenarioId: number) => {
     const newSelected = new Set(selectedScenarios)
     if (newSelected.has(scenarioId)) {
@@ -179,6 +244,9 @@ export default function ScenariosPanel() {
       const newData = new Map(allDriversData)
       newData.delete(scenarioId)
       setAllDriversData(newData)
+      const newStmtData = new Map(allStatementsData)
+      newStmtData.delete(scenarioId)
+      setAllStatementsData(newStmtData)
     } else {
       newSelected.add(scenarioId)
       // Load data for this scenario
@@ -259,7 +327,7 @@ export default function ScenariosPanel() {
             {/* Driver Toggle Buttons */}
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', color: '#94a3b8', fontSize: '14px', marginBottom: '12px' }}>
-                Select Drivers to Plot
+                Select Drivers to Plot (Line Chart)
               </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 {lineItems.map((item, index) => {
@@ -295,6 +363,52 @@ export default function ScenariosPanel() {
               </div>
             </div>
 
+            {/* Statement Toggle Buttons */}
+            {statementItems.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', color: '#94a3b8', fontSize: '14px', marginBottom: '12px' }}>
+                  Select Statement Items to Plot (Bar Chart)
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {statementItems.map((item, index) => {
+                    const isSelected = selectedStatements.has(item.item_code)
+                    // Varied purple/pink colors for statement buttons
+                    const colors = ['#a855f7', '#ec4899', '#d946ef', '#c026d3', '#7c3aed', '#9333ea']
+                    const color = colors[index % colors.length]
+                    return (
+                      <button
+                        key={item.item_code}
+                        onClick={() => toggleStatement(item.item_code)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: isSelected ? color : 'rgba(30, 41, 59, 0.8)',
+                          border: `2px solid ${color}`,
+                          borderRadius: '6px',
+                          color: '#fff',
+                          fontSize: '14px',
+                          fontWeight: isSelected ? '600' : '400',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          opacity: isSelected ? 1 : 0.6,
+                          boxShadow: isSelected ? `0 0 12px ${color}` : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.opacity = '1'
+                          e.currentTarget.style.transform = 'scale(1.05)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = isSelected ? '1' : '0.6'
+                          e.currentTarget.style.transform = 'scale(1)'
+                        }}
+                      >
+                        {item.item_name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Chart */}
             {scenarioData.length > 0 ? (
               <>
@@ -303,10 +417,11 @@ export default function ScenariosPanel() {
                     ? `Scenario: ${scenarios.find(s => s.scenario_id === Array.from(selectedScenarios)[0])?.name}`
                     : `Comparing ${selectedScenarios.size} Scenarios`}
                 </h3>
-                <ResponsiveContainer width="100%" height={450}>
-                  <LineChart
+                <div style={{ width: '100%', height: '450px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart
                     data={scenarioData}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 20 }}
+                    margin={{ top: 5, right: 60, left: 20, bottom: 20 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(71, 85, 105, 0.5)" />
                     <XAxis
@@ -315,9 +430,20 @@ export default function ScenariosPanel() {
                       label={{ value: 'Period', position: 'insideBottom', offset: -5, fill: '#94a3b8' }}
                     />
                     <YAxis
+                      yAxisId="left"
                       stroke="#94a3b8"
                       domain={['auto', 'auto']}
+                      label={{ value: 'Drivers', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
                     />
+                    {selectedStatements.size > 0 && (
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        stroke="#a855f7"
+                        domain={['auto', 'auto']}
+                        label={{ value: 'Statements', angle: 90, position: 'insideRight', fill: '#a855f7', offset: 20 }}
+                      />
+                    )}
                     <Tooltip
                       contentStyle={{
                         backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -329,7 +455,7 @@ export default function ScenariosPanel() {
                     />
                     <Legend wrapperStyle={{ paddingTop: '20px' }} />
                     {(() => {
-                      const lines: JSX.Element[] = []
+                      const elements: JSX.Element[] = []
                       let colorIndex = 0
 
                       selectedScenarios.forEach(scenarioId => {
@@ -338,6 +464,7 @@ export default function ScenariosPanel() {
                           ? `${scenario?.code || scenario?.name || `S${scenarioId}`} - `
                           : ''
 
+                        // Add driver lines
                         selectedDrivers.forEach(driverCode => {
                           const driver = lineItems.find(i => i.item_code === driverCode)
                           if (!driver) return
@@ -346,9 +473,10 @@ export default function ScenariosPanel() {
                           const color = getDriverColor(colorIndex)
                           colorIndex++
 
-                          lines.push(
+                          elements.push(
                             <Line
                               key={`${scenarioId}-${driverCode}`}
+                              yAxisId="left"
                               type="monotone"
                               dataKey={seriesName}
                               stroke={color}
@@ -360,12 +488,48 @@ export default function ScenariosPanel() {
                             />
                           )
                         })
+
+                        // Add statement bars
+                        selectedStatements.forEach(statementCode => {
+                          const statement = statementItems.find(i => i.item_code === statementCode)
+                          if (!statement) return
+
+                          const seriesName = `${scenarioPrefix}${statement.item_name}`
+                          const statementIndex = statementItems.findIndex(i => i.item_code === statementCode)
+                          const colors = ['#a855f7', '#ec4899', '#d946ef', '#c026d3', '#7c3aed', '#9333ea']
+                          const barColor = colors[statementIndex % colors.length]
+
+                          elements.push(
+                            <Bar
+                              key={`${scenarioId}-${statementCode}`}
+                              yAxisId="right"
+                              dataKey={seriesName}
+                              fill={barColor}
+                              fillOpacity={0.7}
+                              name={seriesName}
+                              radius={[4, 4, 0, 0]}
+                              onMouseEnter={(data: any, index: number, e: any) => {
+                                if (e && e.target) {
+                                  e.target.style.fillOpacity = '1'
+                                  e.target.style.filter = 'brightness(1.2)'
+                                }
+                              }}
+                              onMouseLeave={(data: any, index: number, e: any) => {
+                                if (e && e.target) {
+                                  e.target.style.fillOpacity = '0.7'
+                                  e.target.style.filter = 'brightness(1)'
+                                }
+                              }}
+                            />
+                          )
+                        })
                       })
 
-                      return lines
+                      return elements
                     })()}
-                  </LineChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
+                </div>
               </>
             ) : (
               <p style={{ color: '#94a3b8', fontSize: '14px' }}>

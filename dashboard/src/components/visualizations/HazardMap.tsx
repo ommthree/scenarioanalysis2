@@ -174,12 +174,12 @@ export default function HazardMap({ points, pinnedPoints = [], height = '500px' 
   const maxIntensity = Math.max(...intensities, 1)
 
   return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ height, width: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+    <div style={{ position: 'relative', zIndex: 1 }}>
+      <div style={{ height, width: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(59, 130, 246, 0.3)', position: 'relative', zIndex: 1 }}>
         <MapContainer
           center={defaultCenter}
           zoom={defaultZoom}
-          style={{ height: '100%', width: '100%' }}
+          style={{ height: '100%', width: '100%', zIndex: 1 }}
           scrollWheelZoom={true}
         >
           <TileLayer
