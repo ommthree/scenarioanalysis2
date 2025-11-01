@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Activity } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { apiUrl, getDefaultDbPath } from '@/config'
 import { logger } from '@/utils/logger'
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -48,6 +47,10 @@ export default function ScenariosPanel() {
   const [selectedStatements, setSelectedStatements] = useState<Set<string>>(new Set())
   const [allStatementsData, setAllStatementsData] = useState<Map<number, any[]>>(new Map())
   const [loading, setLoading] = useState(true)
+
+  // AI Description
+  const [aiDescription, setAiDescription] = useState<string>('')
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     loadScenarios()
@@ -204,7 +207,7 @@ export default function ScenariosPanel() {
     // Build final chart data in strict period order
     const chartData = sortedPeriods.map(periodId => {
       const periodData = periodMap.get(periodId)
-      const filledData = { period: periodId }
+      const filledData: any = { period: periodId }
 
       // Add all series values (or null if missing)
       allSeriesNames.forEach(seriesName => {
@@ -253,6 +256,94 @@ export default function ScenariosPanel() {
       loadScenarioData(scenarioId)
     }
     setSelectedScenarios(newSelected)
+  }
+
+  const generateAIDescription = async () => {
+    if (scenarioData.length === 0) return
+
+    setAiLoading(true)
+    try {
+      // Build context based on current selections
+      const selectedScenariosList = Array.from(selectedScenarios)
+        .map(id => scenarios.find(s => s.scenario_id === id)?.name || `Scenario ${id}`)
+        .join(', ')
+
+      const selectedDriversList = Array.from(selectedDrivers)
+        .map(code => lineItems.find(i => i.item_code === code)?.item_name || code)
+        .join(', ')
+
+      const selectedStatementsList = Array.from(selectedStatements)
+        .map(code => statementItems.find(i => i.item_code === code)?.item_name || code)
+        .join(', ')
+
+      let contextDescription = `Analyzing scenario comparison: ${selectedScenariosList}.`
+
+      const items: string[] = []
+      if (selectedDriversList) items.push(`Drivers: ${selectedDriversList}`)
+      if (selectedStatementsList) items.push(`Statements: ${selectedStatementsList}`)
+
+      if (items.length > 0) {
+        contextDescription += ` Selected items: ${items.join('; ')}.`
+      }
+
+      // Extract period range and values from chart data
+      const periods = scenarioData.map(d => d.period)
+      const minPeriod = Math.min(...periods)
+      const maxPeriod = Math.max(...periods)
+
+      // Get all series names (excluding 'period' key)
+      const seriesNames = Object.keys(scenarioData[0] || {}).filter(k => k !== 'period')
+
+      // Build summary of series data
+      const seriesSummaries = seriesNames.map(seriesName => {
+        const values = scenarioData.map(d => d[seriesName]).filter(v => v !== null && v !== undefined)
+        if (values.length === 0) return null
+
+        const startValue = values[0]
+        const endValue = values[values.length - 1]
+        const change = endValue - startValue
+        const percentChange = startValue !== 0 ? ((change / startValue) * 100).toFixed(1) : 'N/A'
+
+        return `- ${seriesName}: ${startValue.toFixed(0)} → ${endValue.toFixed(0)} (${change > 0 ? '+' : ''}${change.toFixed(0)}, ${percentChange}% change)`
+      }).filter(s => s !== null)
+
+      const prompt = `You are a financial and climate scenario analysis expert. Analyze this scenario comparison data and provide a concise, insightful summary paragraph (2-4 sentences).
+
+Context: ${contextDescription}
+
+Period Range: ${minPeriod} to ${maxPeriod}
+
+Series Data:
+${seriesSummaries.join('\n')}
+
+Provide a narrative summary that:
+1. Explains the overall trends and patterns across scenarios
+2. Highlights the most significant changes or differences between scenarios
+3. Identifies any interesting insights or implications
+4. Uses business-friendly language
+
+Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
+
+      const response = await fetch('http://localhost:3001/api/claude/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        throw new Error('AI description failed')
+      }
+
+      const result = await response.json()
+      const description = result.content[0].text
+      setAiDescription(description)
+
+    } catch (error) {
+      console.error('AI description error:', error)
+      setAiDescription('Unable to generate AI description. Please try again.')
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   const getDriverColor = (index: number) => {
@@ -455,7 +546,7 @@ export default function ScenariosPanel() {
                     />
                     <Legend wrapperStyle={{ paddingTop: '20px' }} />
                     {(() => {
-                      const elements: JSX.Element[] = []
+                      const elements: React.ReactElement[] = []
                       let colorIndex = 0
 
                       selectedScenarios.forEach(scenarioId => {
@@ -508,13 +599,13 @@ export default function ScenariosPanel() {
                               fillOpacity={0.7}
                               name={seriesName}
                               radius={[4, 4, 0, 0]}
-                              onMouseEnter={(data: any, index: number, e: any) => {
+                              onMouseEnter={(_data: any, _index: number, e: any) => {
                                 if (e && e.target) {
                                   e.target.style.fillOpacity = '1'
                                   e.target.style.filter = 'brightness(1.2)'
                                 }
                               }}
-                              onMouseLeave={(data: any, index: number, e: any) => {
+                              onMouseLeave={(_data: any, _index: number, e: any) => {
                                 if (e && e.target) {
                                   e.target.style.fillOpacity = '0.7'
                                   e.target.style.filter = 'brightness(1)'
@@ -535,6 +626,100 @@ export default function ScenariosPanel() {
               <p style={{ color: '#94a3b8', fontSize: '14px' }}>
                 {selectedDrivers.size === 0 ? 'Select at least one driver to plot.' : 'No data available for selected drivers.'}
               </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Insights Panel */}
+      {scenarioData.length > 0 && (
+        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginTop: '32px' }}>
+          <CardContent style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff' }}>
+                AI Insights
+              </h2>
+              <button
+                onClick={generateAIDescription}
+                disabled={aiLoading}
+                style={{
+                  backgroundColor: aiLoading ? '#64748b' : '#8b5cf6',
+                  padding: '10px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: aiLoading ? 'not-allowed' : 'pointer',
+                  color: '#ffffff',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!aiLoading) {
+                    e.currentTarget.style.backgroundColor = '#7c3aed'
+                    e.currentTarget.style.transform = 'scale(1.02)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!aiLoading) {
+                    e.currentTarget.style.backgroundColor = '#8b5cf6'
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }
+                }}
+              >
+                {aiLoading ? (
+                  <>
+                    <div style={{
+                      width: '16px',
+                      height: '16px',
+                      border: '2px solid rgba(255, 255, 255, 0.3)',
+                      borderTopColor: '#ffffff',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite'
+                    }} />
+                    <style>{`
+                      @keyframes spin {
+                        to { transform: rotate(360deg); }
+                      }
+                    `}</style>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles style={{ width: '16px', height: '16px' }} />
+                    Generate Insights
+                  </>
+                )}
+              </button>
+            </div>
+
+            {aiDescription ? (
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                borderRadius: '8px',
+                color: '#e2e8f0',
+                fontSize: '15px',
+                lineHeight: '1.6'
+              }}>
+                {aiDescription}
+              </div>
+            ) : (
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                border: '1px solid rgba(71, 85, 105, 0.5)',
+                borderRadius: '8px',
+                color: '#94a3b8',
+                fontSize: '14px',
+                fontStyle: 'italic',
+                textAlign: 'center'
+              }}>
+                Click the button above to generate AI-powered insights about this scenario comparison
+              </div>
             )}
           </CardContent>
         </Card>

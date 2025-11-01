@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Map, Box, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
+import { Map, Box, ChevronRight, ChevronDown, Building2, Sparkles } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import HazardMap from '@/components/visualizations/HazardMap'
 import HazardSurface3D from '@/components/visualizations/HazardSurface3D'
@@ -58,6 +58,10 @@ export default function HazardMapsPanel() {
   const [currentEntity, setCurrentEntity] = useState<number | null>(null)
   const [entityLocations, setEntityLocations] = useState<EntityLocation[]>([])
   const [showLocations, setShowLocations] = useState(false)
+
+  // AI Description
+  const [aiDescription, setAiDescription] = useState<string>('')
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     fetchStagedFiles()
@@ -323,6 +327,87 @@ export default function HazardMapsPanel() {
     )
   }
 
+  const generateAIDescription = async () => {
+    if (hazardPoints.length === 0) return
+
+    setAiLoading(true)
+    try {
+      // Build context based on current selections
+      const selectedFile = stagedFiles.find(f => f.file_id === selectedFileId)
+      const fileName = selectedFile?.file_name || 'hazard map'
+
+      // Get entity hierarchy information
+      const flattenEntities = (entities: Entity[]): Entity[] => {
+        const result: Entity[] = []
+        const flatten = (nodes: Entity[]) => {
+          nodes.forEach(node => {
+            result.push(node)
+            if (node.children && node.children.length > 0) {
+              flatten(node.children)
+            }
+          })
+        }
+        flatten(entities)
+        return result
+      }
+
+      const allEntities = flattenEntities(entities)
+      const selectedEntity = allEntities.find(e => e.entity_id === currentEntity)
+      const entityInfo = selectedEntity
+        ? `Entity: ${selectedEntity.name} (${selectedEntity.code}, ${selectedEntity.granularity_level})`
+        : 'No entity selected'
+
+      let contextDescription = `Analyzing physical climate hazard map from file: ${fileName}. ${entityInfo}. Hazard type: ${selectedIntensityColumn}.`
+
+      // Calculate intensity statistics
+      const intensityValues = hazardPoints.map(p => p.intensity)
+      const minIntensity = Math.min(...intensityValues)
+      const maxIntensity = Math.max(...intensityValues)
+      const avgIntensity = intensityValues.reduce((sum, v) => sum + v, 0) / intensityValues.length
+
+      const statsDescription = `Data points: ${hazardPoints.length}. Intensity range: ${minIntensity.toFixed(2)} to ${maxIntensity.toFixed(2)} (avg: ${avgIntensity.toFixed(2)}).`
+
+      let locationInfo = ''
+      if (showLocations && entityLocations.length > 0) {
+        locationInfo = ` Entity locations displayed: ${entityLocations.length} locations.`
+      }
+
+      const prompt = `You are a climate risk and physical hazard analysis expert. Analyze this hazard map data and provide a concise, insightful summary paragraph (2-4 sentences).
+
+Context: ${contextDescription}
+
+Statistics: ${statsDescription}${locationInfo}
+
+Provide a narrative summary that:
+1. Explains the overall hazard distribution and geographic patterns
+2. Highlights areas or aspects of highest concern or risk
+3. Identifies any interesting insights about the hazard intensity distribution
+4. Uses business-friendly language appropriate for risk assessment
+
+Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
+
+      const response = await fetch('http://localhost:3001/api/claude/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        throw new Error('AI description failed')
+      }
+
+      const result = await response.json()
+      const description = result.content[0].text
+      setAiDescription(description)
+
+    } catch (error) {
+      console.error('AI description error:', error)
+      setAiDescription('Unable to generate AI description. Please try again.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   const getHazardPoints = (): HazardPoint[] => {
     const points: HazardPoint[] = []
 
@@ -558,6 +643,98 @@ export default function HazardMapsPanel() {
               <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
                 Showing {hazardPoints.length} hazard data points • 3D surface with geographic map projection
               </div>
+            </CardContent>
+          </Card>
+
+          {/* AI Insights Panel */}
+          <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginTop: '32px' }}>
+            <CardContent style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff' }}>
+                  AI Insights
+                </h2>
+                <button
+                  onClick={generateAIDescription}
+                  disabled={aiLoading}
+                  style={{
+                    backgroundColor: aiLoading ? '#64748b' : '#8b5cf6',
+                    padding: '10px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: aiLoading ? 'not-allowed' : 'pointer',
+                    color: '#ffffff',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!aiLoading) {
+                      e.currentTarget.style.backgroundColor = '#7c3aed'
+                      e.currentTarget.style.transform = 'scale(1.02)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!aiLoading) {
+                      e.currentTarget.style.backgroundColor = '#8b5cf6'
+                      e.currentTarget.style.transform = 'scale(1)'
+                    }
+                  }}
+                >
+                  {aiLoading ? (
+                    <>
+                      <div style={{
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid rgba(255, 255, 255, 0.3)',
+                        borderTopColor: '#ffffff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                      }} />
+                      <style>{`
+                        @keyframes spin {
+                          to { transform: rotate(360deg); }
+                        }
+                      `}</style>
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles style={{ width: '16px', height: '16px' }} />
+                      Generate Insights
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {aiDescription ? (
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                  borderRadius: '8px',
+                  color: '#e2e8f0',
+                  fontSize: '15px',
+                  lineHeight: '1.6'
+                }}>
+                  {aiDescription}
+                </div>
+              ) : (
+                <div style={{
+                  padding: '16px',
+                  backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                  border: '1px solid rgba(71, 85, 105, 0.5)',
+                  borderRadius: '8px',
+                  color: '#94a3b8',
+                  fontSize: '14px',
+                  fontStyle: 'italic',
+                  textAlign: 'center'
+                }}>
+                  Click the button above to generate AI-powered insights about this hazard map
+                </div>
+              )}
             </CardContent>
           </Card>
         </>

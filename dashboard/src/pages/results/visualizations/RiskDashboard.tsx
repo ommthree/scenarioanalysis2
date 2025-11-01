@@ -985,7 +985,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       )}
 
       {/* 4-Quadrant Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', height: whatIfMode && managementActions.length > 0 ? 'calc(100vh - 600px)' : 'calc(100vh - 285px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         {/* Top Left - Physical Risk Map */}
         <div style={{ animation: 'fadeInScale 0.6s ease-out 0.2s both' }}>
           {renderMap(physicalCountries, physicalDriverCountries, 'Physical Risk by Country', '#ef4444')}
@@ -1009,7 +1009,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
 
       {/* AI Description Panel */}
       {(physicalDrivers.length > 0 || transitionDrivers.length > 0) && (
-        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginTop: '180px', position: 'relative', zIndex: 10 }}>
+        <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginTop: '32px' }}>
           <CardContent style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff' }}>
