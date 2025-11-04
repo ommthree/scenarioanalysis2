@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
 import Plot from 'react-plotly.js'
 
 interface Scenario {
@@ -16,6 +16,10 @@ interface LineItem {
 interface Entity {
   entity_id: number
   name: string
+  code: string
+  granularity_level: string
+  parent_entity_id: number | null
+  children?: Entity[]
 }
 
 interface DriverContribution {
@@ -77,6 +81,9 @@ export default function RibbonChart() {
   const [aiDescription, setAiDescription] = useState<string>('')
   const [aiLoading, setAiLoading] = useState(false)
 
+  // Entity tree state
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
+
   // Load initial data
   useEffect(() => {
     loadScenarios()
@@ -126,16 +133,41 @@ export default function RibbonChart() {
     }
   }
 
+  const buildEntityTree = (entities: any[]): Entity[] => {
+    const entityMap: { [key: number]: Entity } = {}
+    const rootEntities: Entity[] = []
+
+    // Convert API format to component format
+    entities.forEach((entity) => {
+      entityMap[entity.entity_id] = {
+        entity_id: entity.entity_id,
+        code: entity.entity_code,
+        name: entity.entity_name,
+        granularity_level: entity.level,
+        parent_entity_id: entity.parent_id,
+        children: []
+      }
+    })
+
+    // Build tree structure
+    entities.forEach((entity) => {
+      if (entity.parent_id === null) {
+        rootEntities.push(entityMap[entity.entity_id])
+      } else if (entityMap[entity.parent_id]) {
+        entityMap[entity.parent_id].children!.push(entityMap[entity.entity_id])
+      }
+    })
+
+    return rootEntities
+  }
+
   const loadEntities = async () => {
     try {
       const response = await fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
-      const data = await response.json()
-      if (Array.isArray(data)) {
-        const mappedEntities = data.map((e: any) => ({
-          entity_id: e.entity_id,
-          name: e.entity_name
-        }))
-        setEntities(mappedEntities)
+      const flatEntities = await response.json()
+      if (Array.isArray(flatEntities)) {
+        const tree = buildEntityTree(flatEntities)
+        setEntities(tree)
       }
     } catch (error) {
       console.error('Failed to load entities:', error)
@@ -826,6 +858,78 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     return null
   }
 
+  const toggleNode = (entityId: number) => {
+    setExpandedNodes((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(entityId)) {
+        newSet.delete(entityId)
+      } else {
+        newSet.add(entityId)
+      }
+      return newSet
+    })
+  }
+
+  const renderEntityTree = (entities: Entity[], level = 0, onSelect: (id: number) => void, selectedId: number | null): React.ReactElement => {
+    return (
+      <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
+        {entities.map((entity) => {
+          const hasChildren = entity.children && entity.children.length > 0
+          const isExpanded = entity.entity_id ? expandedNodes.has(entity.entity_id) : false
+          const isSelected = selectedId === entity.entity_id
+
+          return (
+            <div key={entity.entity_id}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '8px 10px',
+                  backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+                  border: `1px solid ${isSelected ? 'rgba(6, 182, 212, 0.5)' : 'rgba(6, 182, 212, 0.2)'}`,
+                  borderRadius: '4px',
+                  marginBottom: '4px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => onSelect(entity.entity_id)}
+              >
+                {hasChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (entity.entity_id) toggleNode(entity.entity_id)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: '6px' }}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown style={{ width: '14px', height: '14px', color: '#06b6d4' }} />
+                    ) : (
+                      <ChevronRight style={{ width: '14px', height: '14px', color: '#06b6d4' }} />
+                    )}
+                  </button>
+                )}
+                {!hasChildren && <div style={{ width: '20px' }} />}
+
+                <Building2 style={{ width: '14px', height: '14px', color: '#06b6d4', marginRight: '6px' }} />
+
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: isSelected ? '600' : '400', color: '#fff' }}>
+                    {entity.name}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    {entity.code} • {entity.granularity_level}
+                  </div>
+                </div>
+              </div>
+
+              {hasChildren && isExpanded && renderEntityTree(entity.children!, level + 1, onSelect, selectedId)}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: '24px', minHeight: '100vh' }}>
       <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#fff', marginBottom: '24px' }}>
@@ -911,29 +1015,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
               </div>
               <div>
                 <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                  Entity
-                </label>
-                <select
-                  value={p2pEntity || ''}
-                  onChange={(e) => setP2pEntity(e.target.value ? parseInt(e.target.value) : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Select entity...</option>
-                  {entities.map(e => (
-                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
                   From Period
                 </label>
                 <select
@@ -1001,6 +1082,25 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                   ))}
                 </select>
               </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <div style={{
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(6, 182, 212, 0.3)',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}>
+                  {entities.length > 0 ? renderEntityTree(entities, 0, setP2pEntity, p2pEntity) : (
+                    <div style={{ color: '#94a3b8', fontSize: '12px', padding: '6px' }}>
+                      No entities available
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -1027,29 +1127,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                   <option value="">Select period...</option>
                   {periods.map(p => (
                     <option key={p} value={p}>Period {p}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                  Entity
-                </label>
-                <select
-                  value={s2sEntity || ''}
-                  onChange={(e) => setS2sEntity(e.target.value ? parseInt(e.target.value) : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Select entity...</option>
-                  {entities.map(e => (
-                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
                   ))}
                 </select>
               </div>
@@ -1121,6 +1198,25 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                     <option key={li.code} value={li.code}>{li.display_name}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <div style={{
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(6, 182, 212, 0.3)',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}>
+                  {entities.length > 0 ? renderEntityTree(entities, 0, setS2sEntity, s2sEntity) : (
+                    <div style={{ color: '#94a3b8', fontSize: '12px', padding: '6px' }}>
+                      No entities available
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

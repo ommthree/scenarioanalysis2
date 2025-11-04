@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
 
 interface Scenario {
   scenario_id: number
@@ -15,6 +15,10 @@ interface LineItem {
 interface Entity {
   entity_id: number
   name: string
+  code: string
+  granularity_level: string
+  parent_entity_id: number | null
+  children?: Entity[]
 }
 
 interface DriverContribution {
@@ -72,6 +76,9 @@ export default function WaterfallChart() {
   const [aiDescription, setAiDescription] = useState<string>('')
   const [aiLoading, setAiLoading] = useState(false)
 
+  // Entity tree state
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
+
   // Load initial data
   useEffect(() => {
     loadScenarios()
@@ -109,18 +116,41 @@ export default function WaterfallChart() {
     }
   }
 
+  const buildEntityTree = (entities: any[]): Entity[] => {
+    const entityMap: { [key: number]: Entity } = {}
+    const rootEntities: Entity[] = []
+
+    // Convert API format to component format
+    entities.forEach((entity) => {
+      entityMap[entity.entity_id] = {
+        entity_id: entity.entity_id,
+        code: entity.entity_code,
+        name: entity.entity_name,
+        granularity_level: entity.level,
+        parent_entity_id: entity.parent_id,
+        children: []
+      }
+    })
+
+    // Build tree structure
+    entities.forEach((entity) => {
+      if (entity.parent_id === null) {
+        rootEntities.push(entityMap[entity.entity_id])
+      } else if (entityMap[entity.parent_id]) {
+        entityMap[entity.parent_id].children!.push(entityMap[entity.entity_id])
+      }
+    })
+
+    return rootEntities
+  }
+
   const loadEntities = async () => {
     try {
       const response = await fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
-      const data = await response.json()
-      // API returns array directly, not wrapped in {success, entities}
-      if (Array.isArray(data)) {
-        // Map entity_name to name for consistency
-        const mappedEntities = data.map((e: any) => ({
-          entity_id: e.entity_id,
-          name: e.entity_name
-        }))
-        setEntities(mappedEntities)
+      const flatEntities = await response.json()
+      if (Array.isArray(flatEntities)) {
+        const tree = buildEntityTree(flatEntities)
+        setEntities(tree)
       }
     } catch (error) {
       console.error('Failed to load entities:', error)
@@ -162,30 +192,63 @@ export default function WaterfallChart() {
   }
 
   const loadPeriodToPeriodData = async () => {
-    // Fetch driver decomposition for both periods
-    const [response1, response2] = await Promise.all([
-      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${p2pPeriod1}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`),
-      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${p2pPeriod2}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
-    ])
+    if (p2pPeriod1 === null || p2pPeriod2 === null) return
 
-    const [data1, data2] = await Promise.all([response1.json(), response2.json()])
+    // Generate array of consecutive periods from p2pPeriod1 to p2pPeriod2
+    const startPeriod = Math.min(p2pPeriod1, p2pPeriod2)
+    const endPeriod = Math.max(p2pPeriod1, p2pPeriod2)
+    const periodRange = []
+    for (let p = startPeriod; p <= endPeriod; p++) {
+      periodRange.push(p)
+    }
 
-    if (data1.success && data2.success) {
+    // Fetch driver decomposition for all periods in range
+    const responses = await Promise.all(
+      periodRange.map(period =>
+        fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${period}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
+      )
+    )
+
+    const allPeriodData = await Promise.all(responses.map(r => r.json()))
+
+    if (!allPeriodData.every(d => d.success)) {
+      console.error('Failed to fetch data for all periods')
+      return
+    }
+
+    const waterfallItems: any[] = []
+
+    // Start with the first period
+    const firstPeriodData = allPeriodData[0]
+    const signMultiplier = firstPeriodData.signConvention === 'negative' ? -1 : 1
+    const startValue = firstPeriodData.lineItemValue || 0
+
+    waterfallItems.push({
+      type: 'start',
+      label: `Period ${periodRange[0]}`,
+      value: startValue,
+      cumulative: startValue
+    })
+
+    let cumulative = startValue
+
+    // Build consecutive waterfalls for each period transition
+    for (let i = 0; i < periodRange.length - 1; i++) {
+      const currentPeriod = periodRange[i]
+      const nextPeriod = periodRange[i + 1]
+      const data1 = allPeriodData[i]
+      const data2 = allPeriodData[i + 1]
+
       const drivers1 = data1.drivers || []
       const drivers2 = data2.drivers || []
 
-      // Create a map of driver changes
+      // Create a map of driver changes for this transition
       const driverMap = new Map<string, { name: string; change: number; category: string }>()
 
-      // Check all drivers from both periods
       const allDriverCodes = new Set([
         ...drivers1.map((d: DriverContribution) => d.driver_code),
         ...drivers2.map((d: DriverContribution) => d.driver_code)
       ])
-
-      // If line item has negative sign convention, driver contributions are inverted
-      // (e.g., EXPENSES contributions are negative, but we want to show absolute expense changes)
-      const signMultiplier = data1.signConvention === 'negative' ? -1 : 1
 
       allDriverCodes.forEach((code) => {
         const d1 = drivers1.find((d: DriverContribution) => d.driver_code === code)
@@ -203,55 +266,7 @@ export default function WaterfallChart() {
         }
       })
 
-      // Build waterfall data
-      const startValue = data1.lineItemValue || 0
-      const endValue = data2.lineItemValue || 0
-
-      console.log('=== Period-to-Period Waterfall Debug ===')
-      console.log('Line Item:', p2pLineItem)
-      console.log('Entity:', p2pEntity)
-      console.log('Scenario:', p2pScenario)
-      console.log('Period 1:', p2pPeriod1, '→ Period 2:', p2pPeriod2)
-      console.log('')
-      console.log('Sign Convention:', data1.signConvention)
-      console.log('Sign Multiplier:', signMultiplier, '(1 = use as-is, -1 = flip sign)')
-      console.log('')
-      console.log('Start Value (Period 1):', startValue)
-      console.log('End Value (Period 2):', endValue)
-      console.log('Actual Difference:', endValue - startValue)
-      console.log('')
-      console.log('Driver Contributions (Period 1):')
-      drivers1.forEach((d: DriverContribution) => {
-        console.log(`  ${d.driver_code}: ${d.value} × ${signMultiplier} = ${d.value * signMultiplier}`)
-      })
-      console.log('')
-      console.log('Driver Contributions (Period 2):')
-      drivers2.forEach((d: DriverContribution) => {
-        console.log(`  ${d.driver_code}: ${d.value} × ${signMultiplier} = ${d.value * signMultiplier}`)
-      })
-      console.log('')
-      console.log('Driver Changes:')
-      Array.from(driverMap.entries()).forEach(([code, data]) => {
-        const d1 = drivers1.find((d: DriverContribution) => d.driver_code === code)
-        const d2 = drivers2.find((d: DriverContribution) => d.driver_code === code)
-        const d1Val = (d1?.value || 0) * signMultiplier
-        const d2Val = (d2?.value || 0) * signMultiplier
-        console.log(`  ${code}: ${d2Val} - ${d1Val} = ${data.change}`)
-      })
-      console.log('')
-      const sumDriverChanges = Array.from(driverMap.values()).reduce((sum, d) => sum + d.change, 0)
-      console.log('Sum of Driver Changes:', sumDriverChanges)
-      console.log('Calculated End Value:', startValue + sumDriverChanges)
-      console.log('Actual End Value:', endValue)
-      console.log('Residual:', endValue - (startValue + sumDriverChanges))
-      console.log('==========================================')
-      console.log('')
-
-      const waterfallItems = [
-        { type: 'start', label: `Period ${p2pPeriod1}`, value: startValue, cumulative: startValue }
-      ]
-
-      let cumulative = startValue
+      // Add driver bars for this transition
       Array.from(driverMap.entries()).forEach(([code, data]) => {
         cumulative += data.change
         waterfallItems.push({
@@ -263,9 +278,9 @@ export default function WaterfallChart() {
         })
       })
 
-      // Add residual/constant if there's a difference between calculated and actual end value
-      const calculatedEnd = cumulative
-      const residual = endValue - calculatedEnd
+      // Add residual/constant if needed
+      const actualNextValue = data2.lineItemValue || 0
+      const residual = actualNextValue - cumulative
       if (Math.abs(residual) > 0.01) {
         cumulative += residual
         waterfallItems.push({
@@ -277,15 +292,23 @@ export default function WaterfallChart() {
         })
       }
 
+      // Add intermediate period marker (end of current transition, start of next)
       waterfallItems.push({
-        type: 'end',
-        label: `Period ${p2pPeriod2}`,
-        value: endValue,
-        cumulative: endValue
+        type: i === periodRange.length - 2 ? 'end' : 'intermediate',
+        label: `Period ${nextPeriod}`,
+        value: actualNextValue,
+        cumulative: actualNextValue
       })
 
-      setWaterfallData(waterfallItems)
+      cumulative = actualNextValue
     }
+
+    console.log('=== Multi-Period Waterfall Debug ===')
+    console.log('Period Range:', periodRange)
+    console.log('Waterfall Items:', waterfallItems.length)
+    console.log('=========================================')
+
+    setWaterfallData(waterfallItems)
   }
 
   const loadScenarioToScenarioData = async () => {
@@ -589,7 +612,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     }
 
     const getBarColor = (item: any) => {
-      if (item.type === 'start' || item.type === 'end') return '#64748b'
+      if (item.type === 'start' || item.type === 'end' || item.type === 'intermediate') return '#64748b'
       return item.value >= 0 ? '#10b981' : '#ef4444'
     }
 
@@ -623,7 +646,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
             const width = barWidth * 0.8
 
             let barY, barHeight
-            if (item.type === 'start' || item.type === 'end') {
+            if (item.type === 'start' || item.type === 'end' || item.type === 'intermediate') {
               barY = yScale(item.value)
               barHeight = yScale(0) - yScale(item.value)
             } else {
@@ -720,6 +743,78 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
             )
           })}
         </svg>
+      </div>
+    )
+  }
+
+  const toggleNode = (entityId: number) => {
+    setExpandedNodes((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(entityId)) {
+        newSet.delete(entityId)
+      } else {
+        newSet.add(entityId)
+      }
+      return newSet
+    })
+  }
+
+  const renderEntityTree = (entities: Entity[], level = 0, onSelect: (id: number) => void, selectedId: number | null): React.ReactElement => {
+    return (
+      <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
+        {entities.map((entity) => {
+          const hasChildren = entity.children && entity.children.length > 0
+          const isExpanded = entity.entity_id ? expandedNodes.has(entity.entity_id) : false
+          const isSelected = selectedId === entity.entity_id
+
+          return (
+            <div key={entity.entity_id}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '8px 10px',
+                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+                  border: `1px solid ${isSelected ? 'rgba(59, 130, 246, 0.5)' : 'rgba(59, 130, 246, 0.2)'}`,
+                  borderRadius: '4px',
+                  marginBottom: '4px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => onSelect(entity.entity_id)}
+              >
+                {hasChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (entity.entity_id) toggleNode(entity.entity_id)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: '6px' }}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown style={{ width: '14px', height: '14px', color: '#3b82f6' }} />
+                    ) : (
+                      <ChevronRight style={{ width: '14px', height: '14px', color: '#3b82f6' }} />
+                    )}
+                  </button>
+                )}
+                {!hasChildren && <div style={{ width: '20px' }} />}
+
+                <Building2 style={{ width: '14px', height: '14px', color: '#3b82f6', marginRight: '6px' }} />
+
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: isSelected ? '600' : '400', color: '#fff' }}>
+                    {entity.name}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    {entity.code} • {entity.granularity_level}
+                  </div>
+                </div>
+              </div>
+
+              {hasChildren && isExpanded && renderEntityTree(entity.children!, level + 1, onSelect, selectedId)}
+            </div>
+          )
+        })}
       </div>
     )
   }
@@ -869,29 +964,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
               </div>
               <div>
                 <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                  Entity
-                </label>
-                <select
-                  value={p2pEntity || ''}
-                  onChange={(e) => setP2pEntity(e.target.value ? parseInt(e.target.value) : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Select entity...</option>
-                  {entities.map(e => (
-                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
                   From Period
                 </label>
                 <select
@@ -959,6 +1031,25 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                   ))}
                 </select>
               </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <div style={{
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}>
+                  {entities.length > 0 ? renderEntityTree(entities, 0, setP2pEntity, p2pEntity) : (
+                    <div style={{ color: '#94a3b8', fontSize: '12px', padding: '6px' }}>
+                      No entities available
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -985,29 +1076,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                   <option value="">Select period...</option>
                   {periods.map(p => (
                     <option key={p} value={p}>Period {p}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                  Entity
-                </label>
-                <select
-                  value={s2sEntity || ''}
-                  onChange={(e) => setS2sEntity(e.target.value ? parseInt(e.target.value) : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Select entity...</option>
-                  {entities.map(e => (
-                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
                   ))}
                 </select>
               </div>
@@ -1080,6 +1148,25 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                   ))}
                 </select>
               </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <div style={{
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}>
+                  {entities.length > 0 ? renderEntityTree(entities, 0, setS2sEntity, s2sEntity) : (
+                    <div style={{ color: '#94a3b8', fontSize: '12px', padding: '6px' }}>
+                      No entities available
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -1106,29 +1193,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                   <option value="">Select scenario...</option>
                   {scenarios.map(s => (
                     <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                  Entity
-                </label>
-                <select
-                  value={aiEntity || ''}
-                  onChange={(e) => setAiEntity(e.target.value ? parseInt(e.target.value) : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Select entity...</option>
-                  {entities.map(e => (
-                    <option key={e.entity_id} value={e.entity_id}>{e.name}</option>
                   ))}
                 </select>
               </div>
@@ -1177,6 +1241,25 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                     <option key={li.code} value={li.code}>{li.display_name}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
+                  Entity
+                </label>
+                <div style={{
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}>
+                  {entities.length > 0 ? renderEntityTree(entities, 0, setAiEntity, aiEntity) : (
+                    <div style={{ color: '#94a3b8', fontSize: '12px', padding: '6px' }}>
+                      No entities available
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

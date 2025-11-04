@@ -1,8 +1,18 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-11-01
+**Last Updated:** 2025-11-04
 **Total Files:** 80 (27 C++ source, 28 C++ headers, 50 TypeScript/React, 4 JavaScript server, 2 config/utility files)
 **Status:** Production - Unified Engine Architecture with What-If Mode, Interactive MC Distribution Visualization, Three-Mode Waterfall with AI Descriptions, and Physical Risk Page with Location Display
+
+**Recent Changes (2025-11-04):**
+- ✅ Added Levers/No Regrets Dashboard (Session 20)
+- ✅ Created LeversPanel.tsx with MAC Analysis, ROI Analysis, and No Regrets sections
+- ✅ Implemented hierarchical entity tree selector across LeversPanel, WaterfallChart, RibbonChart
+- ✅ Moved entity selectors to right-hand side on Waterfall and Ribbon pages
+- ✅ No Regrets Dashboard shows cross-scenario ROI comparison for all actions
+- ✅ Identifies "No Regret" actions where ALL scenarios have positive ROI
+- ✅ Full-width SVG chart with tight Y-axis scaling and dynamic width
+- ✅ Green checkmark and bold label above no-regret actions
 
 **Recent Changes (2025-11-01):**
 - ✅ Physical Risk page enhancements (Session 16)
@@ -1200,9 +1210,10 @@ All map pages follow similar pattern: Column mapping → validation → producti
 **Lines:** ~230
 **Purpose:** Interactive data exploration hub
 **Features:**
-- Visualization type selector (10 types including Risk Dashboard)
+- Visualization type selector (10 types including Risk Dashboard, Levers)
 - Collapsible menu with icon-based navigation
 - Risk Dashboard: 4-quadrant scenario comparison with cross-filtering drill-down
+- Levers: MAC Analysis, ROI Analysis, and No Regrets Dashboard
 - Placeholder stubs for future visualization types
 
 #### `dashboard/src/pages/results/visualizations/RiskDashboard.tsx`
@@ -1221,6 +1232,26 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Combination format: "BASE", "EV_FLEET", "EV_FLEET+GREEN_SUPPLY+HVAC_UPGRADE" (alphabetically sorted)
 - Absolute/Delta modes: Absolute mode (no base case) shows single scenario, Delta shows difference
 - Backend uses driver-country combinations for dynamic aggregation
+
+---
+
+#### `dashboard/src/pages/results/visualizations/LeversPanel.tsx`
+**Lines:** ~850
+**Purpose:** Levers/No Regrets Dashboard for cost-benefit analysis
+**Features:**
+- Three analysis sections: MAC Analysis, ROI Analysis, and No Regrets Dashboard
+- Hierarchical entity tree selector with expand/collapse
+- MAC Analysis: Shows marginal abatement cost curves for selected scenario/entity/period
+- ROI Analysis: Shows return on investment curves for actions
+- No Regrets Dashboard: Cross-scenario ROI comparison showing all actions × all scenarios
+- Identifies "No Regret" actions where ALL scenarios show positive ROI
+- Green checkmark (✓) and "No Regret" label above qualifying actions
+- Full-width SVG chart with tight Y-axis scaling (10% padding)
+- Dynamic chart width based on number of actions (avoids excessive whitespace)
+- Color-coded bars by scenario with legend
+- Always loads ALL scenarios automatically (no mode toggles)
+- Uses GET /api/results/roi-curve endpoint for ROI data
+- Purple theme (#8b5cf6) matching Levers icon color
 
 ---
 

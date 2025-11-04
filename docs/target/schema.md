@@ -1,6 +1,6 @@
 # Database Schema Documentation
 
-**Last Updated:** 2025-11-01
+**Last Updated:** 2025-11-04
 **Schema Version:** 1.0.0
 **Database Engine:** SQLite 3.42+ with JSON1 extension
 **Production Database:** `/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db`

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Database,
   DollarSign,
@@ -13,7 +13,7 @@ import {
   ChevronUp,
   LayoutDashboard,
   Network,
-  Leaf,
+  Sliders,
   Waves
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,26 +25,53 @@ import CorrelationsPanel from './visualizations/CorrelationsPanel'
 import HazardMapsPanel from './visualizations/HazardMapsPanel'
 import LocationsPanel from './visualizations/LocationsPanel'
 import DamageCurvesPanel from './visualizations/DamageCurvesPanel'
-import MACAnalysisPanel from './visualizations/MACAnalysisPanel'
-import ROIAnalysisPanel from './visualizations/ROIAnalysisPanel'
+import LeversPanel from './visualizations/LeversPanel'
 
 export default function Explore() {
   const [selectedViz, setSelectedViz] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(true)
+  const [whatIfMode, setWhatIfMode] = useState(false)
+
+  // Check for what-if mode on mount and when storage changes
+  useEffect(() => {
+    const checkWhatIfMode = () => {
+      const saved = localStorage.getItem('lastRunMode')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          setWhatIfMode(parsed.whatIfMode === true)
+        } catch {
+          setWhatIfMode(false)
+        }
+      } else {
+        setWhatIfMode(false)
+      }
+    }
+
+    checkWhatIfMode()
+
+    // Listen for storage changes
+    window.addEventListener('storage', checkWhatIfMode)
+    return () => window.removeEventListener('storage', checkWhatIfMode)
+  }, [])
 
   const vizOptions = [
-    { id: 'risk-dashboard', icon: LayoutDashboard, label: 'Risk Dashboard', color: '#ef4444' },
-    { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316' },
-    { id: 'ribbon', icon: Waves, label: 'Ribbon Chart', color: '#06b6d4' },
-    { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6' },
-    { id: 'correlations', icon: Network, label: 'Correlations', color: '#10b981' },
-    { id: 'mac-analysis', icon: Leaf, label: 'MAC Analysis', color: '#22c55e' },
-    { id: 'roi-analysis', icon: TrendingUp, label: 'ROI Analysis', color: '#f97316' },
-    { id: 'hazard-maps', icon: Map, label: 'Physical Risk', color: '#ec4899' },
-    { id: 'damage-curves', icon: TrendingUp, label: 'Damage Curves', color: '#8b5cf6' },
+    { id: 'risk-dashboard', icon: LayoutDashboard, label: 'Risk Dashboard', color: '#ef4444', requiresWhatIf: false },
+    { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316', requiresWhatIf: false },
+    { id: 'ribbon', icon: Waves, label: 'Ribbon Chart', color: '#06b6d4', requiresWhatIf: false },
+    { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6', requiresWhatIf: false },
+    { id: 'correlations', icon: Network, label: 'Correlations', color: '#10b981', requiresWhatIf: false },
+    { id: 'levers', icon: Sliders, label: 'Levers', color: '#8b5cf6', requiresWhatIf: true },
+    { id: 'hazard-maps', icon: Map, label: 'Physical Risk', color: '#ec4899', requiresWhatIf: false },
+    { id: 'damage-curves', icon: TrendingUp, label: 'Damage Curves', color: '#8b5cf6', requiresWhatIf: false },
   ]
 
   const handleVizSelect = (id: string) => {
+    const option = vizOptions.find(v => v.id === id)
+    // Don't allow selection if what-if mode is required but not active
+    if (option?.requiresWhatIf && !whatIfMode) {
+      return
+    }
     setSelectedViz(id)
     // Keep menu open after selection
   }
@@ -123,34 +150,41 @@ export default function Explore() {
               {vizOptions.map((option) => {
                 const Icon = option.icon
                 const isSelected = selectedViz === option.id
+                const isDisabled = option.requiresWhatIf && !whatIfMode
                 return (
                   <button
                     key={option.id}
                     onClick={() => handleVizSelect(option.id)}
+                    disabled={isDisabled}
                     style={{
                       backgroundColor: isSelected
                         ? 'rgba(59, 130, 246, 0.2)'
-                        : 'rgba(30, 41, 59, 0.5)',
+                        : isDisabled
+                          ? 'rgba(30, 41, 59, 0.3)'
+                          : 'rgba(30, 41, 59, 0.5)',
                       border: isSelected
                         ? `2px solid ${option.color}`
-                        : '2px solid rgba(71, 85, 105, 0.5)',
+                        : isDisabled
+                          ? '2px solid rgba(71, 85, 105, 0.3)'
+                          : '2px solid rgba(71, 85, 105, 0.5)',
                       borderRadius: '8px',
                       padding: '16px',
-                      cursor: 'pointer',
+                      cursor: isDisabled ? 'not-allowed' : 'pointer',
                       transition: 'all 0.2s ease',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px'
+                      gap: '8px',
+                      opacity: isDisabled ? 0.4 : 1
                     }}
                     onMouseEnter={(e) => {
-                      if (!isSelected) {
+                      if (!isSelected && !isDisabled) {
                         e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.7)'
                         e.currentTarget.style.borderColor = option.color
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSelected) {
+                      if (!isSelected && !isDisabled) {
                         e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.5)'
                         e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.5)'
                       }
@@ -160,11 +194,11 @@ export default function Explore() {
                       style={{
                         width: '32px',
                         height: '32px',
-                        color: option.color
+                        color: isDisabled ? '#64748b' : option.color
                       }}
                     />
                     <span style={{
-                      color: '#fff',
+                      color: isDisabled ? '#64748b' : '#fff',
                       fontSize: '14px',
                       fontWeight: '500',
                       textAlign: 'center'
@@ -180,7 +214,7 @@ export default function Explore() {
       </div>
 
       {/* Content Area */}
-      <div style={{ padding: ['risk-dashboard', 'waterfall', 'ribbon', 'mac-analysis', 'roi-analysis', 'scenarios', 'correlations', 'hazard-maps', 'locations', 'damage-curves'].includes(selectedViz || '') ? '0' : '48px' }}>
+      <div style={{ padding: ['risk-dashboard', 'waterfall', 'ribbon', 'levers', 'scenarios', 'correlations', 'hazard-maps', 'locations', 'damage-curves'].includes(selectedViz || '') ? '0' : '48px' }}>
         {selectedViz === 'risk-dashboard' ? (
           <RiskDashboard />
         ) : selectedViz === 'waterfall' ? (
@@ -191,10 +225,8 @@ export default function Explore() {
           <ScenariosPanel />
         ) : selectedViz === 'correlations' ? (
           <CorrelationsPanel />
-        ) : selectedViz === 'mac-analysis' ? (
-          <MACAnalysisPanel />
-        ) : selectedViz === 'roi-analysis' ? (
-          <ROIAnalysisPanel />
+        ) : selectedViz === 'levers' ? (
+          <LeversPanel />
         ) : selectedViz === 'hazard-maps' ? (
           <HazardMapsPanel />
         ) : selectedViz === 'locations' ? (

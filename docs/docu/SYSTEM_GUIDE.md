@@ -1,8 +1,8 @@
 # Financial Scenario Analysis System - Technical Guide
 
-**Version:** 2.3
-**Last Updated:** 2025-11-01
-**Status:** Production System with Interactive MC Distribution, Three-Mode Waterfall, and Physical Risk Location Display
+**Version:** 2.4
+**Last Updated:** 2025-11-04
+**Status:** Production System with Interactive MC Distribution, Three-Mode Waterfall, Physical Risk Location Display, and Levers/No Regrets Dashboard
 **Target Audience:** Technical users, analysts, system administrators
 
 ---
