@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
-import { Map, Box, ChevronRight, ChevronDown, Building2, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Map, Box, ChevronRight, ChevronDown, Building2, Sparkles, FileText } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import HazardMap from '@/components/visualizations/HazardMap'
 import HazardSurface3D from '@/components/visualizations/HazardSurface3D'
 import { apiUrl, getDefaultDbPath } from '@/config'
 import { logger } from '@/utils/logger'
+import domtoimage from 'dom-to-image-more'
 
 interface StagedFile {
   file_id: number
@@ -62,6 +63,10 @@ export default function HazardMapsPanel() {
   // AI Description
   const [aiDescription, setAiDescription] = useState<string>('')
   const [aiLoading, setAiLoading] = useState(false)
+
+  // Refs for capture
+  const map2DRef = useRef<HTMLDivElement>(null)
+  const map3DRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchStagedFiles()
@@ -325,6 +330,202 @@ export default function HazardMapsPanel() {
         })}
       </div>
     )
+  }
+
+  const add2DToReport = async () => {
+    if (!map2DRef.current) return
+
+    try {
+      // Find elements to temporarily style
+      const cards = map2DRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = map2DRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const leafletZoomControls = map2DRef.current.querySelectorAll('.leaflet-control-zoom') as NodeListOf<HTMLElement>
+      const titles = map2DRef.current.querySelectorAll('h2, h3') as NodeListOf<HTMLElement>
+      const texts = map2DRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      // Store original styles
+      const originalStyles = {
+        background: map2DRef.current.style.background,
+        padding: map2DRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({ bg: card.style.backgroundColor, border: card.style.border })),
+        buttons: Array.from(buttons).map(btn => btn.style.display),
+        leafletZoomControls: Array.from(leafletZoomControls).map(ctrl => ctrl.style.display),
+        titles: Array.from(titles).map(title => title.style.color),
+        texts: Array.from(texts).map(text => text.style.color)
+      }
+
+      // Apply white theme
+      map2DRef.current.style.backgroundColor = '#ffffff'
+      map2DRef.current.style.padding = '24px'
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+      buttons.forEach(btn => { btn.style.display = 'none' })
+      leafletZoomControls.forEach(ctrl => { ctrl.style.display = 'none' })
+      titles.forEach(title => { title.style.color = '#1e293b' })
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture
+      const imageData = await domtoimage.toPng(map2DRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left', backgroundColor: '#ffffff' }
+      })
+
+      // Restore styles
+      map2DRef.current.style.background = originalStyles.background
+      map2DRef.current.style.padding = originalStyles.padding
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+      buttons.forEach((btn, i) => { btn.style.display = originalStyles.buttons[i].display })
+      leafletZoomControls.forEach((ctrl, i) => { ctrl.style.display = originalStyles.leafletZoomControls[i].display })
+      titles.forEach((title, i) => { title.style.color = originalStyles.titles[i].color })
+      texts.forEach((text, i) => { text.style.color = originalStyles.texts[i].color })
+
+      // Build caption
+      const selectedFile = stagedFiles.find(f => f.file_id === selectedFileId)
+      const flattenEntities = (entities: Entity[]): Entity[] => {
+        const result: Entity[] = []
+        const flatten = (nodes: Entity[]) => {
+          nodes.forEach(node => {
+            result.push(node)
+            if (node.children && node.children.length > 0) {
+              flatten(node.children)
+            }
+          })
+        }
+        flatten(entities)
+        return result
+      }
+      const allEntities = flattenEntities(entities)
+      const selectedEntity = allEntities.find(e => e.entity_id === currentEntity)
+      const caption = `Physical Risk - 2D Heatmap: ${selectedIntensityColumn} from ${selectedFile?.file_name || 'hazard map'} (${selectedEntity?.name || 'All Entities'})`
+
+      // Save snippet
+      const snippet = {
+        id: `hazard-2d-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'hazard-2d' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      alert('Added 2D hazard map to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture 2D map:', error)
+      alert('Failed to add to report. Please try again.')
+    }
+  }
+
+  const add3DToReport = async () => {
+    if (!map3DRef.current) return
+
+    try {
+      // Find elements to temporarily style
+      const cards = map3DRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = map3DRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const titles = map3DRef.current.querySelectorAll('h2, h3') as NodeListOf<HTMLElement>
+      const texts = map3DRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      // Store original styles
+      const originalStyles = {
+        background: map3DRef.current.style.background,
+        padding: map3DRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({ bg: card.style.backgroundColor, border: card.style.border })),
+        buttons: Array.from(buttons).map(btn => btn.style.display),
+        titles: Array.from(titles).map(title => title.style.color),
+        texts: Array.from(texts).map(text => text.style.color)
+      }
+
+      // Apply white theme
+      map3DRef.current.style.backgroundColor = '#ffffff'
+      map3DRef.current.style.padding = '24px'
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+      buttons.forEach(btn => { btn.style.display = 'none' })
+      titles.forEach(title => { title.style.color = '#1e293b' })
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture
+      const imageData = await domtoimage.toPng(map3DRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left', backgroundColor: '#ffffff' }
+      })
+
+      // Restore styles
+      map3DRef.current.style.background = originalStyles.background
+      map3DRef.current.style.padding = originalStyles.padding
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+      buttons.forEach((btn, i) => { btn.style.display = originalStyles.buttons[i].display })
+      titles.forEach((title, i) => { title.style.color = originalStyles.titles[i].color })
+      texts.forEach((text, i) => { text.style.color = originalStyles.texts[i].color })
+
+      // Build caption
+      const selectedFile = stagedFiles.find(f => f.file_id === selectedFileId)
+      const flattenEntities = (entities: Entity[]): Entity[] => {
+        const result: Entity[] = []
+        const flatten = (nodes: Entity[]) => {
+          nodes.forEach(node => {
+            result.push(node)
+            if (node.children && node.children.length > 0) {
+              flatten(node.children)
+            }
+          })
+        }
+        flatten(entities)
+        return result
+      }
+      const allEntities = flattenEntities(entities)
+      const selectedEntity = allEntities.find(e => e.entity_id === currentEntity)
+      const caption = `Physical Risk - 3D Surface: ${selectedIntensityColumn} from ${selectedFile?.file_name || 'hazard map'} (${selectedEntity?.name || 'All Entities'})`
+
+      // Save snippet
+      const snippet = {
+        id: `hazard-3d-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'hazard-3d' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      alert('Added 3D hazard surface to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture 3D map:', error)
+      alert('Failed to add to report. Please try again.')
+    }
   }
 
   const generateAIDescription = async () => {
@@ -600,48 +801,108 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
         <>
           <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)', marginBottom: '24px' }}>
             <CardContent style={{ padding: '32px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <Map style={{ width: '24px', height: '24px', color: '#ec4899' }} />
-                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', margin: 0 }}>
-                  2D Heatmap View
-                </h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Map style={{ width: '24px', height: '24px', color: '#ec4899' }} />
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', margin: 0 }}>
+                    2D Heatmap View
+                  </h3>
+                </div>
+                <button
+                  onClick={add2DToReport}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                    border: '1px solid #a855f7',
+                    borderRadius: '6px',
+                    color: '#a855f7',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.3)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.2)'
+                  }}
+                >
+                  <FileText style={{ width: '16px', height: '16px' }} />
+                  <span>Add to Report</span>
+                </button>
               </div>
-              <HazardMap
-                points={hazardPoints}
-                pinnedPoints={showLocations ? entityLocations.map(loc => ({
-                  lat: loc.lat,
-                  lng: loc.lng,
-                  intensity: 0,
-                  label: loc.entity_name || loc.entity_code
-                })) : []}
-                height="700px"
-              />
-              <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
-                Showing {hazardPoints.length} hazard data points • Heatmap visualization with smooth gradient interpolation
+              <div ref={map2DRef}>
+                <HazardMap
+                  points={hazardPoints}
+                  pinnedPoints={showLocations ? entityLocations.map(loc => ({
+                    lat: loc.lat,
+                    lng: loc.lng,
+                    intensity: 0,
+                    label: loc.entity_name || loc.entity_code
+                  })) : []}
+                  height="700px"
+                />
+                <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
+                  Showing {hazardPoints.length} hazard data points • Heatmap visualization with smooth gradient interpolation
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
             <CardContent style={{ padding: '32px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <Box style={{ width: '24px', height: '24px', color: '#8b5cf6' }} />
-                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', margin: 0 }}>
-                  3D Surface View
-                </h3>
-              </div>
-              <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '16px' }}>
-                Interactive 3D visualization • Drag to rotate • Scroll to zoom • Fly over the hazard surface with map base
-              </p>
-              {hazardPoints.length > 0 ? (
-                <HazardSurface3D points={hazardPoints} entityLocations={showLocations ? entityLocations : []} height="700px" />
-              ) : (
-                <div style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
-                  No hazard points available for 3D visualization
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Box style={{ width: '24px', height: '24px', color: '#8b5cf6' }} />
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#fff', margin: 0 }}>
+                    3D Surface View
+                  </h3>
                 </div>
-              )}
-              <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
-                Showing {hazardPoints.length} hazard data points • 3D surface with geographic map projection
+                <button
+                  onClick={add3DToReport}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                    border: '1px solid #a855f7',
+                    borderRadius: '6px',
+                    color: '#a855f7',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.3)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.2)'
+                  }}
+                >
+                  <FileText style={{ width: '16px', height: '16px' }} />
+                  <span>Add to Report</span>
+                </button>
+              </div>
+              <div ref={map3DRef}>
+                <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '16px' }}>
+                  Interactive 3D visualization • Drag to rotate • Scroll to zoom • Fly over the hazard surface with map base
+                </p>
+                {hazardPoints.length > 0 ? (
+                  <HazardSurface3D points={hazardPoints} entityLocations={showLocations ? entityLocations : []} height="700px" />
+                ) : (
+                  <div style={{ padding: '48px', textAlign: 'center', color: '#94a3b8' }}>
+                    No hazard points available for 3D visualization
+                  </div>
+                )}
+                <div style={{ marginTop: '16px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
+                  Showing {hazardPoints.length} hazard data points • 3D surface with geographic map projection
+                </div>
               </div>
             </CardContent>
           </Card>

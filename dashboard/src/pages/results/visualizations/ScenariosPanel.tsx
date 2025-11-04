@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Sparkles, FileText } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import domtoimage from 'dom-to-image-more'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { apiUrl, getDefaultDbPath } from '@/config'
 import { logger } from '@/utils/logger'
@@ -51,6 +52,9 @@ export default function ScenariosPanel() {
   // AI Description
   const [aiDescription, setAiDescription] = useState<string>('')
   const [aiLoading, setAiLoading] = useState(false)
+
+  // Ref for capture
+  const chartRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadScenarios()
@@ -346,6 +350,96 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     }
   }
 
+  const addToReport = async () => {
+    if (!chartRef.current) return
+
+    try {
+      // Find elements to temporarily style
+      const cards = chartRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = chartRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const titles = chartRef.current.querySelectorAll('h3') as NodeListOf<HTMLElement>
+      const texts = chartRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      // Store original styles
+      const originalStyles = {
+        background: chartRef.current.style.background,
+        padding: chartRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({ bg: card.style.backgroundColor, border: card.style.border })),
+        buttons: Array.from(buttons).map(btn => btn.style.display),
+        titles: Array.from(titles).map(title => title.style.color),
+        texts: Array.from(texts).map(text => text.style.color)
+      }
+
+      // Apply white theme for capture
+      chartRef.current.style.backgroundColor = '#ffffff'
+      chartRef.current.style.padding = '24px'
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+      buttons.forEach(btn => { btn.style.display = 'none' })
+      titles.forEach(title => { title.style.color = '#1e293b' })
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture using dom-to-image-more
+      const imageData = await domtoimage.toPng(chartRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left', backgroundColor: '#ffffff' }
+      })
+
+      // Restore all original styles
+      chartRef.current.style.background = originalStyles.background
+      chartRef.current.style.padding = originalStyles.padding
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+      buttons.forEach((btn, i) => { btn.style.display = originalStyles.buttons[i] })
+      titles.forEach((title, i) => { title.style.color = originalStyles.titles[i] })
+      texts.forEach((text, i) => { text.style.color = originalStyles.texts[i] })
+
+      // Build caption
+      const scenarioNames = Array.from(selectedScenarios)
+        .map(id => scenarios.find(s => s.scenario_id === id)?.name || `Scenario ${id}`)
+        .join(', ')
+      const driverNames = Array.from(selectedDrivers)
+        .map(code => lineItems.find(i => i.item_code === code)?.item_name || code)
+        .join(', ')
+      const statementNames = Array.from(selectedStatements)
+        .map(code => statementItems.find(i => i.item_code === code)?.item_name || code)
+        .join(', ')
+
+      const caption = `Scenarios: ${scenarioNames}${driverNames ? `; Drivers: ${driverNames}` : ''}${statementNames ? `; Statements: ${statementNames}` : ''}`
+
+      // Save snippet
+      const snippet = {
+        id: `scenarios-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'scenarios' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      alert('Added to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture chart:', error)
+      alert('Failed to add to report. Please try again.')
+    }
+  }
+
   const getDriverColor = (index: number) => {
     const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
     return colors[index % colors.length]
@@ -415,6 +509,30 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       {selectedScenarios.size > 0 && (
         <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
           <CardContent style={{ padding: '32px' }}>
+            {/* Add to Report Button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+              <button
+                onClick={addToReport}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                  border: '1px solid #a855f7',
+                  borderRadius: '6px',
+                  color: '#a855f7',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <FileText style={{ width: '16px', height: '16px' }} />
+                <span>Add to Report</span>
+              </button>
+            </div>
+            <div ref={chartRef}>
             {/* Driver Toggle Buttons */}
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', color: '#94a3b8', fontSize: '14px', marginBottom: '12px' }}>
@@ -721,6 +839,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                 Click the button above to generate AI-powered insights about this scenario comparison
               </div>
             )}
+            </div>
           </CardContent>
         </Card>
       )}

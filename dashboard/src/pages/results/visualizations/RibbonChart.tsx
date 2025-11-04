@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Sparkles, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
+import { Sparkles, ChevronRight, ChevronDown, Building2, FileText } from 'lucide-react'
 import Plot from 'react-plotly.js'
+import domtoimage from 'dom-to-image-more'
 
 interface Scenario {
   scenario_id: number
@@ -83,6 +84,9 @@ export default function RibbonChart() {
 
   // Entity tree state
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
+
+  // Ref for capture
+  const chartRef = useRef<HTMLDivElement>(null)
 
   // Load initial data
   useEffect(() => {
@@ -404,6 +408,93 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       setAiDescription('Unable to generate AI description. Please try again.')
     } finally {
       setAiLoading(false)
+    }
+  }
+
+  const addToReport = async () => {
+    if (!chartRef.current) return
+
+    try {
+      const cards = chartRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = chartRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const titles = chartRef.current.querySelectorAll('h2') as NodeListOf<HTMLElement>
+      const texts = chartRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      const originalStyles = {
+        background: chartRef.current.style.background,
+        padding: chartRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({ bg: card.style.backgroundColor, border: card.style.border })),
+        buttons: Array.from(buttons).map(btn => btn.style.display),
+        titles: Array.from(titles).map(title => title.style.color),
+        texts: Array.from(texts).map(text => text.style.color)
+      }
+
+      chartRef.current.style.backgroundColor = '#ffffff'
+      chartRef.current.style.padding = '24px'
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+      buttons.forEach(btn => { btn.style.display = 'none' })
+      titles.forEach(title => { title.style.color = '#1e293b' })
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      const imageData = await domtoimage.toPng(chartRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left', backgroundColor: '#ffffff' }
+      })
+
+      chartRef.current.style.background = originalStyles.background
+      chartRef.current.style.padding = originalStyles.padding
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+      buttons.forEach((btn, i) => { btn.style.display = originalStyles.buttons[i] })
+      titles.forEach((title, i) => { title.style.color = originalStyles.titles[i] })
+      texts.forEach((text, i) => { text.style.color = originalStyles.texts[i] })
+
+      let caption = ''
+      if (mode === 'period-to-period') {
+        const scenario = scenarios.find(s => s.scenario_id === p2pScenario)
+        const entity = entities.find(e => e.entity_id === p2pEntity)
+        const lineItem = lineItems.find(li => li.code === p2pLineItem)
+        caption = `Ribbon Chart: ${scenario?.name || 'Unknown'} | ${entity?.name || 'Entity'} | ${lineItem?.display_name || 'Item'} | Periods ${p2pPeriod1}-${p2pPeriod2}`
+      } else if (mode === 'scenario-to-scenario') {
+        const scenario1 = scenarios.find(s => s.scenario_id === s2sScenario1)
+        const scenario2 = scenarios.find(s => s.scenario_id === s2sScenario2)
+        const entity = entities.find(e => e.entity_id === s2sEntity)
+        const lineItem = lineItems.find(li => li.code === s2sLineItem)
+        caption = `Ribbon Chart: ${scenario1?.name || 'S1'} vs ${scenario2?.name || 'S2'} | ${entity?.name || 'Entity'} | ${lineItem?.display_name || 'Item'} | Period ${s2sPeriod}`
+      } else {
+        caption = `Ribbon Chart: Driver Mapping | ${scenarios.find(s => s.scenario_id === dmScenario)?.name || 'Scenario'} | Period ${dmPeriod}`
+      }
+
+      const snippet = {
+        id: `ribbon-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'ribbon' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      alert('Added to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture ribbon chart:', error)
+      alert('Failed to add to report. Please try again.')
     }
   }
 
@@ -1235,10 +1326,34 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       {ribbonData.length > 0 && (
         <Card style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
           <CardContent style={{ padding: '24px' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
-              Driver Ribbon Chart
-            </h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff', margin: 0 }}>
+                Driver Ribbon Chart
+              </h2>
+              <button
+                onClick={addToReport}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                  border: '1px solid #a855f7',
+                  borderRadius: '6px',
+                  color: '#a855f7',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <FileText style={{ width: '16px', height: '16px' }} />
+                <span>Add to Report</span>
+              </button>
+            </div>
+            <div ref={chartRef}>
             {renderRibbon()}
+            </div>
           </CardContent>
         </Card>
       )}

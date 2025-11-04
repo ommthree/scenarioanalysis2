@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { BarChart3, TrendingUp, ChevronRight, ChevronDown, Building2, Sparkles } from 'lucide-react'
+import { BarChart3, TrendingUp, ChevronRight, ChevronDown, Building2, Sparkles, FileText } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
 import { logger } from '@/utils/logger'
+import domtoimage from 'dom-to-image-more'
 
 interface MacResult {
   action: string
@@ -58,7 +59,175 @@ export default function LeversPanel() {
   const [aiDescription, setAiDescription] = useState<string>('')
   const [aiLoading, setAiLoading] = useState(false)
 
+  // Refs for capture
+  const macChartRef = useRef<HTMLDivElement>(null)
+  const roiChartRef = useRef<HTMLDivElement>(null)
+
   const dbPath = getDefaultDbPath()
+
+  const addMacToReport = async () => {
+    if (!macChartRef.current) return
+
+    try {
+      // Find elements to temporarily style
+      const cards = macChartRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = macChartRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const titles = macChartRef.current.querySelectorAll('h2, h3') as NodeListOf<HTMLElement>
+      const texts = macChartRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      // Store original styles
+      const originalStyles = {
+        background: macChartRef.current.style.background,
+        padding: macChartRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({ bg: card.style.backgroundColor, border: card.style.border })),
+        buttons: Array.from(buttons).map(btn => btn.style.display),
+        titles: Array.from(titles).map(title => title.style.color),
+        texts: Array.from(texts).map(text => text.style.color)
+      }
+
+      // Apply white theme
+      macChartRef.current.style.backgroundColor = '#ffffff'
+      macChartRef.current.style.padding = '24px'
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+      buttons.forEach(btn => { btn.style.display = 'none' })
+      titles.forEach(title => { title.style.color = '#1e293b' })
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture
+      const imageData = await domtoimage.toPng(macChartRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left', backgroundColor: '#ffffff' }
+      })
+
+      // Restore styles
+      macChartRef.current.style.background = originalStyles.background
+      macChartRef.current.style.padding = originalStyles.padding
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+      buttons.forEach((btn, i) => { btn.style.display = originalStyles.buttons[i] })
+      titles.forEach((title, i) => { title.style.color = originalStyles.titles[i] })
+      texts.forEach((text, i) => { text.style.color = originalStyles.texts[i] })
+
+      // Build caption
+      const selectedScenario = scenarios.find(s => s.scenario_id === currentScenario)
+      const selectedEntity = findEntityById(currentEntity, entities)
+      const caption = `MAC Analysis: ${selectedScenario?.name || 'Scenario'} - ${selectedEntity?.name || 'Entity'} (Period ${startPeriod} to ${endPeriod})`
+
+      // Save snippet
+      const snippet = {
+        id: `mac-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'mac' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      alert('Added MAC analysis to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture MAC:', error)
+      alert('Failed to add to report. Please try again.')
+    }
+  }
+
+  const addRoiToReport = async () => {
+    if (!roiChartRef.current) return
+
+    try {
+      // Find elements to temporarily style
+      const cards = roiChartRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = roiChartRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const titles = roiChartRef.current.querySelectorAll('h2, h3') as NodeListOf<HTMLElement>
+      const texts = roiChartRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      // Store original styles
+      const originalStyles = {
+        background: roiChartRef.current.style.background,
+        padding: roiChartRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({ bg: card.style.backgroundColor, border: card.style.border })),
+        buttons: Array.from(buttons).map(btn => btn.style.display),
+        titles: Array.from(titles).map(title => title.style.color),
+        texts: Array.from(texts).map(text => text.style.color)
+      }
+
+      // Apply white theme
+      roiChartRef.current.style.backgroundColor = '#ffffff'
+      roiChartRef.current.style.padding = '24px'
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+      buttons.forEach(btn => { btn.style.display = 'none' })
+      titles.forEach(title => { title.style.color = '#1e293b' })
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture
+      const imageData = await domtoimage.toPng(roiChartRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left', backgroundColor: '#ffffff' }
+      })
+
+      // Restore styles
+      roiChartRef.current.style.background = originalStyles.background
+      roiChartRef.current.style.padding = originalStyles.padding
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+      buttons.forEach((btn, i) => { btn.style.display = originalStyles.buttons[i] })
+      titles.forEach((title, i) => { title.style.color = originalStyles.titles[i] })
+      texts.forEach((text, i) => { text.style.color = originalStyles.texts[i] })
+
+      // Build caption
+      const selectedScenario = scenarios.find(s => s.scenario_id === currentScenario)
+      const selectedEntity = findEntityById(currentEntity, entities)
+      const caption = `ROI Analysis: ${selectedScenario?.name || 'Scenario'} - ${selectedEntity?.name || 'Entity'} (Period ${startPeriod} to ${endPeriod})`
+
+      // Save snippet
+      const snippet = {
+        id: `roi-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'roi' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      alert('Added ROI analysis to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture ROI:', error)
+      alert('Failed to add to report. Please try again.')
+    }
+  }
 
   const generateAIDescription = async () => {
     setAiLoading(true)
@@ -577,25 +746,54 @@ Be concise and focus on actionable insights for decision-makers.`
         border: '1px solid rgba(249, 115, 22, 0.5)'
       }}>
         <CardContent style={{ padding: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <BarChart3 size={24} style={{ color: '#f97316' }} />
-            <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#fff', margin: 0 }}>
-              Marginal Abatement Cost (MAC) Analysis
-            </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <BarChart3 size={24} style={{ color: '#f97316' }} />
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#fff', margin: 0 }}>
+                Marginal Abatement Cost (MAC) Analysis
+              </h2>
+            </div>
+            <button
+              onClick={addMacToReport}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                border: '1px solid #a855f7',
+                borderRadius: '6px',
+                color: '#a855f7',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.3)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.2)'
+              }}
+            >
+              <FileText style={{ width: '16px', height: '16px' }} />
+              <span>Add to Report</span>
+            </button>
           </div>
 
-          {macLoading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-              Loading MAC data...
-            </div>
-          ) : macResults.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-              No MAC data available. Run calculations with individual actions enabled.
-            </div>
-          ) : (
-            <>
-              {/* MAC Table */}
-              <div style={{ overflowX: 'auto', marginBottom: '32px' }}>
+          <div ref={macChartRef}>
+            {macLoading ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                Loading MAC data...
+              </div>
+            ) : macResults.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                No MAC data available. Run calculations with individual actions enabled.
+              </div>
+            ) : (
+              <>
+                {/* MAC Table */}
+                <div style={{ overflowX: 'auto', marginBottom: '32px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(249, 115, 22, 0.5)' }}>
@@ -807,8 +1005,9 @@ Be concise and focus on actionable insights for decision-makers.`
                   </svg>
                 )
               })()}
-            </>
-          )}
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -819,25 +1018,54 @@ Be concise and focus on actionable insights for decision-makers.`
         marginTop: '32px'
       }}>
         <CardContent style={{ padding: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <TrendingUp size={24} style={{ color: '#a855f7' }} />
-            <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#fff', margin: 0 }}>
-              Return on Investment (ROI) Analysis
-            </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <TrendingUp size={24} style={{ color: '#a855f7' }} />
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#fff', margin: 0 }}>
+                Return on Investment (ROI) Analysis
+              </h2>
+            </div>
+            <button
+              onClick={addRoiToReport}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                border: '1px solid #a855f7',
+                borderRadius: '6px',
+                color: '#a855f7',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.3)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.2)'
+              }}
+            >
+              <FileText style={{ width: '16px', height: '16px' }} />
+              <span>Add to Report</span>
+            </button>
           </div>
 
-          {roiLoading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-              Loading ROI data...
-            </div>
-          ) : roiResults.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-              No ROI data available. Run calculations with individual actions enabled.
-            </div>
-          ) : (
-            <>
-              {/* ROI Table */}
-              <div style={{ overflowX: 'auto', marginBottom: '32px' }}>
+          <div ref={roiChartRef}>
+            {roiLoading ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                Loading ROI data...
+              </div>
+            ) : roiResults.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                No ROI data available. Run calculations with individual actions enabled.
+              </div>
+            ) : (
+              <>
+                {/* ROI Table */}
+                <div style={{ overflowX: 'auto', marginBottom: '32px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(168, 85, 247, 0.5)' }}>
@@ -1275,6 +1503,7 @@ Be concise and focus on actionable insights for decision-makers.`
               Loading no regrets analysis...
             </div>
           )}
+          </div>
         </CardContent>
       </Card>
 
