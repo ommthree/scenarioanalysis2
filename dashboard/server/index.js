@@ -9132,7 +9132,7 @@ app.get('/api/health', (req, res) => {
 /**
  * Generate PDF report from components
  * POST /api/reports/generate
- * Body: { components: [{type, content, bold, italic}, ...] }
+ * Body: { components: [{type, content, imageData, caption, aiText, width}, ...] }
  */
 app.post('/api/reports/generate', (req, res) => {
   try {
@@ -9155,23 +9155,116 @@ app.post('/api/reports/generate', (req, res) => {
     // Pipe the PDF to the response
     doc.pipe(res)
 
+    // Page dimensions
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
+    const pageHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom
+
+    // Helper function to check if we need a new page
+    const checkPageBreak = (neededHeight) => {
+      if (doc.y + neededHeight > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage()
+        return true
+      }
+      return false
+    }
+
     // Render each component
     components.forEach((component, index) => {
       if (component.type === 'title') {
+        checkPageBreak(40)
         doc.fontSize(24)
            .font('Helvetica-Bold')
            .text(component.content, { align: 'left' })
            .moveDown(0.5)
       } else if (component.type === 'subtitle') {
+        checkPageBreak(30)
         doc.fontSize(18)
            .font('Helvetica-Bold')
            .text(component.content, { align: 'left' })
            .moveDown(0.3)
       } else if (component.type === 'text') {
+        // Calculate approximate text height
+        const textHeight = doc.heightOfString(component.content, {
+          width: pageWidth,
+          align: 'left'
+        })
+        checkPageBreak(textHeight + 20)
+
         doc.fontSize(12)
            .font('Helvetica')
            .text(component.content, { align: 'left' })
            .moveDown(0.5)
+      } else if (component.type === 'visualization' && component.imageData) {
+        try {
+          // Extract base64 data (remove data:image/png;base64, prefix)
+          const base64Data = component.imageData.replace(/^data:image\/\w+;base64,/, '')
+          const imageBuffer = Buffer.from(base64Data, 'base64')
+
+          // Get image dimensions (PDFKit will handle this)
+          // Calculate scaled width based on component.width (percentage) or default to 100%
+          const widthPercent = component.width || 100
+          const scaledWidth = (pageWidth * widthPercent) / 100
+
+          // Get the image to determine its aspect ratio
+          const img = doc.openImage(imageBuffer)
+          const aspectRatio = img.height / img.width
+          const scaledHeight = scaledWidth * aspectRatio
+
+          // Check if image fits on current page, if not add new page
+          checkPageBreak(scaledHeight + 80) // Add space for caption and AI text
+
+          // Add image
+          doc.image(imageBuffer, doc.page.margins.left, doc.y, {
+            width: scaledWidth,
+            fit: [scaledWidth, pageHeight - 100] // Max height to prevent overflow
+          })
+
+          doc.moveDown(0.5)
+
+          // Add caption if present
+          if (component.caption) {
+            doc.fontSize(10)
+               .font('Helvetica-Bold')
+               .fillColor('#1e293b')
+               .text(component.caption, {
+                 align: 'left',
+                 width: scaledWidth
+               })
+               .fillColor('#000000')
+               .moveDown(0.3)
+          }
+
+          // Add AI text if present
+          if (component.aiText) {
+            const aiTextHeight = doc.heightOfString(component.aiText, {
+              width: scaledWidth,
+              align: 'left'
+            })
+            checkPageBreak(aiTextHeight + 20)
+
+            doc.fontSize(9)
+               .font('Helvetica-Oblique')
+               .fillColor('#334155')
+               .text(component.aiText, {
+                 align: 'left',
+                 width: scaledWidth
+               })
+               .fillColor('#000000')
+               .font('Helvetica')
+               .moveDown(0.5)
+          }
+
+          doc.moveDown(1)
+        } catch (imgError) {
+          console.error('[PDF] Error processing image:', imgError)
+          // If image fails, add a placeholder
+          doc.fontSize(10)
+             .font('Helvetica')
+             .fillColor('#ef4444')
+             .text('[Image could not be rendered]', { align: 'left' })
+             .fillColor('#000000')
+             .moveDown(0.5)
+        }
       }
     })
 
