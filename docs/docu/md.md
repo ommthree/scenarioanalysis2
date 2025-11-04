@@ -170,6 +170,46 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-11-04 (Session 21 - Risk Dashboard Animation & Levers AI Insights):**
+- **Explore Panel Updates**: Removed "Damage Curves" button, renamed "Correlations" to "Monte Carlo" with Dices icon
+- **Risk Dashboard Animation** (RiskDashboard.tsx):
+  - Added Play/Stop button in top-right corner of "Transition Risk by Country" panel
+  - Green Play button (#22c55e), red Stop button (#ef4444)
+  - Animates through periods at 1.2-second intervals starting from currently selected slider period
+  - Shows "Period X" frame counter next to button during playback
+  - 2-second pause at end of cycle before looping back to start period
+  - Proper cleanup on component unmount prevents memory leaks
+  - Period slider labeled as "animation start point"
+  - Maps and treemaps update in real-time showing risk evolution over time
+- **Levers AI Insights** (LeversPanel.tsx):
+  - Added AI-powered cost-benefit analysis at bottom of Levers page
+  - Purple-themed "Generate AI Insights" button with Sparkles icon
+  - Comprehensive context: MAC results, ROI results, No Regrets analysis
+  - Claude API integration via POST /api/claude/messages endpoint
+  - Returns 2-4 sentence strategic narrative highlighting cost-effective actions and no-regret opportunities
+  - Shows loading spinner during analysis
+  - Displays results in purple-tinted panel matching Levers theme
+- Technical improvements: Fixed API call format (prompt vs messages), added error handling
+
+**2025-11-04 (Session 20 - Levers/No Regrets Dashboard):**
+- Created comprehensive Levers page in Explore (LeversPanel.tsx) with three analysis sections:
+  - **MAC Analysis:** Marginal Abatement Cost curves showing cost per unit carbon reduction
+  - **ROI Analysis:** Return on Investment curves showing benefit per unit cost
+  - **No Regrets Dashboard:** Cross-scenario ROI comparison identifying actions with positive ROI across all scenarios
+- Removed mode toggle buttons - No Regrets Dashboard always displays ROI for all scenarios automatically
+- Updated loadRoiComparison() to fetch ROI data for ALL scenarios in parallel (not just selected ones)
+- Implemented hierarchical entity tree selector (matching WaterfallChart/RibbonChart/PhysicalRisk patterns)
+- Removed scenario multi-select - single scenario selector for MAC/ROI, all scenarios for No Regrets
+- No Regrets visualization features:
+  - Grouped bar chart with one bar per scenario for each action
+  - Green checkmark (✓, fontSize 18) and "No Regret" label above actions where ALL scenarios show positive ROI
+  - Tight Y-axis scaling with 10% padding around actual min/max ROI values
+  - Full-width SVG chart with preserveAspectRatio="none" for panel-spanning display
+  - Color-coded bars: blue, green, orange, red, purple, cyan for different scenarios
+  - Legend on right showing scenario names with color mapping
+- State cleanup: removed comparisonMode, selectedScenarios, toggleScenarioSelection()
+- Chart improvements: no title label, chart scales to exact data width (no minimum), optimized margins
+
 **2025-11-01 (Session 16 - Physical Risk Page with Location Display):**
 - Renamed "Hazard Maps" to "Physical Risk" in Explore navigation (Explore.tsx:40)
 - Replaced grid-based entity selector with hierarchical tree selector (matching ViewResults pattern)

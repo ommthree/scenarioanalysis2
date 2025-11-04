@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { BarChart3, TrendingUp, ChevronRight, ChevronDown, Building2 } from 'lucide-react'
+import { BarChart3, TrendingUp, ChevronRight, ChevronDown, Building2, Sparkles } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
 import { logger } from '@/utils/logger'
 
@@ -54,7 +54,101 @@ export default function LeversPanel() {
   const [startPeriod, setStartPeriod] = useState(1)
   const [endPeriod, setEndPeriod] = useState(1)
 
+  // AI description state
+  const [aiDescription, setAiDescription] = useState<string>('')
+  const [aiLoading, setAiLoading] = useState(false)
+
   const dbPath = getDefaultDbPath()
+
+  const generateAIDescription = async () => {
+    setAiLoading(true)
+    try {
+      const selectedScenario = scenarios.find(s => s.scenario_id === currentScenario)
+      const selectedEntity = findEntityById(currentEntity, entities)
+
+      // Build comprehensive context
+      const macContext = macResults.length > 0
+        ? `MAC Analysis Results (${macResults.length} actions):\n` +
+          macResults.map(r => `  - ${r.action}: Carbon Abatement = ${r.carbonAbatement.toFixed(0)} tCO₂e, Cost = $${r.cost.toFixed(0)}, MAC = ${r.mac !== null ? r.mac.toFixed(2) : 'N/A'} $/tCO₂e`).join('\n')
+        : 'No MAC data available.'
+
+      const roiContext = roiResults.length > 0
+        ? `\n\nROI Analysis Results (${roiResults.length} actions):\n` +
+          roiResults.map(r => `  - ${r.action}: Investment = $${r.investment.toFixed(0)}, Benefit = $${r.benefit.toFixed(0)}, ROI = ${r.roi !== null ? r.roi.toFixed(1) : 'N/A'}%`).join('\n')
+        : '\n\nNo ROI data available.'
+
+      // No Regrets analysis
+      const actionMap: {[action: string]: {[scenarioId: number]: number}} = {}
+      Object.entries(roiComparisonData).forEach(([scenarioId, results]) => {
+        results.forEach(result => {
+          if (!actionMap[result.action]) {
+            actionMap[result.action] = {}
+          }
+          actionMap[result.action][parseInt(scenarioId)] = result.roi || 0
+        })
+      })
+      const actions = Object.keys(actionMap)
+      const noRegretActions = actions.filter(action => {
+        const rois = Object.values(actionMap[action])
+        return rois.length > 0 && rois.every(roi => roi > 0)
+      })
+
+      const noRegretsContext = Object.keys(roiComparisonData).length > 0
+        ? `\n\nNo Regrets Analysis:\n  - Total actions analyzed: ${actions.length}\n  - No Regret actions (positive ROI in all ${scenarios.length} scenarios): ${noRegretActions.length > 0 ? noRegretActions.join(', ') : 'None'}`
+        : '\n\nNo Regrets analysis not available.'
+
+      const prompt = `You are analyzing cost-benefit and no-regrets data for decarbonization actions.
+
+Context:
+- Scenario: ${selectedScenario?.name || 'Unknown'} (${selectedScenario?.code || ''})
+- Entity: ${selectedEntity?.name || 'Unknown'} (${selectedEntity?.code || ''})
+- Time Range: Period ${startPeriod} to Period ${endPeriod}
+
+${macContext}${roiContext}${noRegretsContext}
+
+Please provide a 2-4 sentence narrative analysis that:
+1. Highlights the most cost-effective actions (best MAC or ROI)
+2. Identifies any no-regret actions that perform well across all scenarios
+3. Provides strategic insight about which actions to prioritize
+
+Be concise and focus on actionable insights for decision-makers.`
+
+      const response = await fetch(apiUrl('/api/claude/messages'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'AI analysis failed')
+      }
+
+      const data = await response.json()
+      if (data.content && data.content[0] && data.content[0].text) {
+        setAiDescription(data.content[0].text)
+      } else {
+        setAiDescription('Unable to generate AI insights at this time.')
+      }
+    } catch (error) {
+      logger.error('Error generating AI description:', error)
+      setAiDescription('Error generating AI insights.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const findEntityById = (id: number | null, entities: Entity[]): Entity | null => {
+    if (id === null) return null
+    for (const entity of entities) {
+      if (entity.entity_id === id) return entity
+      if (entity.children) {
+        const found = findEntityById(id, entity.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
 
   // Load scenarios, entities, periods on mount
   useEffect(() => {
@@ -1183,6 +1277,87 @@ export default function LeversPanel() {
           )}
         </CardContent>
       </Card>
+
+      {/* AI Insights Section */}
+      {(macResults.length > 0 || roiResults.length > 0) && (
+        <Card style={{
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid rgba(139, 92, 246, 0.5)',
+          marginTop: '32px'
+        }}>
+          <CardContent style={{ padding: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <Sparkles size={24} style={{ color: '#8b5cf6' }} />
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#fff', margin: 0 }}>
+                AI Insights
+              </h2>
+            </div>
+
+            {!aiDescription && !aiLoading && (
+              <button
+                onClick={generateAIDescription}
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                  border: '1px solid #8b5cf6',
+                  borderRadius: '6px',
+                  color: '#8b5cf6',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(139, 92, 246, 0.3)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(139, 92, 246, 0.2)'
+                }}
+              >
+                <Sparkles size={16} />
+                Generate AI Insights
+              </button>
+            )}
+
+            {aiLoading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px' }}>
+                <div style={{
+                  width: '20px',
+                  height: '20px',
+                  border: '3px solid rgba(139, 92, 246, 0.3)',
+                  borderTop: '3px solid #8b5cf6',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+                <span style={{ color: '#94a3b8' }}>Generating AI insights...</span>
+                <style>{`
+                  @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                  }
+                `}</style>
+              </div>
+            )}
+
+            {aiDescription && !aiLoading && (
+              <div style={{
+                padding: '20px',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                borderRadius: '8px',
+                color: '#e2e8f0',
+                fontSize: '14px',
+                lineHeight: '1.6'
+              }}>
+                {aiDescription}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

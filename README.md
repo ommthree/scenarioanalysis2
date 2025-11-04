@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-11-04 (Session 19 - Ribbon Chart with Sankey Driver Mapping)
+**Last Updated:** 2025-11-04 (Session 21 - Risk Dashboard Animation & Levers AI Insights)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization, interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with cross-filtering drill-down and action filtering, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, Physical Risk page with hierarchical entity selector and location markers, and Ribbon Chart with Plotly Sankey diagram showing driver-to-lineitem flow mappings
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization with interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with animated period playback and cross-filtering drill-down, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, Physical Risk page with hierarchical entity selector and location markers, Ribbon Chart with Plotly Sankey diagram showing driver-to-lineitem flow mappings, and Levers page with MAC/ROI analysis, No Regrets Dashboard, and AI-powered cost-benefit insights
 
 ---
 
@@ -486,6 +486,6 @@ See `docs/docu/md.md` for complete documentation index including:
 
 ---
 
-**Last Updated:** 2025-10-29
+**Last Updated:** 2025-11-04
 **Maintainer:** Development Team
 **For Questions:** Refer to documentation files listed above first

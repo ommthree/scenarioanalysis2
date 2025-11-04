@@ -12,7 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   LayoutDashboard,
-  Network,
+  Dices,
   Sliders,
   Waves
 } from 'lucide-react'
@@ -24,7 +24,6 @@ import ScenariosPanel from './visualizations/ScenariosPanel'
 import CorrelationsPanel from './visualizations/CorrelationsPanel'
 import HazardMapsPanel from './visualizations/HazardMapsPanel'
 import LocationsPanel from './visualizations/LocationsPanel'
-import DamageCurvesPanel from './visualizations/DamageCurvesPanel'
 import LeversPanel from './visualizations/LeversPanel'
 
 export default function Explore() {
@@ -60,10 +59,9 @@ export default function Explore() {
     { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316', requiresWhatIf: false },
     { id: 'ribbon', icon: Waves, label: 'Ribbon Chart', color: '#06b6d4', requiresWhatIf: false },
     { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6', requiresWhatIf: false },
-    { id: 'correlations', icon: Network, label: 'Correlations', color: '#10b981', requiresWhatIf: false },
+    { id: 'correlations', icon: Dices, label: 'Monte Carlo', color: '#10b981', requiresWhatIf: false },
     { id: 'levers', icon: Sliders, label: 'Levers', color: '#8b5cf6', requiresWhatIf: true },
     { id: 'hazard-maps', icon: Map, label: 'Physical Risk', color: '#ec4899', requiresWhatIf: false },
-    { id: 'damage-curves', icon: TrendingUp, label: 'Damage Curves', color: '#8b5cf6', requiresWhatIf: false },
   ]
 
   const handleVizSelect = (id: string) => {
@@ -214,7 +212,7 @@ export default function Explore() {
       </div>
 
       {/* Content Area */}
-      <div style={{ padding: ['risk-dashboard', 'waterfall', 'ribbon', 'levers', 'scenarios', 'correlations', 'hazard-maps', 'locations', 'damage-curves'].includes(selectedViz || '') ? '0' : '48px' }}>
+      <div style={{ padding: ['risk-dashboard', 'waterfall', 'ribbon', 'levers', 'scenarios', 'correlations', 'hazard-maps', 'locations'].includes(selectedViz || '') ? '0' : '48px' }}>
         {selectedViz === 'risk-dashboard' ? (
           <RiskDashboard />
         ) : selectedViz === 'waterfall' ? (
@@ -231,8 +229,6 @@ export default function Explore() {
           <HazardMapsPanel />
         ) : selectedViz === 'locations' ? (
           <LocationsPanel />
-        ) : selectedViz === 'damage-curves' ? (
-          <DamageCurvesPanel />
         ) : selectedViz ? (
           <Card style={{
             backgroundColor: 'rgba(15, 23, 42, 0.9)',

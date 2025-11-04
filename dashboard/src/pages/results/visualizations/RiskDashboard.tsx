@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { Globe, BarChart3, Filter, Sparkles } from 'lucide-react'
+import { Globe, BarChart3, Filter, Sparkles, Play, Square } from 'lucide-react'
 import CountryChoroplethMap from '@/components/visualizations/CountryChoroplethMap'
 
 interface Scenario {
@@ -72,6 +72,11 @@ export default function RiskDashboard() {
   const [aiDescription, setAiDescription] = useState<string>('')
   const [aiLoading, setAiLoading] = useState(false)
 
+  // Animation state
+  const [isPlaying, setIsPlaying] = useState(false)
+  const animationIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const animationStartPeriodRef = useRef<number>(1)
+
   useEffect(() => {
     loadScenarios()
     loadEntities()
@@ -100,6 +105,15 @@ export default function RiskDashboard() {
       loadManagementActions()
     }
   }, [whatIfMode])
+
+  // Cleanup animation on unmount
+  useEffect(() => {
+    return () => {
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (scenarioA && selectedVariable) {
@@ -333,6 +347,60 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     }
   }
 
+  const toggleAnimation = () => {
+    if (isPlaying) {
+      // Stop animation
+      if (animationIntervalRef.current) {
+        clearInterval(animationIntervalRef.current)
+        animationIntervalRef.current = null
+      }
+      setIsPlaying(false)
+    } else {
+      // Store the starting period for looping
+      animationStartPeriodRef.current = selectedPeriod
+      setIsPlaying(true)
+
+      const periods = Array.from({ length: maxPeriod - minPeriod + 1 }, (_, i) => minPeriod + i)
+      let currentIndex = periods.indexOf(selectedPeriod)
+
+      if (currentIndex === -1) {
+        currentIndex = 0
+      }
+
+      const runLoop = () => {
+        animationIntervalRef.current = setInterval(() => {
+          currentIndex++
+
+          if (currentIndex >= periods.length) {
+            // Reached end - pause and restart
+            if (animationIntervalRef.current) {
+              clearInterval(animationIntervalRef.current)
+              animationIntervalRef.current = null
+            }
+
+            setTimeout(() => {
+              // Reset to start period
+              currentIndex = periods.indexOf(animationStartPeriodRef.current)
+              if (currentIndex === -1) {
+                currentIndex = 0
+              }
+              setSelectedPeriod(periods[currentIndex])
+
+              // Continue looping
+              setTimeout(() => {
+                runLoop()
+              }, 100)
+            }, 2000)
+          } else {
+            setSelectedPeriod(periods[currentIndex])
+          }
+        }, 1200)
+      }
+
+      runLoop()
+    }
+  }
+
   const formatNumber = (num: number) => {
     if (Math.abs(num) >= 1e9) return (num / 1e9).toFixed(2) + 'B'
     if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(2) + 'M'
@@ -373,6 +441,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     }
 
     const maxImpact = Math.max(...displayCountries.map(c => Math.abs(c.impact)), 1)
+    const isTransitionRisk = title.includes('Transition')
 
     return (
       <Card style={{
@@ -381,9 +450,55 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
         height: '100%'
       }}>
         <CardContent style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <Globe style={{ width: '20px', height: '20px', color }} />
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>{title}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Globe style={{ width: '20px', height: '20px', color }} />
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>{title}</h3>
+            </div>
+            {isTransitionRisk && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {isPlaying && (
+                  <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>
+                    Period {selectedPeriod}
+                  </span>
+                )}
+                <button
+                  onClick={toggleAnimation}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    backgroundColor: isPlaying ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                    border: isPlaying ? '1px solid #ef4444' : '1px solid #22c55e',
+                    borderRadius: '6px',
+                    color: isPlaying ? '#ef4444' : '#22c55e',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isPlaying ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isPlaying ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'
+                  }}
+                >
+                  {isPlaying ? (
+                    <>
+                      <Square style={{ width: '16px', height: '16px' }} />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play style={{ width: '16px', height: '16px' }} />
+                      <span>Play</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Choropleth map */}
@@ -820,7 +935,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
             {/* Period Slider */}
             <div>
               <label style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '8px', display: 'block' }}>
-                Period: {selectedPeriod}
+                Period: {selectedPeriod} <span style={{ fontSize: '12px', color: '#64748b' }}>(animation start point)</span>
               </label>
               <input
                 type="range"
