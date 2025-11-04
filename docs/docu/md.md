@@ -1,6 +1,6 @@
 # Markdown Documentation Index
 
-**Last Updated:** 2025-11-01
+**Last Updated:** 2025-11-04
 **Total Active Documents:** 7
 **Total Archived Documents:** 7
 
@@ -371,6 +371,29 @@ Archived Background (docs/archive/):
 - Consolidated architecture into TARGET_STATE.md
 
 ---
+
+**2025-11-04 (Session 19 - Ribbon Chart with Sankey Driver Mapping):**
+- Implemented Ribbon Chart visualization with Plotly Sankey diagram for driver-to-lineitem flow mapping
+- **Driver Mapping Mode**: Auto-loading Sankey diagram showing how drivers connect to financial statement line items
+  - Green driver nodes (left side): EXPENSES, FLOOD, REVENUE
+  - Blue line item nodes (right side): EXPENSES, REVENUE
+  - Equal-width flows (value: 1) representing mappings from statement_result_by_driver table
+  - Separate node indices prevent name collision loops (drivers[0..n], lineItems[n+1..m])
+  - Auto-loads with first scenario, entity, and period 1 (skips period 0 which has no data)
+  - No form controls needed - fully automated data selection
+- **Backend API** (server/index.js:7104-7141):
+  - New endpoint: GET /api/results/driver-mappings
+  - Query params: dbPath, scenarioId, entityId, period
+  - Returns DISTINCT driver_code, line_item_code from statement_result_by_driver
+  - Ordered by driver_code, line_item_code for consistent visualization
+- **UI Improvements** (Explore.tsx):
+  - Changed Ribbon Chart icon from Workflow to Waves for better visual representation
+  - Added RibbonChart.tsx (1291 lines) with three planned modes:
+    - Period-to-Period (planned): Flow changes between periods
+    - Scenario-to-Scenario (planned): Flow differences across scenarios
+    - Driver Mapping (implemented): Current driver-to-lineitem connections
+- Fixed period selection bug: Now skips period 0 and defaults to first valid period (period 1+)
+- Clean node labels without prefixes (e.g., "EXPENSES", not "Driver: EXPENSES")
 
 **2025-10-31 (Session 18 - Waterfall Visualization with AI Descriptions):**
 - Implemented three-mode waterfall visualization for driver attribution analysis
