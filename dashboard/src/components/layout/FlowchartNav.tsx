@@ -39,6 +39,7 @@ import {
   Save,
   LineChart,
   Menu,
+  FileText,
 } from 'lucide-react'
 
 // Custom node component
@@ -505,6 +506,23 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         onClick: () => handleNodeClick('/explore'),
       },
     },
+
+    // Row 6, Column 8 - Report (below Explore)
+    {
+      id: 'report',
+      type: 'custom',
+      position: { x: 1850, y: 720 },
+      data: {
+        label: 'Report',
+        sublabel: '',
+        icon: FileText,
+        bgClass: 'bg-purple-500/10',
+        ringClass: 'ring-purple-500/20',
+        iconClass: 'text-purple-500',
+        gradientBg: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.2), rgba(147, 51, 234, 0.3))',
+        onClick: () => handleNodeClick('/report'),
+      },
+    },
   ]
 
   const initialEdges: Edge[] = [
@@ -550,6 +568,9 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
 
     // Col 7 Results to Col 8 Explore
     { id: 'e22', source: 'results', target: 'explore', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
+
+    // Col 7 Results to Col 8 Report
+    { id: 'e23', source: 'results', target: 'report', animated: true, style: { stroke: '#f97316', strokeWidth: 4 }, markerEnd: { type: MarkerType.ArrowClosed, color: '#f97316' } },
   ]
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)

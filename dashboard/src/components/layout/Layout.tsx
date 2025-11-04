@@ -19,7 +19,8 @@ import {
   Save,
   Network,
   Shuffle,
-  LineChart
+  LineChart,
+  FileText
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
@@ -106,6 +107,7 @@ export default function Layout({ children }: LayoutProps) {
       title: 'Visualise',
       items: [
         { path: '/explore', icon: LineChart, label: 'Explore' },
+        { path: '/report', icon: FileText, label: 'Report' },
       ]
     },
   ]

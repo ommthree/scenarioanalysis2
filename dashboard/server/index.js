@@ -20,6 +20,7 @@ import { parse } from 'csv-parse/sync'
 import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
+import PDFDocument from 'pdfkit'
 import * as security from './security.js'
 import StagingService from './staging_service.js'
 import ValidationService from './validation_service.js'
@@ -5672,10 +5673,10 @@ app.get('/api/action-transformations', (req, res) => {
   })
 
   db.all(
-    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, created_at
+    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, period, created_at
      FROM action_transformation
      WHERE action_code = ?
-     ORDER BY transformation_id`,
+     ORDER BY period NULLS LAST, transformation_id`,
     [action_code],
     (err, rows) => {
       db.close()
@@ -5715,12 +5716,12 @@ app.post('/api/action-transformations/save', (req, res) => {
       // Insert new transformations
       if (transformations && transformations.length > 0) {
         const stmt = db.prepare(`
-          INSERT INTO action_transformation (action_code, line_item, type, new_formula, comment)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO action_transformation (action_code, line_item, type, new_formula, comment, period)
+          VALUES (?, ?, ?, ?, ?, ?)
         `)
 
         for (const t of transformations) {
-          stmt.run([action_code, t.line_item, t.type, t.new_formula, t.comment || null])
+          stmt.run([action_code, t.line_item, t.type, t.new_formula, t.comment || null, t.period || null])
         }
 
         stmt.finalize((err) => {
@@ -9126,6 +9127,62 @@ app.post('/api/staging/cleanup', async (req, res) => {
  */
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Dashboard API Server' })
+})
+
+/**
+ * Generate PDF report from components
+ * POST /api/reports/generate
+ * Body: { components: [{type, content, bold, italic}, ...] }
+ */
+app.post('/api/reports/generate', (req, res) => {
+  try {
+    const { components } = req.body
+
+    if (!components || !Array.isArray(components)) {
+      return res.status(400).json({ error: 'Invalid components array' })
+    }
+
+    // Create a new PDF document (A4 size)
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 72, bottom: 72, left: 72, right: 72 }
+    })
+
+    // Set response headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="report-${new Date().toISOString().split('T')[0]}.pdf"`)
+
+    // Pipe the PDF to the response
+    doc.pipe(res)
+
+    // Render each component
+    components.forEach((component, index) => {
+      if (component.type === 'title') {
+        doc.fontSize(24)
+           .font('Helvetica-Bold')
+           .text(component.content, { align: 'left' })
+           .moveDown(0.5)
+      } else if (component.type === 'subtitle') {
+        doc.fontSize(18)
+           .font('Helvetica-Bold')
+           .text(component.content, { align: 'left' })
+           .moveDown(0.3)
+      } else if (component.type === 'text') {
+        doc.fontSize(12)
+           .font('Helvetica')
+           .text(component.content, { align: 'left' })
+           .moveDown(0.5)
+      }
+    })
+
+    // Finalize the PDF
+    doc.end()
+
+    console.log(`[PDF] Generated report with ${components.length} components`)
+  } catch (error) {
+    console.error('[PDF] Error generating report:', error)
+    res.status(500).json({ error: 'Failed to generate PDF report' })
+  }
 })
 
 const PORT = 3001
