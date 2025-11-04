@@ -32,6 +32,28 @@ export default function Report() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
 
+  // Load report components from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('reportComponents')
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        console.log('Loaded report components:', parsed.length, 'components')
+        setReportComponents(parsed)
+      } catch (error) {
+        console.error('Failed to load report components:', error)
+      }
+    }
+  }, [])
+
+  // Save report components to localStorage whenever they change
+  useEffect(() => {
+    if (reportComponents.length > 0) {
+      localStorage.setItem('reportComponents', JSON.stringify(reportComponents))
+      console.log('Saved report components:', reportComponents.length, 'components')
+    }
+  }, [reportComponents])
+
   // Load snippets from localStorage on mount and periodically
   useEffect(() => {
     const loadSnippets = () => {
@@ -220,6 +242,17 @@ export default function Report() {
       alert('Error generating report: ' + error.message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleClearReport = () => {
+    if (reportComponents.length === 0) return
+
+    const confirmed = confirm('Are you sure you want to clear the entire report? This cannot be undone.')
+    if (confirmed) {
+      setReportComponents([])
+      localStorage.removeItem('reportComponents')
+      console.log('Report cleared')
     }
   }
 
@@ -475,11 +508,15 @@ export default function Report() {
           )}
         </div>
 
-        {/* Generate Button */}
+        {/* Action Buttons */}
         <div style={{
           padding: '24px',
-          borderTop: '1px solid rgba(71, 85, 105, 0.5)'
+          borderTop: '1px solid rgba(71, 85, 105, 0.5)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
         }}>
+          {/* Generate PDF Button */}
           <button
             onClick={handleGenerateReport}
             disabled={reportComponents.length === 0 || generating}
@@ -531,6 +568,46 @@ export default function Report() {
                 <span>Generate PDF</span>
               </>
             )}
+          </button>
+
+          {/* Clear Report Button */}
+          <button
+            onClick={handleClearReport}
+            disabled={reportComponents.length === 0}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '10px',
+              backgroundColor: reportComponents.length === 0
+                ? 'rgba(100, 116, 139, 0.3)'
+                : 'rgba(239, 68, 68, 0.2)',
+              color: reportComponents.length === 0 ? '#64748b' : '#ef4444',
+              border: reportComponents.length === 0
+                ? '1px solid rgba(100, 116, 139, 0.3)'
+                : '1px solid #ef4444',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: reportComponents.length === 0 ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              opacity: reportComponents.length === 0 ? 0.5 : 1
+            }}
+            onMouseEnter={(e) => {
+              if (reportComponents.length > 0) {
+                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.3)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (reportComponents.length > 0) {
+                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'
+              }
+            }}
+          >
+            <Trash2 style={{ width: '14px', height: '14px' }} />
+            <span>Clear Report</span>
           </button>
         </div>
       </div>
