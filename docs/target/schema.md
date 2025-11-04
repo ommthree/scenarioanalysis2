@@ -354,23 +354,46 @@ This database supports a unified financial modeling engine with:
 ---
 
 ### `action_transformation`
-**Purpose:** Defines how actions modify formulas
+**Purpose:** Defines how actions modify formulas with optional period-specific targeting
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `transformation_id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
 | `action_code` | TEXT | NOT NULL, FOREIGN KEY → management_action(action_code) | Action reference |
 | `line_item` | TEXT | NOT NULL | Affected line item code |
-| `type` | TEXT | CHECK IN ('FORMULA_OVERRIDE', 'ADDITIVE', 'MULTIPLICATIVE') | Transformation type |
-| `new_formula` | TEXT | | Replacement formula (for FORMULA_OVERRIDE) |
-| `adjustment` | NUMERIC | | Adjustment value (for ADDITIVE/MULTIPLICATIVE) |
+| `type` | TEXT | CHECK IN ('FORMULA', 'DELTA', 'MULTIPLIER', 'formula_override', 'carbon_formula_override') | Transformation type |
+| `new_formula` | TEXT | NOT NULL | Formula expression (replacement for FORMULA types, numeric value for DELTA/MULTIPLIER) |
+| `comment` | TEXT | | Human-readable description of the transformation |
+| `period` | INTEGER | NULLABLE | Relative period number (NULL = all periods, 1 = first active period, 2 = second, etc.) |
+
+**Transformation Types:**
+- `FORMULA` / `formula_override` - Complete formula replacement (mutually exclusive with other types)
+- `DELTA` - Additive adjustment: `(base_formula) + delta_value`
+- `MULTIPLIER` - Multiplicative factor: `(base_formula) * multiplier_value`
+- `carbon_formula_override` - Carbon-specific formula replacement
+
+**Period Targeting:**
+- `period = NULL` - Apply transformation in all periods when action is active
+- `period = 1` - Apply only in the first period after action becomes active
+- `period = 2, 3, ...` - Apply in specific relative period (relative to action start)
+
+**Stacking Rules:**
+- FORMULA/formula_override types replace the entire formula (cannot stack with other transformations)
+- DELTA and MULTIPLIER types can stack: `(base * mult1 * mult2) + delta1 + delta2`
+- Multiple transformations on same line item are evaluated in order: MULTIPLIER first, then DELTA
 
 **Indexes:**
 - `idx_transformation_action` on `action_code`
 - `idx_transformation_line_item` on `line_item`
 
-**Example:**
-- Action "SOLAR_INSTALL" → Line item "ELECTRICITY_COST" → Type "MULTIPLICATIVE" → Adjustment 0.7 (30% reduction)
+**Examples:**
+1. **Solar Installation** (constant savings):
+   - Action "SOLAR_INSTALL" → Line item "ELECTRICITY_COST" → Type "MULTIPLIER" → new_formula "0.7" → period NULL (30% reduction in all periods)
+
+2. **Automation Investment** (upfront cost + recurring savings):
+   - Action "AUTOMATION_INVEST" → Line item "EXPENSES" → Type "DELTA" → new_formula "120000" → period 1 (upfront investment)
+   - Action "AUTOMATION_INVEST" → Line item "EXPENSES" → Type "DELTA" → new_formula "-25000" → period NULL (recurring savings)
+   - Action "AUTOMATION_INVEST" → Line item "SCOPE2_EMISSIONS" → Type "MULTIPLIER" → new_formula "0.85" → period NULL (15% emissions reduction)
 
 ---
 

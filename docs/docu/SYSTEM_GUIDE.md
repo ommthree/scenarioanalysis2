@@ -1336,19 +1336,52 @@ INSERT INTO scenario_action (...)
 
 **Action Transformations:**
 ```javascript
-// Define formula transformations
-const transformation = {
+// Example 1: Simple transformation (applies to all periods)
+const transformation1 = {
   action_code: 'LED_LIGHTING',
   line_item_code: 'OPERATING_EXPENSES',
-  transformation_type: 'formula_override',
-  new_formula: 'driver:BASE_OPEX - 10000'
+  transformation_type: 'DELTA',
+  new_formula: '-10000',
+  period: null  // NULL = applies to all periods when action is active
   // Reduces OpEx by $10K/year starting period 3
+}
+
+// Example 2: Period-specific transformations (upfront cost + recurring savings)
+const transformation2 = {
+  action_code: 'AUTOMATION_INVEST',
+  line_item_code: 'EXPENSES',
+  transformation_type: 'DELTA',
+  new_formula: '120000',
+  period: 1  // Applies only in first active period (upfront investment)
+}
+
+const transformation3 = {
+  action_code: 'AUTOMATION_INVEST',
+  line_item_code: 'EXPENSES',
+  transformation_type: 'DELTA',
+  new_formula: '-25000',
+  period: null  // Applies in all periods (recurring savings)
+}
+
+const transformation4 = {
+  action_code: 'AUTOMATION_INVEST',
+  line_item_code: 'SCOPE2_EMISSIONS',
+  transformation_type: 'MULTIPLIER',
+  new_formula: '0.85',
+  period: null  // 15% emissions reduction in all periods
 }
 
 POST /api/action-transformations
 ↓
 INSERT INTO action_transformation (...)
 ```
+
+**Period Targeting:**
+- `period = NULL` - Apply in all periods when action is active
+- `period = 1` - Apply only in first period after action starts
+- `period = 2, 3, ...` - Apply in specific relative period (relative to action start_period)
+- Multiple transformations can target the same line item with different periods
+- Result for AUTOMATION_INVEST: Period 1 shows net +$95K (120K - 25K), Period 2+ shows -$25K
 
 **During Calculation:**
 ```cpp
@@ -1672,12 +1705,23 @@ CREATE TABLE action_transformation (
     transformation_id INTEGER PRIMARY KEY,
     action_code TEXT NOT NULL,
     line_item TEXT NOT NULL,           -- REVENUE, EXPENSES, SCOPE1_EMISSIONS, etc.
-    type TEXT NOT NULL,                 -- DELTA, MULTIPLIER, FORMULA
-    new_formula TEXT,                   -- Formula or constant value
+    type TEXT NOT NULL,                 -- DELTA, MULTIPLIER, FORMULA, formula_override, carbon_formula_override
+    new_formula TEXT NOT NULL,          -- Formula or constant value (numeric for DELTA/MULTIPLIER)
     comment TEXT,
+    period INTEGER,                     -- NULL = all periods, 1 = first active period, 2 = second, etc.
     FOREIGN KEY (action_code) REFERENCES management_action(action_code)
 );
 ```
+
+**Period Field:**
+- `period = NULL` - Apply transformation in all periods when action is active
+- `period = 1` - Apply only in first period after action becomes active (relative period)
+- `period = 2, 3, ...` - Apply in specific relative period (not absolute scenario period)
+- Enables modeling upfront costs (period=1) + recurring savings (period=NULL)
+
+**Transformation Stacking:**
+- FORMULA/formula_override: Complete replacement (mutually exclusive)
+- DELTA + MULTIPLIER: Can stack on same line item: `(base * mult1 * mult2) + delta1 + delta2`
 
 **statement_template.json_structure:**
 ```json

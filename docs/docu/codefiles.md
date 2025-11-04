@@ -709,33 +709,48 @@ ScenarioAnalysis2/
 ### Management Actions (✅ Complete)
 
 #### `engine/include/actions/action_engine.h` & `engine/src/actions/action_engine.cpp`
-**Purpose:** Management action transformation engine
+**Purpose:** Management action transformation engine with period-specific targeting
 **Status:** ✅ Production
-**Lines:** ~100 (header), ~450 (impl)
+**Lines:** ~100 (header), ~470 (impl)
 
 **Classes:**
 - `ActionEngine`
+- `ManagementAction` — Action metadata with trigger and transformation lists
+- `Transformation` — Formula modification with optional period targeting
 
 **Key Methods:**
-- `apply_actions(scenario_id, period_id, entity_id, line_items)` — Apply all triggered actions
-- `evaluate_trigger(trigger, context)` → `bool` — Check if action should apply
-- `apply_transformation(transformation, value, context)` → `double` — Transform value
-- `load_actions(db, scenario_id)` — Load from scenario_action table
+- `load_actions(scenario_id)` → `vector<ManagementAction>` — Load actions from management_action + action_trigger + action_transformation
+- `apply_actions_to_template(template, actions, period_id)` → `int` — Apply active transformations to template
+- `apply_transformations_to_line_item(template, line_item_code, transformations)` → `bool` — Stack transformations on line item
+- `should_trigger(action, period_id, values)` → `bool` — Check trigger conditions
 
 **Transformation Types:**
-- `MULTIPLY`: `new_value = old_value × factor`
-- `ADD`: `new_value = old_value + delta`
-- `SET`: `new_value = fixed_value`
-- `FORMULA`: `new_value = evaluate_formula(formula, context)`
+- `DELTA`: Additive adjustment: `(base_formula) + delta_value`
+- `MULTIPLIER`: Multiplicative factor: `(base_formula) * multiplier_value`
+- `FORMULA` / `formula_override`: Complete formula replacement (mutually exclusive)
+- `carbon_formula_override`: Carbon-specific formula replacement
+
+**Period-Specific Targeting (Session 22):**
+- Each transformation has optional `period` field (std::optional<int>)
+- `period = NULL` — Apply in all periods when action is active
+- `period = 1` — Apply only in first active period (relative period)
+- `period = 2, 3, ...` — Apply in specific relative period
+- Relative period = `current_period - action.first_active_period + 1`
+- Enables modeling upfront costs (period=1) + recurring savings (period=NULL)
+
+**Transformation Stacking:**
+- FORMULA types replace entire formula (cannot stack)
+- DELTA and MULTIPLIER types stack: `(base * mult1 * mult2) + delta1 + delta2`
+- Multiple transformations per line item evaluated with MULTIPLIERs first, then DELTAs
 
 **Trigger Types:**
-- `PERIOD_RANGE`: Apply if period in range
-- `THRESHOLD`: Apply if value exceeds threshold
-- `ALWAYS`: Always apply
+- `UNCONDITIONAL` — Active from start_period
+- `TIMED` — Active at specific trigger_period
+- `CONDITIONAL` — Active when condition_formula is true (planned feature)
 
 **MAC Curve Support:**
-- Load MAC curve points from mac_curve_point table
-- Apply cost-optimal actions based on abatement potential
+- Actions used in what-if mode to generate 2^n combinations
+- MAC curve calculation queries BASE vs ACTION results to compute ΔCost/ΔCarbon
 
 ---
 
@@ -851,9 +866,9 @@ ScenarioAnalysis2/
 ### Main Executable (✅ Complete)
 
 #### `engine/src/run_calculation.cpp`
-**Purpose:** Command-line calculation runner
+**Purpose:** Command-line calculation runner with what-if mode support
 **Status:** ✅ Production
-**Lines:** ~200
+**Lines:** ~550
 
 **Executable:** `build/bin/run_calculation`
 
@@ -865,22 +880,29 @@ Options:
   --entity <entity_id>    # Run specific entity only
   --period <period_id>    # Run specific period only
   --verbose               # Enable verbose logging
+  --whatif <combination>  # What-if combination string (e.g., "ACTION1+ACTION2")
 ```
 
 **Functions:**
 - `parse_whatif_combination()` — Parses what-if combination strings (e.g., "ACTION1+ACTION2" → set{"ACTION1", "ACTION2"})
-- `get_active_actions()` — Retrieves and filters active management actions (now accepts `whatif_combination` parameter)
+- `get_active_actions()` — Retrieves and filters active management actions (accepts `whatif_combination` parameter)
 - Parse command-line arguments
 - Connect to database
-- Run scenario calculation via PeriodRunner
+- Run scenario calculation via UnifiedEngine (bypasses PeriodRunner for what-if mode)
 - Display results summary
 - Exit with status code (0 = success, non-zero = error)
 
-**What-If Mode (Session 9):**
+**What-If Mode (Session 9, 22):**
 - `parse_whatif_combination()` splits combination strings by '+' delimiter
 - `get_active_actions()` overrides `is_active` flag based on whatif combination
 - Empty or "BASE" combination = no actions active
 - Each calculation run can have different actions enabled/disabled
+- **Session 22 Fix:** Added `period` column to action_transformation query (line 464)
+  - Before: `SELECT line_item, type, new_formula FROM action_transformation...`
+  - After: `SELECT line_item, type, new_formula, period FROM action_transformation ORDER BY period NULLS LAST`
+  - Parse period field into `std::optional<int>` (lines 474-479)
+  - Initialize `action.first_active_period = action.start_period` (lines 489-490)
+  - Enables period-specific transformations in what-if mode
 
 **Dependencies:**
 - `period_runner.h`
@@ -1106,7 +1128,7 @@ All map pages follow similar pattern: Column mapping → validation → producti
 **Features:** Scenario metadata, layer type, base currency
 
 #### `dashboard/src/pages/definitions/DefineActions.tsx`
-**Lines:** ~2030
+**Lines:** ~2050
 **Purpose:** Define management actions for cost-benefit analysis
 **Features:**
 - Action metadata (code, name, category, description)
@@ -1116,10 +1138,17 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - **Carbon transformations:** Emission line item overrides
 - **Trigger configuration:** UNCONDITIONAL/TIMED/CONDITIONAL with sticky option
 - **MAC/ROI ready:** Actions can have both revenue AND expense impacts (Session 12)
+- **Period-specific targeting (Session 22):** Toggle switch UI for period selection
+  - "All Periods" ← **Switch** → "Specific Period"
+  - Color-coded toggle (blue for financial, green for carbon)
+  - Smooth CSS transitions (0.3s)
+  - Lines 1750-1801 (financial), 1942-1993 (carbon)
+  - Replaced radio buttons with Switch component
+  - When "Specific Period" selected, numeric input for period number appears
 - Drag-and-drop formula builder with operators, line items, drivers
 - Import/export actions as JSON
 - AI suggestion integration for formula generation
-- Stored in `action_transformation` table with `line_item`, `type`, `new_formula`, `comment`
+- Stored in `action_transformation` table with `line_item`, `type`, `new_formula`, `comment`, `period`
 
 ---
 

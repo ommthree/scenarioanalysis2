@@ -170,6 +170,32 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-11-04 (Session 22 - Period-Specific Action Transformations):**
+- **Bug Fix:** Fixed critical bug where period-specific transformations were applied in all periods
+- **Root Cause:** `run_calculation.cpp` wasn't loading the `period` column from `action_transformation` table
+- **Solution:** Added `period` column to SQL query and implemented proper `std::optional<int>` handling
+- **DefineActions UI Enhancement:** Replaced radio buttons with Switch toggle for period selection
+  - Toggle between "All Periods" and "Specific Period" with smooth animated slider
+  - Color-coded labels (blue for financial, green for carbon transformations)
+  - Intuitive left/right layout (All Periods ← → Specific Period)
+- **Engine Fixes:**
+  - `run_calculation.cpp:464`: Added `period` to SELECT query with ORDER BY period NULLS LAST
+  - `run_calculation.cpp:474-479`: Parse period field into `std::optional<int>`
+  - `run_calculation.cpp:489-490`: Initialize `first_active_period = start_period` for relative period calculation
+  - `action_engine.cpp:104`: Initialize `first_active_period = start_period` (matching run_calculation)
+  - `action_engine.cpp:234`: Removed `mark_active()` call (no longer needed)
+  - Proper period filtering at lines 247-260 using `transformation.period.has_value()`
+- **Example Use Case:** AUTOMATION_INVEST action
+  - Period 1: +$120k investment, -$25k savings = +$95k net impact
+  - Period 2+: -$25k savings only (investment cost not repeated)
+- **Technical Details:**
+  - Relative period calculation: `current_period - first_active_period + 1`
+  - Period=1 means "first period when action becomes active"
+  - Period=NULL means "all periods when action is active"
+  - Transformations properly filtered based on relative period matching
+- **Components Updated:** DefineActions.tsx (lines 1750-1801 financial, 1942-1993 carbon)
+- **Files Modified:** `dashboard/src/pages/definitions/DefineActions.tsx`, `engine/src/run_calculation.cpp`, `engine/src/actions/action_engine.cpp`
+
 **2025-11-04 (Session 21 - Risk Dashboard Animation & Levers AI Insights):**
 - **Explore Panel Updates**: Removed "Damage Curves" button, renamed "Correlations" to "Monte Carlo" with Dices icon
 - **Risk Dashboard Animation** (RiskDashboard.tsx):

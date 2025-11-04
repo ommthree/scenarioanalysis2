@@ -1,6 +1,6 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-11-04 (Session 21 - Risk Dashboard Animation & Levers AI Insights)
+**Last Updated:** 2025-11-04 (Session 22 - Period-Specific Action Transformations)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
 **Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization with interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with animated period playback and cross-filtering drill-down, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, Physical Risk page with hierarchical entity selector and location markers, Ribbon Chart with Plotly Sankey diagram showing driver-to-lineitem flow mappings, and Levers page with MAC/ROI analysis, No Regrets Dashboard, and AI-powered cost-benefit insights
@@ -294,7 +294,11 @@ The system now uses **template-based line item tagging** to define which line it
 2. **Define Actions with Dual Financial Impacts** (DefineActions.tsx):
    - Each management action now has **both revenue AND expense** transformations
    - Example: EV_FLEET has +$80k expense (fleet costs) AND +$15k revenue (tax credits)
-   - Actions stored in `action_transformation` table with `line_item`, `type` (DELTA/MULTIPLIER/FORMULA), `new_formula`
+   - Actions stored in `action_transformation` table with `line_item`, `type` (DELTA/MULTIPLIER/FORMULA), `new_formula`, `period`
+   - **Period-Specific Transformations:** Toggle between "All Periods" or specific period (e.g., Period 1 only)
+     - Use Switch slider to select: All Periods (NULL) or Specific Period (1, 2, 3...)
+     - Example: AUTOMATION_INVEST has +$120k expense in Period 1 (investment), -$25k in all periods (savings)
+     - Relative period calculation: Period 1 = first period when action becomes active
    - Enables realistic cost-benefit analysis with tradeoffs
    - **ROI Mode Ready:** All 5 actions (EV_FLEET, HVAC_UPGRADE, GREEN_SUPPLY, WASTE_ENERGY, SOLAR_INSTALL) have dual impacts
 

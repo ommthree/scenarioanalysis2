@@ -461,7 +461,7 @@ std::string apply_action_transformations(
         }
 
         auto trans_result = db->execute_query(
-            "SELECT line_item, type, new_formula FROM action_transformation WHERE action_code = :code",
+            "SELECT line_item, type, new_formula, period FROM action_transformation WHERE action_code = :code ORDER BY period NULLS LAST",
             {{"code", action_code}}
         );
 
@@ -471,12 +471,23 @@ std::string apply_action_transformations(
             t.transformation_type = trans_result->get_string("type");
             t.new_formula = trans_result->get_string("new_formula");
 
+            // Read period field (nullable)
+            if (!trans_result->is_null("period")) {
+                t.period = trans_result->get_int("period");
+            } else {
+                t.period = std::nullopt;
+            }
+
             // Accept all transformation types: FORMULA, MULTIPLIER, DELTA, formula_override, carbon_formula_override
             action.financial_transformations.push_back(t);
-            std::cout << "    [TRANSFORM] " << t.line_item_code << " [" << t.transformation_type << "] → " << t.new_formula << std::endl;
+            std::cout << "    [TRANSFORM] " << t.line_item_code << " [" << t.transformation_type << "] → " << t.new_formula
+                      << " (period=" << (t.period.has_value() ? std::to_string(t.period.value()) : "NULL") << ")" << std::endl;
         }
 
         if (!action.financial_transformations.empty()) {
+            // Initialize first_active_period to start_period for relative period calculation
+            action.first_active_period = action.start_period;
+            action.cumulative_active_periods = 0;
             actions_to_apply.push_back(action);
         }
     }

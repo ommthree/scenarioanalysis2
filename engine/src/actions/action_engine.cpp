@@ -8,6 +8,8 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <sstream>
+#include <optional>
+#include <iostream>
 
 using json = nlohmann::json;
 
@@ -98,11 +100,17 @@ std::vector<ManagementAction> ActionEngine::load_actions(int scenario_id) {
         action.emission_reduction_annual = 0.0;
         action.trigger_period = -1;
 
+        // Initialize period tracking
+        // Set first_active_period to start_period so relative period calculation works correctly
+        action.first_active_period = action.start_period;
+        action.cumulative_active_periods = 0;
+
         // Load transformations from action_transformation table
         std::string trans_sql = R"(
-            SELECT line_item, type, new_formula, comment
+            SELECT line_item, type, new_formula, comment, period
             FROM action_transformation
             WHERE action_code = :action_code
+            ORDER BY period NULLS LAST
         )";
 
         auto trans_result = db_->execute_query(trans_sql, {{"action_code", action.action_code}});
@@ -113,6 +121,18 @@ std::vector<ManagementAction> ActionEngine::load_actions(int scenario_id) {
             t.transformation_type = trans_result->get_string("type");
             t.new_formula = trans_result->get_string("new_formula");
             t.comment = trans_result->is_null("comment") ? "" : trans_result->get_string("comment");
+
+            // Read period field (nullable)
+            if (!trans_result->is_null("period")) {
+                int period_value = trans_result->get_int("period");
+                t.period = period_value;
+                std::cerr << "[LOAD] Action=" << action.action_code << " LineItem=" << t.line_item_code
+                          << " Type=" << t.transformation_type << " Period=" << period_value << std::endl;
+            } else {
+                t.period = std::nullopt;  // NULL = applies to all periods
+                std::cerr << "[LOAD] Action=" << action.action_code << " LineItem=" << t.line_item_code
+                          << " Type=" << t.transformation_type << " Period=NULL" << std::endl;
+            }
 
             // Separate into financial vs carbon based on type
             if (t.transformation_type == "carbon_formula_override") {
@@ -210,20 +230,61 @@ int ActionEngine::apply_actions_to_template(
     // Group transformations by line item code
     std::map<std::string, std::vector<Transformation>> transformations_by_line_item;
 
-    for (const auto& action : actions) {
+    for (auto& action : actions) {
         // Check if action is active in this period
         if (!action.is_active_in_period(period_id)) {
             continue;
         }
 
-        // Collect financial transformations
-        for (const auto& transformation : action.financial_transformations) {
-            transformations_by_line_item[transformation.line_item_code].push_back(transformation);
+        // Calculate relative period number (first_active_period is initialized to start_period)
+        int relative_period = action.get_relative_period(period_id);
+
+        // Debug logging for AUTOMATION_INVEST
+        if (action.action_code == "AUTOMATION_INVEST") {
+            std::cerr << "[DEBUG] AUTOMATION_INVEST period " << period_id
+                      << ": first_active=" << action.first_active_period
+                      << ", relative=" << relative_period << std::endl;
         }
 
-        // Collect carbon transformations
+        // Collect financial transformations (with period filtering)
+        for (const auto& transformation : action.financial_transformations) {
+            bool applies = false;
+
+            if (transformation.period.has_value()) {
+                // Specific relative period: only apply if period matches
+                applies = (transformation.period.value() == relative_period);
+                if (action.action_code == "AUTOMATION_INVEST") {
+                    std::cerr << "[DEBUG]   Trans period=" << transformation.period.value()
+                              << ", applies=" << applies << ", formula=" << transformation.new_formula << std::endl;
+                }
+            } else {
+                // NULL period: apply to all periods when action is active
+                applies = true;
+                if (action.action_code == "AUTOMATION_INVEST") {
+                    std::cerr << "[DEBUG]   Trans period=NULL, applies=true, formula=" << transformation.new_formula << std::endl;
+                }
+            }
+
+            if (applies) {
+                transformations_by_line_item[transformation.line_item_code].push_back(transformation);
+            }
+        }
+
+        // Collect carbon transformations (with period filtering)
         for (const auto& transformation : action.carbon_transformations) {
-            transformations_by_line_item[transformation.line_item_code].push_back(transformation);
+            bool applies = false;
+
+            if (transformation.period.has_value()) {
+                // Specific relative period: only apply if period matches
+                applies = (transformation.period.value() == relative_period);
+            } else {
+                // NULL period: apply to all periods when action is active
+                applies = true;
+            }
+
+            if (applies) {
+                transformations_by_line_item[transformation.line_item_code].push_back(transformation);
+            }
         }
     }
 

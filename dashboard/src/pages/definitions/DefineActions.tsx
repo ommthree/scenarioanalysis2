@@ -39,6 +39,7 @@ interface Transformation {
   type: 'FORMULA' | 'MULTIPLIER' | 'DELTA' | 'formula_override' | 'carbon_formula_override'
   new_formula: string
   comment?: string
+  period?: number | null  // Relative period (null = all periods)
 }
 
 interface Entity {
@@ -1570,23 +1571,48 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   </div>
 
 
-                  {/* Add Financial Transformation Button */}
+                  {/* Add Financial Transformation Buttons */}
                   {(isEditing || isCreatingNew) && selectedTemplate && (
-                    <div style={{ marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <Button
                         onClick={() => {
                           const newTransform: Transformation = {
                             line_item: '',
                             type: 'FORMULA',
                             new_formula: '',
-                            comment: ''
+                            comment: '',
+                            period: null
                           }
                           setFinancialTransformations([...financialTransformations, newTransform])
                         }}
                         size="sm"
                         style={{ backgroundColor: '#10b981', border: 'none' }}
                       >
-                        <Plus className="w-4 h-4 mr-1" /> Add Financial Transformation
+                        <Plus className="w-4 h-4 mr-1" /> Add Transformation
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          // Investment + Recurring Savings template
+                          const investmentTransform: Transformation = {
+                            line_item: 'CAPEX',
+                            type: 'DELTA',
+                            new_formula: '-500000',
+                            comment: 'Upfront investment',
+                            period: 1
+                          }
+                          const savingsTransform: Transformation = {
+                            line_item: 'OPEX',
+                            type: 'DELTA',
+                            new_formula: '-50000',
+                            comment: 'Annual savings',
+                            period: null
+                          }
+                          setFinancialTransformations([...financialTransformations, investmentTransform, savingsTransform])
+                        }}
+                        size="sm"
+                        style={{ backgroundColor: '#6366f1', border: 'none' }}
+                      >
+                        📊 Investment + Savings Template
                       </Button>
                     </div>
                   )}
@@ -1720,6 +1746,59 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                   readOnly={!isEditing && !isCreatingNew}
                                 />
                               </div>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Period (relative to action start)
+                                </label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '12px', color: t.period === null || t.period === undefined ? '#3b82f6' : 'rgba(255,255,255,0.5)' }}>
+                                      All Periods
+                                    </span>
+                                    <Switch
+                                      checked={t.period !== null && t.period !== undefined}
+                                      onCheckedChange={(checked) => {
+                                        const updated = [...financialTransformations]
+                                        updated[idx] = { ...updated[idx], period: checked ? 1 : null }
+                                        setFinancialTransformations(updated)
+                                      }}
+                                      disabled={!isEditing && !isCreatingNew}
+                                      style={{
+                                        backgroundColor: t.period !== null && t.period !== undefined ? '#3b82f6' : 'rgba(100, 116, 139, 0.5)'
+                                      }}
+                                    />
+                                    <span style={{ fontSize: '12px', color: t.period !== null && t.period !== undefined ? '#3b82f6' : 'rgba(255,255,255,0.5)' }}>
+                                      Specific Period
+                                    </span>
+                                  </div>
+                                  {t.period !== null && t.period !== undefined && (
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={t.period || 1}
+                                      onChange={(e) => {
+                                        const updated = [...financialTransformations]
+                                        updated[idx] = { ...updated[idx], period: parseInt(e.target.value) || 1 }
+                                        setFinancialTransformations(updated)
+                                      }}
+                                      disabled={!isEditing && !isCreatingNew}
+                                      style={{
+                                        width: '70px',
+                                        padding: '4px 8px',
+                                        backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                                        borderRadius: '4px',
+                                        color: '#fff',
+                                        fontSize: '12px'
+                                      }}
+                                      readOnly={!isEditing && !isCreatingNew}
+                                    />
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px', fontStyle: 'italic' }}>
+                                  Period 1 = first period when action is active, Period 2 = second period, etc.
+                                </div>
+                              </div>
                             </div>
                             {(isEditing || isCreatingNew) && (
                               <Button
@@ -1745,7 +1824,8 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                             line_item: '',
                             type: 'carbon_formula_override',
                             new_formula: '',
-                            comment: ''
+                            comment: '',
+                            period: null
                           }
                           setCarbonTransformations([...carbonTransformations, newTransform])
                         }}
@@ -1857,6 +1937,59 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                   }}
                                   readOnly={!isEditing && !isCreatingNew}
                                 />
+                              </div>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '500', color: 'rgba(255,255,255,0.6)', marginBottom: '3px' }}>
+                                  Period (relative to action start)
+                                </label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '12px', color: t.period === null || t.period === undefined ? '#22c55e' : 'rgba(255,255,255,0.5)' }}>
+                                      All Periods
+                                    </span>
+                                    <Switch
+                                      checked={t.period !== null && t.period !== undefined}
+                                      onCheckedChange={(checked) => {
+                                        const updated = [...carbonTransformations]
+                                        updated[idx] = { ...updated[idx], period: checked ? 1 : null }
+                                        setCarbonTransformations(updated)
+                                      }}
+                                      disabled={!isEditing && !isCreatingNew}
+                                      style={{
+                                        backgroundColor: t.period !== null && t.period !== undefined ? '#22c55e' : 'rgba(100, 116, 139, 0.5)'
+                                      }}
+                                    />
+                                    <span style={{ fontSize: '12px', color: t.period !== null && t.period !== undefined ? '#22c55e' : 'rgba(255,255,255,0.5)' }}>
+                                      Specific Period
+                                    </span>
+                                  </div>
+                                  {t.period !== null && t.period !== undefined && (
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={t.period || 1}
+                                      onChange={(e) => {
+                                        const updated = [...carbonTransformations]
+                                        updated[idx] = { ...updated[idx], period: parseInt(e.target.value) || 1 }
+                                        setCarbonTransformations(updated)
+                                      }}
+                                      disabled={!isEditing && !isCreatingNew}
+                                      style={{
+                                        width: '70px',
+                                        padding: '4px 8px',
+                                        backgroundColor: 'rgba(15, 23, 42, 0.5)',
+                                        border: '1px solid rgba(34, 197, 94, 0.3)',
+                                        borderRadius: '4px',
+                                        color: '#fff',
+                                        fontSize: '12px'
+                                      }}
+                                      readOnly={!isEditing && !isCreatingNew}
+                                    />
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px', fontStyle: 'italic' }}>
+                                  Period 1 = first period when action is active, Period 2 = second period, etc.
+                                </div>
                               </div>
                             </div>
                             {(isEditing || isCreatingNew) && (

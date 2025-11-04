@@ -34,6 +34,9 @@ struct Transformation {
     std::string new_formula;        // For "formula_override"
 
     std::string comment;            // Optional explanation
+
+    // Period specification (relative to action start)
+    std::optional<int> period;      // Relative period number (nullopt = all periods)
 };
 
 /**
@@ -64,6 +67,10 @@ struct ManagementAction {
     int start_period;   // When action starts (for UNCONDITIONAL, or when triggered)
     int end_period;     // -1 = permanent (NULL in DB)
 
+    // Period tracking (for relative period calculation)
+    mutable int first_active_period;  // First period when action was active (-1 = not yet active)
+    mutable int cumulative_active_periods;  // Count of periods action has been active
+
     // Costs and impact
     double capex;
     double opex_annual;
@@ -83,6 +90,26 @@ struct ManagementAction {
         if (start_period > 0 && period_id < start_period) return false;
         if (end_period > 0 && period_id > end_period) return false;
         return true;
+    }
+
+    /**
+     * @brief Calculate relative period number (1-indexed)
+     * @param current_period Absolute scenario period
+     * @return Relative period number, or -1 if action not yet active
+     */
+    int get_relative_period(int current_period) const {
+        if (first_active_period < 0) return -1;
+        return current_period - first_active_period + 1;
+    }
+
+    /**
+     * @brief Mark action as active in a period (tracks first activation)
+     */
+    void mark_active(int period_id) const {
+        if (first_active_period < 0) {
+            first_active_period = period_id;
+        }
+        cumulative_active_periods++;
     }
 };
 
