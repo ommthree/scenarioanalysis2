@@ -7102,6 +7102,45 @@ app.post('/api/validate-scenario', (req, res) => {
 })
 
 /**
+ * Get driver-to-lineitem mappings for Sankey diagram
+ * GET /api/results/driver-mappings
+ * Query params: dbPath, scenarioId, entityId, period
+ */
+app.get('/api/results/driver-mappings', (req, res) => {
+  const { dbPath, scenarioId, entityId, period } = req.query
+
+  if (!dbPath || !scenarioId || !entityId || !period) {
+    return res.status(400).json({ error: 'Database path, scenarioId, entityId, and period are required' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database' })
+    }
+  })
+
+  // Query distinct driver-to-lineitem mappings from statement_result_by_driver
+  const query = `
+    SELECT DISTINCT
+      driver_code,
+      line_item_code
+    FROM statement_result_by_driver
+    WHERE scenario_id = ? AND entity_id = ? AND period_id = ?
+    ORDER BY driver_code, line_item_code
+  `
+
+  db.all(query, [scenarioId, entityId, period], (err, rows) => {
+    if (err) {
+      db.close()
+      return res.status(500).json({ error: err.message })
+    }
+
+    db.close()
+    res.json({ success: true, mappings: rows })
+  })
+})
+
+/**
  * Calculate MAC curve for what-if scenario
  * GET /api/results/mac-curve
  * Query params: dbPath, scenarioId, entityId, startPeriod, endPeriod

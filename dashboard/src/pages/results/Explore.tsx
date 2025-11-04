@@ -13,11 +13,13 @@ import {
   ChevronUp,
   LayoutDashboard,
   Network,
-  Leaf
+  Leaf,
+  Waves
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import RiskDashboard from './visualizations/RiskDashboard'
 import WaterfallChart from './visualizations/WaterfallChart'
+import RibbonChart from './visualizations/RibbonChart'
 import ScenariosPanel from './visualizations/ScenariosPanel'
 import CorrelationsPanel from './visualizations/CorrelationsPanel'
 import HazardMapsPanel from './visualizations/HazardMapsPanel'
@@ -33,6 +35,7 @@ export default function Explore() {
   const vizOptions = [
     { id: 'risk-dashboard', icon: LayoutDashboard, label: 'Risk Dashboard', color: '#ef4444' },
     { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316' },
+    { id: 'ribbon', icon: Waves, label: 'Ribbon Chart', color: '#06b6d4' },
     { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6' },
     { id: 'correlations', icon: Network, label: 'Correlations', color: '#10b981' },
     { id: 'mac-analysis', icon: Leaf, label: 'MAC Analysis', color: '#22c55e' },
@@ -177,11 +180,13 @@ export default function Explore() {
       </div>
 
       {/* Content Area */}
-      <div style={{ padding: ['risk-dashboard', 'waterfall', 'mac-analysis', 'roi-analysis', 'scenarios', 'correlations', 'hazard-maps', 'locations', 'damage-curves'].includes(selectedViz || '') ? '0' : '48px' }}>
+      <div style={{ padding: ['risk-dashboard', 'waterfall', 'ribbon', 'mac-analysis', 'roi-analysis', 'scenarios', 'correlations', 'hazard-maps', 'locations', 'damage-curves'].includes(selectedViz || '') ? '0' : '48px' }}>
         {selectedViz === 'risk-dashboard' ? (
           <RiskDashboard />
         ) : selectedViz === 'waterfall' ? (
           <WaterfallChart />
+        ) : selectedViz === 'ribbon' ? (
+          <RibbonChart />
         ) : selectedViz === 'scenarios' ? (
           <ScenariosPanel />
         ) : selectedViz === 'correlations' ? (
