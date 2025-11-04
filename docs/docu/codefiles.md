@@ -1246,8 +1246,8 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Placeholder stubs for future visualization types
 
 #### `dashboard/src/pages/results/visualizations/RiskDashboard.tsx`
-**Lines:** ~830
-**Purpose:** Interactive risk attribution dashboard with cross-filtering and action filtering
+**Lines:** ~1200
+**Purpose:** Interactive risk attribution dashboard with cross-filtering, action filtering, and report capture
 **Features:**
 - 4-quadrant layout: Physical/Transition Risk by Country (maps) and Driver (treemaps)
 - Scenario comparison: Test Case vs optional Base Case (leave blank for absolute values)
@@ -1261,6 +1261,21 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Combination format: "BASE", "EV_FLEET", "EV_FLEET+GREEN_SUPPLY+HVAC_UPGRADE" (alphabetically sorted)
 - Absolute/Delta modes: Absolute mode (no base case) shows single scenario, Delta shows difference
 - Backend uses driver-country combinations for dynamic aggregation
+- **Visualization Capture (Session 23):**
+  - "Add to Report" button in Transition Risk panel (purple theme)
+  - Uses `dom-to-image-more` library for high-quality PNG capture
+  - Temporary style manipulation for print-friendly output:
+    - Changes background to white (#ffffff)
+    - Changes card backgrounds to light grey (#f8f9fa)
+    - Changes text to dark colors (#1e293b, #334155)
+    - Hides all buttons (querySelector: 'button')
+    - Hides Leaflet zoom controls (querySelector: '.leaflet-control-zoom')
+  - Captures at 95% quality with proper SVG/Canvas handling
+  - Builds caption from current filters (scenario, entity, variable, period)
+  - Includes AI description if generated
+  - Saves to localStorage as ReportSnippet
+  - Restores original styles immediately after capture
+  - 500ms delay before capture to ensure rendering complete
 
 ---
 
@@ -1281,6 +1296,57 @@ All map pages follow similar pattern: Column mapping → validation → producti
 - Always loads ALL scenarios automatically (no mode toggles)
 - Uses GET /api/results/roi-curve endpoint for ROI data
 - Purple theme (#8b5cf6) matching Levers icon color
+
+---
+
+#### `dashboard/src/pages/results/Report.tsx`
+**Lines:** ~900
+**Purpose:** Interactive Report Builder with drag-and-drop PDF generation
+**Features:**
+- **Component Palette (Left Panel):**
+  - Text components: Title, Subtitle, Text blocks
+  - Visualization snippets from captured dashboards
+  - Drag-and-drop interface with GripVertical icons
+  - Snippet thumbnail previews with captions
+  - Delete button for snippets (removes from localStorage)
+  - Scrollable palette with separate "Components" and "Snippets" sections
+- **Report Canvas (Right Panel):**
+  - White A4-sized canvas (850px max width, 1100px min height)
+  - Draggable components with reorder capability
+  - Component types: title (32px), subtitle (24px), text (16px), visualization
+  - Inline editing with focus highlights (purple borders)
+  - Delete buttons and drag handles for each component
+- **Visualization Snippets:**
+  - Full-width images with editable captions and AI text
+  - Resize handle (bottom-right corner) for width adjustment (20%-100%)
+  - Purple diagonal striped resize handle with hover opacity
+  - Horizontal drag resizing with live preview
+  - Images stored as base64 PNG data URLs
+- **Snippet Management:**
+  - Load from localStorage on mount and poll every 2 seconds
+  - Auto-remove from localStorage after drag-in to canvas
+  - Storage key: 'reportSnippets'
+  - Interface: ReportSnippet (id, type, source, imageData, caption, aiText, timestamp)
+- **PDF Generation:**
+  - "Generate PDF" button (purple theme #a855f7)
+  - POST /api/reports/generate endpoint
+  - Disabled when canvas is empty
+  - Downloads timestamped PDF file
+  - Loading spinner animation during generation
+- **Drag-and-Drop:**
+  - Custom drag preview for snippets (small purple box labeled "Snippet")
+  - Drop zones with purple dashed borders
+  - Visual feedback: "Drop here" text on hover
+  - Supports reordering existing components
+  - Prevents dragging from interfering with text editing
+
+**Data Flow:**
+1. RiskDashboard captures visualization → saves to localStorage as snippet
+2. Report page loads snippets from localStorage (poll every 2s)
+3. User drags snippet from palette → adds to canvas → removes from localStorage
+4. User edits caption/AI text inline
+5. User resizes image with corner handle
+6. User clicks Generate PDF → POST to backend → download PDF
 
 ---
 

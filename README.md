@@ -1,9 +1,9 @@
 # ScenarioAnalysis2 - Claude's Quick Start Guide
 
-**Last Updated:** 2025-11-04 (Session 22 - Period-Specific Action Transformations)
+**Last Updated:** 2025-11-04 (Session 23 - Report Builder with Visualization Snippets)
 **Project Type:** Financial & Carbon Modeling Engine
 **Tech Stack:** C++17 (calculation engine) + React/TypeScript (dashboard) + SQLite (database)
-**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization with interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with animated period playback and cross-filtering drill-down, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, Physical Risk page with hierarchical entity selector and location markers, Ribbon Chart with Plotly Sankey diagram showing driver-to-lineitem flow mappings, and Levers page with MAC/ROI analysis, No Regrets Dashboard, and AI-powered cost-benefit insights
+**Status:** Production-ready with What-If Mode, fully configurable MAC/ROI analysis, Monte Carlo results visualization with interactive frequency distribution drill-down, flowchart navigation, Risk Dashboard with animated period playback and cross-filtering drill-down, three-mode Waterfall visualization with AI-powered explanations, scenario comparison visualization with dual-axis charts, Physical Risk page with hierarchical entity selector and location markers, Ribbon Chart with Plotly Sankey diagram showing driver-to-lineitem flow mappings, Levers page with MAC/ROI analysis, No Regrets Dashboard and AI-powered cost-benefit insights, and interactive Report Builder with drag-and-drop visualization snippets for PDF generation
 
 ---
 

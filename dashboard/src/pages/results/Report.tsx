@@ -1,20 +1,67 @@
-import { useState, useRef } from 'react'
-import { FileText, Download, GripVertical, Type, AlignLeft, Trash2, Plus, Heading2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { FileText, Download, GripVertical, Type, AlignLeft, Trash2, Plus, Heading2, Image } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 
 interface ReportComponent {
   id: string
-  type: 'title' | 'subtitle' | 'text'
+  type: 'title' | 'subtitle' | 'text' | 'visualization'
   content: string
+  imageData?: string
+  caption?: string
+  aiText?: string
+  width?: number
+}
+
+interface ReportSnippet {
+  id: string
+  type: 'visualization'
+  source: string
+  imageData: string
+  caption: string
+  aiText?: string
+  timestamp: number
 }
 
 export default function Report() {
   const [reportComponents, setReportComponents] = useState<ReportComponent[]>([])
+  const [snippets, setSnippets] = useState<ReportSnippet[]>([])
   const [draggedItemType, setDraggedItemType] = useState<'title' | 'subtitle' | 'text' | null>(null)
+  const [draggedSnippet, setDraggedSnippet] = useState<ReportSnippet | null>(null)
   const [draggedComponentIndex, setDraggedComponentIndex] = useState<number | null>(null)
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+
+  // Load snippets from localStorage on mount and periodically
+  useEffect(() => {
+    const loadSnippets = () => {
+      const stored = localStorage.getItem('reportSnippets')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          console.log('Loaded snippets:', parsed.length, 'snippets')
+          if (parsed.length > 0) {
+            console.log('First snippet imageData length:', parsed[0].imageData?.length)
+          }
+          setSnippets(parsed)
+        } catch (error) {
+          console.error('Failed to load snippets:', error)
+        }
+      }
+    }
+
+    loadSnippets()
+
+    // Poll for updates every 2 seconds (since storage event doesn't fire in same tab)
+    const interval = setInterval(loadSnippets, 2000)
+
+    // Listen for storage events to update when snippets are added from other pages
+    window.addEventListener('storage', loadSnippets)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('storage', loadSnippets)
+    }
+  }, [])
 
   const componentTypes = [
     {
@@ -44,6 +91,10 @@ export default function Report() {
     setDraggedItemType(type)
   }
 
+  const handleSnippetDragStart = (snippet: ReportSnippet) => {
+    setDraggedSnippet(snippet)
+  }
+
   const handleComponentDragStart = (index: number) => {
     setDraggedComponentIndex(index)
   }
@@ -68,6 +119,28 @@ export default function Report() {
 
       setReportComponents([...reportComponents, newComponent])
       setDraggedItemType(null)
+    }
+
+    // Dropping a snippet from palette
+    if (draggedSnippet) {
+      const newComponent: ReportComponent = {
+        id: `visualization-${Date.now()}`,
+        type: 'visualization',
+        content: draggedSnippet.caption,
+        imageData: draggedSnippet.imageData,
+        caption: draggedSnippet.caption,
+        aiText: draggedSnippet.aiText,
+        width: 100 // Default to 100% width
+      }
+
+      setReportComponents([...reportComponents, newComponent])
+
+      // Remove snippet from localStorage after adding to report
+      const updatedSnippets = snippets.filter(s => s.id !== draggedSnippet.id)
+      setSnippets(updatedSnippets)
+      localStorage.setItem('reportSnippets', JSON.stringify(updatedSnippets))
+
+      setDraggedSnippet(null)
     }
   }
 
@@ -96,6 +169,10 @@ export default function Report() {
     setDraggedItemType(null)
   }
 
+  const handleSnippetDragEnd = () => {
+    setDraggedSnippet(null)
+  }
+
   const handleContentChange = (id: string, newContent: string) => {
     setReportComponents(reportComponents.map(comp =>
       comp.id === id ? { ...comp, content: newContent } : comp
@@ -104,6 +181,12 @@ export default function Report() {
 
   const handleDelete = (id: string) => {
     setReportComponents(reportComponents.filter(comp => comp.id !== id))
+  }
+
+  const handleDeleteSnippet = (id: string) => {
+    const updatedSnippets = snippets.filter(snippet => snippet.id !== id)
+    setSnippets(updatedSnippets)
+    localStorage.setItem('reportSnippets', JSON.stringify(updatedSnippets))
   }
 
   const handleGenerateReport = async () => {
@@ -248,6 +331,148 @@ export default function Report() {
               </div>
             )
           })}
+
+          {/* Snippets Section */}
+          {snippets.length > 0 && (
+            <>
+              <div style={{
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#94a3b8',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginTop: '24px',
+                marginBottom: '8px'
+              }}>
+                Snippets
+              </div>
+              {snippets.map((snippet) => (
+                <div
+                  key={snippet.id}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    handleSnippetDragStart(snippet)
+                    // Create a small custom drag preview
+                    const dragPreview = document.createElement('div')
+                    dragPreview.style.width = '100px'
+                    dragPreview.style.height = '60px'
+                    dragPreview.style.backgroundColor = 'rgba(168, 85, 247, 0.9)'
+                    dragPreview.style.border = '2px solid #a855f7'
+                    dragPreview.style.borderRadius = '8px'
+                    dragPreview.style.display = 'flex'
+                    dragPreview.style.alignItems = 'center'
+                    dragPreview.style.justifyContent = 'center'
+                    dragPreview.style.color = '#fff'
+                    dragPreview.style.fontWeight = '600'
+                    dragPreview.style.fontSize = '12px'
+                    dragPreview.style.position = 'absolute'
+                    dragPreview.style.top = '-1000px'
+                    dragPreview.textContent = 'Snippet'
+                    document.body.appendChild(dragPreview)
+                    e.dataTransfer.setDragImage(dragPreview, 50, 30)
+                    setTimeout(() => document.body.removeChild(dragPreview), 0)
+                  }}
+                  onDragEnd={handleSnippetDragEnd}
+                  style={{
+                    padding: '12px',
+                    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                    border: '2px solid rgba(71, 85, 105, 0.5)',
+                    borderRadius: '8px',
+                    marginBottom: '12px',
+                    cursor: 'grab',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.8)'
+                    e.currentTarget.style.borderColor = '#a855f7'
+                    e.currentTarget.style.transform = 'translateY(-2px)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.8)'
+                    e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.5)'
+                    e.currentTarget.style.transform = 'translateY(0)'
+                  }}
+                >
+                  {/* Snippet preview image */}
+                  <div style={{
+                    width: '100%',
+                    height: '120px',
+                    backgroundColor: '#fff',
+                    borderRadius: '4px',
+                    marginBottom: '8px',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {snippet.imageData ? (
+                      <img
+                        src={snippet.imageData}
+                        alt={snippet.caption}
+                        onError={(e) => {
+                          console.error('Image failed to load:', snippet.id)
+                          e.currentTarget.style.display = 'none'
+                        }}
+                        onLoad={() => {
+                          console.log('Image loaded successfully:', snippet.id)
+                        }}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          objectFit: 'contain'
+                        }}
+                      />
+                    ) : (
+                      <div style={{ color: '#94a3b8', fontSize: '12px' }}>
+                        No image data
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Snippet info */}
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#94a3b8',
+                    marginBottom: '8px',
+                    lineHeight: '1.4'
+                  }}>
+                    {snippet.caption}
+                  </div>
+
+                  {/* Delete button */}
+                  <button
+                    onClick={() => handleDeleteSnippet(snippet.id)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      padding: '6px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid #ef4444',
+                      borderRadius: '4px',
+                      color: '#ef4444',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'
+                    }}
+                  >
+                    <Trash2 style={{ width: '12px', height: '12px' }} />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Generate Button */}
@@ -533,6 +758,147 @@ export default function Report() {
                           transition: 'border-color 0.2s'
                         }}
                       />
+                    ) : component.type === 'visualization' ? (
+                      <div style={{ marginBottom: '16px', position: 'relative' }}>
+                        {/* Visualization Image */}
+                        <div style={{
+                          width: `${component.width || 100}%`,
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          marginBottom: '12px',
+                          backgroundColor: '#fff',
+                          position: 'relative'
+                        }}>
+                          {component.imageData ? (
+                            <img
+                              src={component.imageData}
+                              alt={component.caption}
+                              onError={() => console.error('Canvas image failed to load')}
+                              onLoad={() => console.log('Canvas image loaded successfully')}
+                              style={{
+                                width: '100%',
+                                height: 'auto',
+                                display: 'block'
+                              }}
+                            />
+                          ) : (
+                            <div style={{
+                              padding: '40px',
+                              textAlign: 'center',
+                              color: '#94a3b8'
+                            }}>
+                              No image data available
+                            </div>
+                          )}
+
+                          {/* Resize handle */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              const startX = e.clientX
+                              const startWidth = component.width || 100
+                              const containerWidth = (e.currentTarget.parentElement?.parentElement?.offsetWidth || 730)
+
+                              const handleMouseMove = (moveEvent: MouseEvent) => {
+                                const deltaX = moveEvent.clientX - startX
+                                const deltaPercent = (deltaX / containerWidth) * 100
+                                const newWidth = Math.max(20, Math.min(100, startWidth + deltaPercent))
+
+                                setReportComponents(reportComponents.map(comp =>
+                                  comp.id === component.id ? { ...comp, width: newWidth } : comp
+                                ))
+                              }
+
+                              const handleMouseUp = () => {
+                                document.removeEventListener('mousemove', handleMouseMove)
+                                document.removeEventListener('mouseup', handleMouseUp)
+                              }
+
+                              document.addEventListener('mousemove', handleMouseMove)
+                              document.addEventListener('mouseup', handleMouseUp)
+                            }}
+                            style={{
+                              position: 'absolute',
+                              bottom: '4px',
+                              right: '4px',
+                              width: '20px',
+                              height: '20px',
+                              cursor: 'nwse-resize',
+                              background: 'linear-gradient(135deg, transparent 0%, transparent 30%, #a855f7 30%, #a855f7 35%, transparent 35%, transparent 45%, #a855f7 45%, #a855f7 50%, transparent 50%, transparent 60%, #a855f7 60%, #a855f7 65%, transparent 65%)',
+                              borderRadius: '0 0 8px 0',
+                              opacity: 0.6,
+                              transition: 'opacity 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.opacity = '1'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.opacity = '0.6'
+                            }}
+                          />
+                        </div>
+
+                        {/* Caption (editable) */}
+                        {component.caption && (
+                          <textarea
+                            value={component.caption || ''}
+                            onChange={(e) => {
+                              setReportComponents(reportComponents.map(comp =>
+                                comp.id === component.id ? { ...comp, caption: e.target.value } : comp
+                              ))
+                            }}
+                            onFocus={() => setEditingId(component.id + '-caption')}
+                            onBlur={() => setEditingId(null)}
+                            rows={2}
+                            style={{
+                              width: '100%',
+                              fontSize: '14px',
+                              lineHeight: '1.5',
+                              color: '#475569',
+                              border: editingId === component.id + '-caption' ? '2px solid #a855f7' : '2px solid transparent',
+                              borderRadius: '4px',
+                              padding: '8px',
+                              backgroundColor: 'transparent',
+                              outline: 'none',
+                              resize: 'vertical',
+                              fontFamily: 'inherit',
+                              transition: 'border-color 0.2s',
+                              marginBottom: '8px'
+                            }}
+                          />
+                        )}
+
+                        {/* AI Text (editable, if present) */}
+                        {component.aiText && (
+                          <textarea
+                            value={component.aiText}
+                            onChange={(e) => {
+                              setReportComponents(reportComponents.map(comp =>
+                                comp.id === component.id ? { ...comp, aiText: e.target.value } : comp
+                              ))
+                            }}
+                            onFocus={() => setEditingId(component.id + '-ai')}
+                            onBlur={() => setEditingId(null)}
+                            rows={3}
+                            style={{
+                              width: '100%',
+                              fontSize: '14px',
+                              lineHeight: '1.5',
+                              color: '#64748b',
+                              fontStyle: 'italic',
+                              border: editingId === component.id + '-ai' ? '2px solid #a855f7' : '2px solid transparent',
+                              borderRadius: '4px',
+                              padding: '8px',
+                              backgroundColor: 'transparent',
+                              outline: 'none',
+                              resize: 'vertical',
+                              fontFamily: 'inherit',
+                              transition: 'border-color 0.2s'
+                            }}
+                          />
+                        )}
+                      </div>
                     ) : (
                       <textarea
                         value={component.content}

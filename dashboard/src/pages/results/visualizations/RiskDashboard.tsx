@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { apiUrl, getDefaultDbPath } from '@/config'
-import { Globe, BarChart3, Filter, Sparkles, Play, Square } from 'lucide-react'
+import { Globe, BarChart3, Filter, Sparkles, Play, Square, FileText } from 'lucide-react'
 import CountryChoroplethMap from '@/components/visualizations/CountryChoroplethMap'
+import domtoimage from 'dom-to-image-more'
 
 interface Scenario {
   scenario_id: number
@@ -76,6 +77,7 @@ export default function RiskDashboard() {
   const [isPlaying, setIsPlaying] = useState(false)
   const animationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const animationStartPeriodRef = useRef<number>(1)
+  const dashboardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadScenarios()
@@ -347,6 +349,150 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     }
   }
 
+  const addToReport = async () => {
+    if (!dashboardRef.current) return
+
+    try {
+      // Find all card elements and buttons to temporarily style them
+      const cards = dashboardRef.current.querySelectorAll('[style*="rgba(15, 23, 42"]') as NodeListOf<HTMLElement>
+      const buttons = dashboardRef.current.querySelectorAll('button') as NodeListOf<HTMLElement>
+      const leafletZoomControls = dashboardRef.current.querySelectorAll('.leaflet-control-zoom') as NodeListOf<HTMLElement>
+      const titles = dashboardRef.current.querySelectorAll('h3') as NodeListOf<HTMLElement>
+      const texts = dashboardRef.current.querySelectorAll('div, span') as NodeListOf<HTMLElement>
+
+      // Store original styles
+      const originalStyles = {
+        bg: dashboardRef.current.style.backgroundColor,
+        padding: dashboardRef.current.style.padding,
+        cards: Array.from(cards).map(card => ({
+          bg: card.style.backgroundColor,
+          border: card.style.border,
+          color: card.style.color
+        })),
+        buttons: Array.from(buttons).map(btn => ({
+          display: btn.style.display
+        })),
+        leafletZoomControls: Array.from(leafletZoomControls).map(ctrl => ({
+          display: ctrl.style.display
+        })),
+        titles: Array.from(titles).map(title => ({
+          color: title.style.color
+        })),
+        texts: Array.from(texts).map(text => ({
+          color: text.style.color
+        }))
+      }
+
+      // Apply white theme for capture
+      dashboardRef.current.style.backgroundColor = '#ffffff'
+      dashboardRef.current.style.padding = '24px'
+
+      // Style cards with light grey background and dark borders
+      cards.forEach(card => {
+        card.style.backgroundColor = '#f8f9fa'
+        card.style.border = '1px solid #dee2e6'
+      })
+
+      // Hide buttons
+      buttons.forEach(btn => {
+        btn.style.display = 'none'
+      })
+
+      // Hide Leaflet zoom controls
+      leafletZoomControls.forEach(ctrl => {
+        ctrl.style.display = 'none'
+      })
+
+      // Change text to dark
+      titles.forEach(title => {
+        title.style.color = '#1e293b'
+      })
+
+      texts.forEach(text => {
+        if (text.style.color && text.style.color.includes('rgb')) {
+          text.style.color = '#334155'
+        }
+      })
+
+      // Wait for styles to apply
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture the dashboard
+      const imageData = await domtoimage.toPng(dashboardRef.current, {
+        quality: 0.95,
+        bgcolor: '#ffffff',
+        style: {
+          transform: 'scale(1)',
+          transformOrigin: 'top left',
+          backgroundColor: '#ffffff'
+        }
+      })
+
+      // Restore all original styles
+      dashboardRef.current.style.backgroundColor = originalStyles.bg
+      dashboardRef.current.style.padding = originalStyles.padding
+
+      cards.forEach((card, i) => {
+        card.style.backgroundColor = originalStyles.cards[i].bg
+        card.style.border = originalStyles.cards[i].border
+      })
+
+      buttons.forEach((btn, i) => {
+        btn.style.display = originalStyles.buttons[i].display
+      })
+
+      leafletZoomControls.forEach((ctrl, i) => {
+        ctrl.style.display = originalStyles.leafletZoomControls[i].display
+      })
+
+      titles.forEach((title, i) => {
+        title.style.color = originalStyles.titles[i].color
+      })
+
+      texts.forEach((text, i) => {
+        text.style.color = originalStyles.texts[i].color
+      })
+
+      console.log('Captured image data length:', imageData.length)
+      console.log('Image data preview:', imageData.substring(0, 100))
+
+      // Build caption with current selections
+      const scenarioAName = scenarios.find(s => s.scenario_id === scenarioA)?.name || 'Scenario A'
+      const scenarioBName = scenarioB ? scenarios.find(s => s.scenario_id === scenarioB)?.name : null
+      const entityName = entities.find(e => e.entity_id === selectedEntity)?.name || 'All Entities'
+      const variableName = lineItems.find(li => li.code === selectedVariable)?.name || selectedVariable
+
+      let caption = `Risk Dashboard: ${variableName} for ${entityName} in ${scenarioAName}`
+      if (scenarioBName) {
+        caption += ` vs ${scenarioBName}`
+      }
+      caption += ` (Period ${selectedPeriod})`
+
+      // Create snippet object
+      const snippet = {
+        id: `risk-dashboard-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'risk-dashboard' as const,
+        imageData,
+        caption,
+        aiText: aiDescription || undefined,
+        timestamp: Date.now()
+      }
+
+      // Save to localStorage
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
+      localStorage.setItem('reportSnippets', JSON.stringify(snippets))
+      console.log('Saved snippet to localStorage. Total snippets:', snippets.length)
+
+      alert('Added to report! Go to the Report page to see it.')
+    } catch (error) {
+      console.error('Failed to capture dashboard:', error)
+      alert('Failed to add to report. Please try again.')
+    }
+  }
+
   const toggleAnimation = () => {
     if (isPlaying) {
       // Stop animation
@@ -455,50 +601,78 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
               <Globe style={{ width: '20px', height: '20px', color }} />
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>{title}</h3>
             </div>
-            {isTransitionRisk && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {isPlaying && (
-                  <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>
-                    Period {selectedPeriod}
-                  </span>
-                )}
-                <button
-                  onClick={toggleAnimation}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    backgroundColor: isPlaying ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
-                    border: isPlaying ? '1px solid #ef4444' : '1px solid #22c55e',
-                    borderRadius: '6px',
-                    color: isPlaying ? '#ef4444' : '#22c55e',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isPlaying ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isPlaying ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'
-                  }}
-                >
-                  {isPlaying ? (
-                    <>
-                      <Square style={{ width: '16px', height: '16px' }} />
-                      <span>Stop</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play style={{ width: '16px', height: '16px' }} />
-                      <span>Play</span>
-                    </>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {isTransitionRisk && (
+                <>
+                  {isPlaying && (
+                    <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>
+                      Period {selectedPeriod}
+                    </span>
                   )}
-                </button>
-              </div>
-            )}
+                  <button
+                    onClick={toggleAnimation}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      backgroundColor: isPlaying ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                      border: isPlaying ? '1px solid #ef4444' : '1px solid #22c55e',
+                      borderRadius: '6px',
+                      color: isPlaying ? '#ef4444' : '#22c55e',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isPlaying ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = isPlaying ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)'
+                    }}
+                  >
+                    {isPlaying ? (
+                      <>
+                        <Square style={{ width: '16px', height: '16px' }} />
+                        <span>Stop</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play style={{ width: '16px', height: '16px' }} />
+                        <span>Play</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={addToReport}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 12px',
+                      backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                      border: '1px solid #a855f7',
+                      borderRadius: '6px',
+                      color: '#a855f7',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.3)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.2)'
+                    }}
+                  >
+                    <FileText style={{ width: '16px', height: '16px' }} />
+                    <span>Add to Report</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Choropleth map */}
@@ -1100,7 +1274,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       )}
 
       {/* 4-Quadrant Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+      <div ref={dashboardRef} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         {/* Top Left - Physical Risk Map */}
         <div style={{ animation: 'fadeInScale 0.6s ease-out 0.2s both' }}>
           {renderMap(physicalCountries, physicalDriverCountries, 'Physical Risk by Country', '#ef4444')}

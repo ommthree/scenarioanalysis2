@@ -170,6 +170,46 @@ Archived Background (docs/archive/):
 
 ## Recent Updates
 
+**2025-11-04 (Session 23 - Report Builder with Visualization Snippets):**
+- **New Feature:** Interactive Report Builder page with drag-and-drop PDF report creation
+- **Visualization Capture:** "Add to Report" button on Risk Dashboard captures dashboard as image
+  - Uses `dom-to-image-more` library for high-quality DOM-to-image conversion
+  - Temporarily applies print-friendly styling during capture (white background, light grey panels, dark text)
+  - Hides UI controls (buttons, zoom controls) during capture
+  - Captures at 95% quality PNG with proper handling of SVG elements (maps)
+- **Snippet Management:**
+  - Captured visualizations stored in browser localStorage as "snippets"
+  - Snippets displayed in left palette with thumbnail preview and caption
+  - Automatic polling (2s interval) to detect new snippets from other pages
+  - Delete button to remove snippets from palette
+- **Drag-and-Drop Report Canvas:**
+  - Components: Title, Subtitle, Text, Visualization snippets
+  - Draggable components with grip handles for reordering
+  - Visualization snippets include: image, editable caption, editable AI text
+  - Resize handle (bottom-right corner) for visualization width adjustment (20%-100%)
+  - Custom drag preview to avoid large image ghosting during drag
+- **Report Generation:**
+  - PDF generation via POST /api/reports/generate endpoint
+  - Download button generates timestamped PDF report
+  - Disabled when no components in canvas
+- **UI/UX Features:**
+  - Purple theme for snippet-related elements (#a855f7)
+  - Smooth transitions and hover effects
+  - Visual feedback for drag targets with purple dashed borders
+  - Component editing with focus highlights
+  - White A4-sized canvas (850px max width, 1100px min height)
+- **Technical Implementation:**
+  - Package added: `dom-to-image-more` for better SVG/Canvas capture than html2canvas
+  - ReportComponent interface extended with optional width field
+  - Snippet removal from localStorage after drag-in to prevent duplicates
+  - Proper restoration of original styles after capture
+- **Files Modified:**
+  - `dashboard/package.json`: Added dom-to-image-more dependency
+  - `dashboard/src/pages/results/Report.tsx`: Complete report builder implementation
+  - `dashboard/src/pages/results/visualizations/RiskDashboard.tsx`: Capture functionality with style manipulation
+  - `dashboard/src/pages/results/Explore.tsx`: Navigation integration
+  - `dashboard/src/components/layout/FlowchartNav.tsx`: Report page routing
+
 **2025-11-04 (Session 22 - Period-Specific Action Transformations):**
 - **Bug Fix:** Fixed critical bug where period-specific transformations were applied in all periods
 - **Root Cause:** `run_calculation.cpp` wasn't loading the `period` column from `action_transformation` table
