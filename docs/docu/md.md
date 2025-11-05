@@ -549,6 +549,61 @@ Archived Background (docs/archive/):
 - Absolute vs Delta modes: Absolute mode (no base case) shows single scenario values, Delta mode shows difference
 - Future-proofed for actions that affect driver-level risks (hedging, insurance, operational risk reduction)
 
-**Last Reviewed:** 2025-10-30
+**2025-11-05 (Session 25 - Monte Carlo Visualization Panel):**
+- Implemented comprehensive Monte Carlo analysis panel (Explore > Monte Carlo)
+- **Backend API Endpoints** (server/index.js):
+  - GET /api/mc-results: Returns line item statistics (mean, std dev, percentiles p5/p25/p50/p75/p95) for selected scenario/entity/period
+  - GET /api/mc-timeseries: Returns time series data (mean + percentile bands) for selected line item across all periods
+  - GET /api/results/mc-distribution: Returns all 5000 draw values for probability distribution analysis
+  - Section field extraction: Parses statement_template JSON to group line items by section (profit_and_loss, balance_sheet, carbon_statement)
+- **Hierarchical Financial Statement Structure**:
+  - Line items organized by collapsible sections (Profit & Loss, Balance Sheet, Carbon Statement)
+  - Uses ChevronDown/ChevronRight icons for section expansion
+  - Auto-expands all sections on data load
+  - Matches ViewResults panel structure for consistency
+- **Probability Distribution Chart** (1000px wide):
+  - Kernel Density Estimation (KDE) curve with Gaussian kernel
+  - 5000 semi-transparent draw markers showing actual simulation results
+  - Two-column statistics panel in right margin:
+    - Left: Mean, Median, Std Dev, Min
+    - Right: Skewness, Kurtosis, Max
+  - Bold statistics display (fontSize 14, fontWeight 700)
+  - Purple gradient fill under KDE curve
+- **Fan Chart Visualization** (800px wide):
+  - Shows percentile bands over time (p5-p95, p25-p75)
+  - Mean line in white with connected dots
+  - Color-coded bands: light purple (p5-p95), darker purple (p25-p75)
+  - Auto-adjusts to deterministic period (no fan before mc_start_period)
+- **Joint Distribution 3D Surface** (900px height):
+  - Bivariate normal distribution with Viridis colorscale (subtle purple-blue-green gradient)
+  - Interactive 3D surface plot showing correlation between two variables
+  - Contour projections on base plane
+  - Click-to-rotate, scroll-to-zoom controls
+  - Correlation coefficient display with interpretation text
+- **Correlation Matrix**:
+  - Grid showing pairwise correlations between all line items
+  - Color-coded cells (red negative, white neutral, blue positive)
+  - Click cell to open joint distribution visualization
+  - Tooltip shows correlation value on hover
+- **AI Insights Panel** (bottom of page):
+  - Claude-powered narrative analysis of MC results
+  - Purple-themed panel with Sparkles icon
+  - Generates 2-4 sentence executive summary
+  - Contextual prompt with scenario/entity/period/variable details
+  - Loading spinner during API call
+- **UI/UX Improvements**:
+  - Fixed draw count display: Shows "5000 draws" (was incorrectly showing 5001)
+  - Backend fix: Removed +1 offset (draw_number is 1-indexed, not 0-indexed)
+  - AI panel positioned at bottom with 32px margin (not overlapping other content)
+  - Consistent purple theme (#8b5cf6) across all MC visualizations
+  - Only available when stochasticMode=true in localStorage
+- **Technical Implementation**:
+  - TypeScript interface: McResults with section field
+  - React state: expandedSections Set for collapsible sections
+  - SVG-based charts with proper margins (top: 30, right: 280, bottom: 60, left: 60)
+  - Plotly.js for 3D joint distribution surface
+  - Statistical calculations: KDE bandwidth, percentile interpolation, correlation coefficients
+
+**Last Reviewed:** 2025-11-05
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

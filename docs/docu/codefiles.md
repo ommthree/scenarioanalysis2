@@ -1,8 +1,22 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-11-04
+**Last Updated:** 2025-11-05
 **Total Files:** 80 (27 C++ source, 28 C++ headers, 50 TypeScript/React, 4 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with What-If Mode, Interactive MC Distribution Visualization, Three-Mode Waterfall with AI Descriptions, and Physical Risk Page with Location Display
+**Status:** Production - Unified Engine Architecture with What-If Mode, Comprehensive Monte Carlo Visualization, Three-Mode Waterfall with AI Descriptions, and Physical Risk Page with Location Display
+
+**Recent Changes (2025-11-05):**
+- ✅ Added comprehensive Monte Carlo visualization panel (Session 25)
+- ✅ Created CorrelationsPanel.tsx (~1650 lines) with probability distributions, fan charts, joint distributions, and correlation matrix
+- ✅ Added GET /api/mc-results endpoint: Returns line item statistics (mean, std dev, p5/p25/p50/p75/p95) with section field
+- ✅ Added GET /api/mc-timeseries endpoint: Returns time series percentile bands for fan charts
+- ✅ Added GET /api/results/mc-distribution endpoint: Returns all 5000 draw values for KDE analysis
+- ✅ Hierarchical financial statement structure with collapsible sections (Profit & Loss, Balance Sheet, Carbon Statement)
+- ✅ Probability distribution chart (1000px) with KDE curve and two-column statistics panel (Mean/Median/StdDev/Min | Skewness/Kurtosis/Max)
+- ✅ Fan chart (800px) with percentile bands (p5-p95, p25-p75) and mean line
+- ✅ Joint distribution 3D surface (900px) with Viridis colorscale and interactive rotation
+- ✅ Correlation matrix with color-coded cells (red/white/blue) and click-to-expand joint distribution
+- ✅ AI insights panel with Claude-powered narrative analysis
+- ✅ Fixed draw count display: Shows "5000 draws" (corrected +1 offset bug in backend)
 
 **Recent Changes (2025-11-04):**
 - ✅ Added Levers/No Regrets Dashboard (Session 20)

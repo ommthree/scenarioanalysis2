@@ -77,7 +77,7 @@ export default function JointDistributionPanel({
                 x: x,
                 y: y,
                 z: z,
-                colorscale: 'Jet',
+                colorscale: 'Viridis',
                 showscale: true,
                 hovertemplate:
                   '<b>%{xaxis.title.text}</b>: %{x:.2f}<br>' +
