@@ -352,6 +352,77 @@ export default function CorrelationsPanel() {
     })
   }
 
+  const generateAiInsights = async () => {
+    if (!primaryVariable || !distribution) return
+
+    setAiLoading(true)
+    try {
+      // Find the selected line item details
+      const selectedItem = mcResults?.lineItems.find(item => item.code === primaryVariable)
+      const selectedScenario = scenarios.find(s => s.scenario_id === currentScenario)
+      const selectedEntity = allEntities.find(e => e.entity_id === currentEntity)
+
+      // Build context for the AI
+      const contextDescription = `Analyzing Monte Carlo simulation results for ${selectedItem?.name || primaryVariable} in scenario "${selectedScenario?.name || currentScenario}" at entity "${selectedEntity?.name || currentEntity}".`
+
+      // Extract key statistics from distribution
+      const stats = distribution.statistics
+      const range = stats.max - stats.min
+      const cv = (stats.std / Math.abs(stats.mean)) * 100 // coefficient of variation
+
+      // Determine distribution shape
+      let distributionShape = 'symmetric'
+      if (stats.skew > 0.5) distributionShape = 'right-skewed (positive skew)'
+      else if (stats.skew < -0.5) distributionShape = 'left-skewed (negative skew)'
+
+      let tailCharacter = 'normal'
+      if (stats.kurtosis > 3) tailCharacter = 'heavy-tailed (more extreme values)'
+      else if (stats.kurtosis < 3) tailCharacter = 'light-tailed (fewer extreme values)'
+
+      const prompt = `You are a financial risk and Monte Carlo simulation expert. Analyze this Monte Carlo simulation result and provide a concise, insightful summary paragraph (2-4 sentences).
+
+Context: ${contextDescription}
+
+Statistics from 5000 Monte Carlo draws:
+- Mean: ${stats.mean.toFixed(2)}
+- Median: ${stats.median.toFixed(2)}
+- Standard Deviation: ${stats.std.toFixed(2)}
+- Coefficient of Variation: ${cv.toFixed(1)}%
+- Range: ${stats.min.toFixed(2)} to ${stats.max.toFixed(2)} (spread: ${range.toFixed(2)})
+- Skewness: ${stats.skew.toFixed(3)} (${distributionShape})
+- Kurtosis: ${stats.kurtosis.toFixed(3)} (${tailCharacter})
+- 5th-95th percentile range: ${distribution.p5.toFixed(2)} to ${distribution.p95.toFixed(2)}
+
+Provide a narrative summary that:
+1. Interprets the uncertainty and risk profile (using coefficient of variation and percentile range)
+2. Explains what the skewness and kurtosis tell us about the distribution shape and tail risk
+3. Highlights any important implications for decision-making
+4. Uses business-friendly language
+
+Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
+
+      const response = await fetch('http://localhost:3001/api/claude/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        throw new Error('AI insights generation failed')
+      }
+
+      const result = await response.json()
+      const insights = result.content[0].text
+      setAiInsights(insights)
+
+    } catch (error) {
+      console.error('AI insights error:', error)
+      setAiInsights('Unable to generate AI insights. Please try again.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   const renderEntityTree = (entities: Entity[], level = 0): React.ReactElement => {
     return (
       <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
