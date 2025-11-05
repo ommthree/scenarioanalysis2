@@ -58,11 +58,13 @@ interface McTimeseries {
   }>
   statistics: {
     mean: number[]
+    p1: number[]
     p5: number[]
     p25: number[]
     p50: number[]
     p75: number[]
     p95: number[]
+    p99: number[]
   }
   deterministic: number[]
 }
@@ -353,7 +355,7 @@ export default function CorrelationsPanel() {
   }
 
   const generateAiInsights = async () => {
-    if (!primaryVariable || !distribution) return
+    if (!primaryVariable || !primaryDistribution) return
 
     setAiLoading(true)
     try {
@@ -366,7 +368,7 @@ export default function CorrelationsPanel() {
       const contextDescription = `Analyzing Monte Carlo simulation results for ${selectedItem?.name || primaryVariable} in scenario "${selectedScenario?.name || currentScenario}" at entity "${selectedEntity?.name || currentEntity}".`
 
       // Extract key statistics from distribution
-      const stats = distribution.statistics
+      const stats = primaryDistribution.statistics
       const range = stats.max - stats.min
       const cv = (stats.std / Math.abs(stats.mean)) * 100 // coefficient of variation
 
@@ -391,7 +393,7 @@ Statistics from 5000 Monte Carlo draws:
 - Range: ${stats.min.toFixed(2)} to ${stats.max.toFixed(2)} (spread: ${range.toFixed(2)})
 - Skewness: ${stats.skew.toFixed(3)} (${distributionShape})
 - Kurtosis: ${stats.kurtosis.toFixed(3)} (${tailCharacter})
-- 5th-95th percentile range: ${distribution.p5.toFixed(2)} to ${distribution.p95.toFixed(2)}
+- 5th-95th percentile range: ${primaryDistribution.p5.toFixed(2)} to ${primaryDistribution.p95.toFixed(2)}
 
 Provide a narrative summary that:
 1. Interprets the uncertainty and risk profile (using coefficient of variation and percentile range)
@@ -1398,8 +1400,8 @@ Keep response concise (3-4 paragraphs).`
 
     // Find min/max values across all series
     const allValues = [
-      ...timeseries.statistics.p5,
-      ...timeseries.statistics.p95,
+      ...timeseries.statistics.p1,
+      ...timeseries.statistics.p99,
       ...timeseries.deterministic
     ].filter(v => v != null && !isNaN(v))
 
@@ -1453,12 +1455,18 @@ Keep response concise (3-4 paragraphs).`
       `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.deterministic[i])}`
     ).join(' ')
 
+    const p99Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p99[i])}`).join(' ')
     const p95Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p95[i])}`).join(' ')
     const p75Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p75[i])}`).join(' ')
     const p25Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p25[i])}`).join(' ')
     const p5Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p5[i])}`).join(' ')
+    const p1Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p1[i])}`).join(' ')
 
     // Create area paths (need to reverse for closing)
+    const p1ToP99Area = p1Path + ' ' + periods.slice().reverse().map((p, i) =>
+      `L ${xScale(p)} ${yScale(timeseries.statistics.p99[periods.length - 1 - i])}`
+    ).join(' ') + ' Z'
+
     const p5ToP95Area = p5Path + ' ' + periods.slice().reverse().map((p, i) =>
       `L ${xScale(p)} ${yScale(timeseries.statistics.p95[periods.length - 1 - i])}`
     ).join(' ') + ' Z'
@@ -1499,14 +1507,17 @@ Keep response concise (3-4 paragraphs).`
           })}
 
           {/* Shaded areas */}
+          <path d={p1ToP99Area} fill="rgba(168, 85, 247, 0.08)" stroke="none" />
           <path d={p5ToP95Area} fill="rgba(168, 85, 247, 0.15)" stroke="none" />
           <path d={p25ToP75Area} fill="rgba(168, 85, 247, 0.25)" stroke="none" />
 
           {/* Percentile lines */}
+          <path d={p1Path} stroke="#ef4444" strokeWidth="1" strokeDasharray="3,3" fill="none" opacity="0.4" />
           <path d={p5Path} stroke="#ef4444" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.6" />
           <path d={p25Path} stroke="#f97316" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.7" />
           <path d={p75Path} stroke="#3b82f6" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.7" />
           <path d={p95Path} stroke="#10b981" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.6" />
+          <path d={p99Path} stroke="#10b981" strokeWidth="1" strokeDasharray="3,3" fill="none" opacity="0.4" />
 
           {/* Deterministic line */}
           <path d={deterministicPath} stroke="#a78bfa" strokeWidth="3" fill="none" />

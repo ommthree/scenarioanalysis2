@@ -31,7 +31,8 @@ const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ limit: '50mb', extended: true }))
 
 /**
  * Load CSV statements into staging table
@@ -3695,6 +3696,430 @@ app.get('/api/locations/get-location-mapping', (req, res) => {
     )
   } catch (error) {
     console.error('Get location mapping error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get Monte Carlo simulation results with statistics
+ * GET /api/mc-results
+ * Query params: dbPath, scenarioId, entityId
+ * Returns: scenarioId, entityId, mcPeriod, numDraws, lineItems with statistics
+ */
+app.get('/api/mc-results', (req, res) => {
+  try {
+    const { dbPath, scenarioId, entityId } = req.query
+
+    if (!dbPath || !scenarioId || !entityId) {
+      return res.status(400).json({ error: 'Missing required parameters: dbPath, scenarioId, entityId' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // First, check if MC data exists for this scenario/entity
+    db.get(
+      `SELECT COUNT(*) as count,
+              MAX(period_id) as max_period,
+              MAX(draw_number) as max_draw
+       FROM mc_statement_result
+       WHERE scenario_id = ? AND entity_id = ?`,
+      [scenarioId, entityId],
+      (err, summary) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to query MC data: ' + err.message })
+        }
+
+        if (!summary || summary.count === 0) {
+          db.close()
+          return res.json({
+            scenarioId: parseInt(scenarioId),
+            entityId: parseInt(entityId),
+            mcPeriod: null,
+            numDraws: 0,
+            lineItems: []
+          })
+        }
+
+        const mcPeriod = summary.max_period
+        const numDraws = summary.max_draw // draw_number is 1-indexed
+
+        // Get the statement template for this scenario to fetch line item display names
+        db.get(
+          `SELECT st.json_structure
+           FROM scenario s
+           JOIN statement_template st ON s.statement_template_id = st.template_id
+           WHERE s.scenario_id = ?`,
+          [scenarioId],
+          (err, templateRow) => {
+            if (err) {
+              db.close()
+              return res.status(500).json({ error: 'Failed to query template: ' + err.message })
+            }
+
+            // Parse the template JSON to build a map of code -> display_name and code -> section
+            let lineItemNames = {}
+            let lineItemSections = {}
+            if (templateRow && templateRow.json_structure) {
+              try {
+                const template = JSON.parse(templateRow.json_structure)
+                if (template.line_items && Array.isArray(template.line_items)) {
+                  template.line_items.forEach(item => {
+                    if (item.code && item.display_name) {
+                      lineItemNames[item.code] = item.display_name
+                      lineItemSections[item.code] = item.section || 'Other'
+                    }
+                  })
+                }
+              } catch (e) {
+                console.error('Failed to parse template JSON:', e)
+              }
+            }
+
+            // Get line item codes from MC results
+            db.all(
+              `SELECT DISTINCT msr.line_item_code
+               FROM mc_statement_result msr
+               WHERE msr.scenario_id = ? AND msr.entity_id = ? AND msr.period_id = ?
+               ORDER BY msr.line_item_code`,
+              [scenarioId, entityId, mcPeriod],
+              (err, lineItemRows) => {
+                if (err) {
+                  db.close()
+                  return res.status(500).json({ error: 'Failed to query line items: ' + err.message })
+                }
+
+                // For each line item, calculate statistics across all draws
+                const lineItemPromises = lineItemRows.map((item) => {
+              return new Promise((resolve, reject) => {
+                db.all(
+                  `SELECT value
+                   FROM mc_statement_result
+                   WHERE scenario_id = ?
+                     AND entity_id = ?
+                     AND period_id = ?
+                     AND line_item_code = ?
+                   ORDER BY draw_number`,
+                  [scenarioId, entityId, mcPeriod, item.line_item_code],
+                  (err, values) => {
+                    if (err) {
+                      reject(err)
+                      return
+                    }
+
+                    // Calculate statistics
+                    const sortedValues = values.map(v => v.value).sort((a, b) => a - b)
+                    const n = sortedValues.length
+
+                    if (n === 0) {
+                      resolve(null)
+                      return
+                    }
+
+                    // Calculate percentiles
+                    const getPercentile = (p) => {
+                      const index = Math.ceil((p / 100) * n) - 1
+                      return sortedValues[Math.max(0, Math.min(index, n - 1))]
+                    }
+
+                    const mean = sortedValues.reduce((sum, val) => sum + val, 0) / n
+                    const variance = sortedValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n
+                    const stdDev = Math.sqrt(variance)
+
+                    resolve({
+                      code: item.line_item_code,
+                      name: lineItemNames[item.line_item_code] || item.line_item_code,
+                      section: lineItemSections[item.line_item_code] || 'Other',
+                      mean: mean,
+                      stdDev: stdDev,
+                      p5: getPercentile(5),
+                      p25: getPercentile(25),
+                      p50: getPercentile(50),
+                      p75: getPercentile(75),
+                      p95: getPercentile(95)
+                    })
+                  }
+                )
+              })
+            })
+
+            Promise.all(lineItemPromises)
+              .then((lineItems) => {
+                db.close()
+                res.json({
+                  success: true,
+                  scenarioId: parseInt(scenarioId),
+                  entityId: parseInt(entityId),
+                  mcPeriod: mcPeriod,
+                  numDraws: numDraws,
+                  lineItems: lineItems.filter(item => item !== null)
+                })
+              })
+              .catch((err) => {
+                db.close()
+                res.status(500).json({ error: 'Failed to calculate statistics: ' + err.message })
+              })
+          })
+        })
+      }
+    )
+  } catch (error) {
+    console.error('MC results error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get Monte Carlo timeseries for a specific line item (for Fan Chart)
+ * GET /api/mc-timeseries
+ * Query params: dbPath, scenarioId, entityId, lineItemCode
+ * Returns: periods, deterministic values, and percentile bands across time
+ */
+app.get('/api/mc-timeseries', (req, res) => {
+  try {
+    const { dbPath, scenarioId, entityId, lineItemCode } = req.query
+
+    if (!dbPath || !scenarioId || !entityId || !lineItemCode) {
+      return res.status(400).json({ error: 'Missing required parameters' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get all periods with MC data
+    db.all(
+      `SELECT DISTINCT period_id FROM mc_statement_result
+       WHERE scenario_id = ? AND entity_id = ? AND line_item_code = ?
+       ORDER BY period_id`,
+      [scenarioId, entityId, lineItemCode],
+      (err, periodRows) => {
+        if (err) {
+          db.close()
+          return res.status(500).json({ error: 'Failed to query periods: ' + err.message })
+        }
+
+        if (periodRows.length === 0) {
+          db.close()
+          return res.json({ success: false, error: 'No MC timeseries data found' })
+        }
+
+        const periods = periodRows.map(row => row.period_id)
+
+        // Get deterministic values (from statement_result)
+        db.all(
+          `SELECT period_id, value FROM statement_result
+           WHERE scenario_id = ? AND entity_id = ? AND line_item_code = ? AND what_if_combination = ''
+           ORDER BY period_id`,
+          [scenarioId, entityId, lineItemCode],
+          (err, deterministicRows) => {
+            if (err) {
+              db.close()
+              return res.status(500).json({ error: 'Failed to query deterministic: ' + err.message })
+            }
+
+            const deterministicMap = {}
+            deterministicRows.forEach(row => {
+              deterministicMap[row.period_id] = row.value
+            })
+
+            // For each period, get MC draws and calculate percentiles
+            const periodPromises = periods.map((period) => {
+              return new Promise((resolve, reject) => {
+                db.all(
+                  `SELECT value FROM mc_statement_result
+                   WHERE scenario_id = ? AND entity_id = ? AND line_item_code = ? AND period_id = ?
+                   ORDER BY draw_number`,
+                  [scenarioId, entityId, lineItemCode, period],
+                  (err, values) => {
+                    if (err) {
+                      reject(err)
+                      return
+                    }
+
+                    const sortedValues = values.map(v => v.value).sort((a, b) => a - b)
+                    const n = sortedValues.length
+
+                    if (n === 0) {
+                      resolve(null)
+                      return
+                    }
+
+                    const getPercentile = (p) => {
+                      const index = Math.ceil((p / 100) * n) - 1
+                      return sortedValues[Math.max(0, Math.min(index, n - 1))]
+                    }
+
+                    resolve({
+                      period: period,
+                      p1: getPercentile(1),
+                      p5: getPercentile(5),
+                      p25: getPercentile(25),
+                      p50: getPercentile(50),
+                      p75: getPercentile(75),
+                      p95: getPercentile(95),
+                      p99: getPercentile(99)
+                    })
+                  }
+                )
+              })
+            })
+
+            Promise.all(periodPromises)
+              .then((periodStats) => {
+                db.close()
+
+                const validStats = periodStats.filter(s => s !== null)
+
+                // Build arrays in period order
+                const p1 = validStats.map(s => s.p1)
+                const p5 = validStats.map(s => s.p5)
+                const p25 = validStats.map(s => s.p25)
+                const p50 = validStats.map(s => s.p50)
+                const p75 = validStats.map(s => s.p75)
+                const p95 = validStats.map(s => s.p95)
+                const p99 = validStats.map(s => s.p99)
+                const deterministic = periods.map(p => deterministicMap[p] || 0)
+
+                res.json({
+                  success: true,
+                  timeseries: {
+                    periods: periods,
+                    deterministic: deterministic,
+                    statistics: {
+                      p1: p1,
+                      p5: p5,
+                      p25: p25,
+                      p50: p50,
+                      p75: p75,
+                      p95: p95,
+                      p99: p99
+                    }
+                  }
+                })
+              })
+              .catch((err) => {
+                db.close()
+                res.status(500).json({ error: 'Failed to calculate timeseries: ' + err.message })
+              })
+          }
+        )
+      }
+    )
+  } catch (error) {
+    console.error('MC timeseries error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Get Monte Carlo draw distribution for a specific line item and period
+ * GET /api/results/mc-distribution
+ * Query params: dbPath, scenarioId, periodId, entityId, lineItemCode
+ * Returns: array of draw values and statistics
+ */
+app.get('/api/results/mc-distribution', (req, res) => {
+  try {
+    const { dbPath, scenarioId, periodId, entityId, lineItemCode } = req.query
+
+    if (!dbPath || !scenarioId || !periodId || !entityId || !lineItemCode) {
+      return res.status(400).json({ error: 'Missing required parameters' })
+    }
+
+    if (!fs.existsSync(dbPath)) {
+      return res.status(400).json({ error: 'Database not found' })
+    }
+
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
+      }
+    })
+
+    // Get all draw values for this specific line item and period
+    db.all(
+      `SELECT draw_number, value FROM mc_statement_result
+       WHERE scenario_id = ? AND period_id = ? AND entity_id = ? AND line_item_code = ?
+       ORDER BY draw_number`,
+      [scenarioId, periodId, entityId, lineItemCode],
+      (err, rows) => {
+        db.close()
+
+        if (err) {
+          return res.status(500).json({ error: 'Failed to query distribution: ' + err.message })
+        }
+
+        if (rows.length === 0) {
+          return res.json({ success: false, error: 'No distribution data found' })
+        }
+
+        const values = rows.map(r => r.value)
+        const sortedValues = [...values].sort((a, b) => a - b)
+        const n = sortedValues.length
+
+        // Calculate statistics
+        const mean = values.reduce((sum, val) => sum + val, 0) / n
+        const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n
+        const std = Math.sqrt(variance)
+
+        const getPercentile = (p) => {
+          const index = Math.ceil((p / 100) * n) - 1
+          return sortedValues[Math.max(0, Math.min(index, n - 1))]
+        }
+
+        const median = getPercentile(50)
+        const min = sortedValues[0]
+        const max = sortedValues[n - 1]
+
+        // Calculate skewness and kurtosis
+        const m3 = values.reduce((sum, val) => sum + Math.pow((val - mean) / std, 3), 0) / n
+        const m4 = values.reduce((sum, val) => sum + Math.pow((val - mean) / std, 4), 0) / n
+        const skew = m3
+        const kurtosis = m4 - 3 // Excess kurtosis
+
+        res.json({
+          success: true,
+          distribution: {
+            numDraws: n,
+            values: values,
+            statistics: {
+              mean: mean,
+              median: median,
+              std: std,
+              min: min,
+              max: max,
+              skew: skew,
+              kurtosis: kurtosis
+            },
+            percentiles: {
+              p5: getPercentile(5),
+              p10: getPercentile(10),
+              p25: getPercentile(25),
+              p50: median,
+              p75: getPercentile(75),
+              p90: getPercentile(90),
+              p95: getPercentile(95)
+            }
+          }
+        })
+      }
+    )
+  } catch (error) {
+    console.error('MC distribution error:', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -9210,16 +9635,26 @@ app.post('/api/reports/generate', (req, res) => {
           const aspectRatio = img.height / img.width
           const scaledHeight = scaledWidth * aspectRatio
 
-          // Check if image fits on current page, if not add new page
-          checkPageBreak(scaledHeight + 80) // Add space for caption and AI text
+          // Calculate available space on current page
+          const availableHeight = doc.page.height - doc.page.margins.bottom - doc.y
 
-          // Add image
-          doc.image(imageBuffer, doc.page.margins.left, doc.y, {
+          // If image + captions won't fit, start on new page
+          if (scaledHeight + 100 > availableHeight) {
+            doc.addPage()
+          }
+
+          // Add image at current Y position
+          const imageY = doc.y
+          const maxImageHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom - 100
+
+          doc.image(imageBuffer, doc.page.margins.left, imageY, {
             width: scaledWidth,
-            fit: [scaledWidth, pageHeight - 100] // Max height to prevent overflow
+            fit: [scaledWidth, maxImageHeight]
           })
 
-          doc.moveDown(0.5)
+          // Calculate actual rendered height and advance Y position
+          const actualImageHeight = Math.min(scaledHeight, maxImageHeight)
+          doc.y = imageY + actualImageHeight + 10
 
           // Add caption if present
           if (component.caption) {
@@ -9243,14 +9678,13 @@ app.post('/api/reports/generate', (req, res) => {
             checkPageBreak(aiTextHeight + 20)
 
             doc.fontSize(9)
-               .font('Helvetica-Oblique')
+               .font('Helvetica')
                .fillColor('#334155')
                .text(component.aiText, {
                  align: 'left',
                  width: scaledWidth
                })
                .fillColor('#000000')
-               .font('Helvetica')
                .moveDown(0.5)
           }
 
