@@ -604,6 +604,65 @@ Archived Background (docs/archive/):
   - Plotly.js for 3D joint distribution surface
   - Statistical calculations: KDE bandwidth, percentile interpolation, correlation coefficients
 
+**2025-11-05 (Session 26 - MC Panel Enhancements & Financial Statements Redesign):**
+- **Monte Carlo Panel Final Enhancements** (CorrelationsPanel.tsx):
+  - **Fan Chart P1/P99 Bands** (900px width):
+    - Added 1st and 99th percentile bands for 98% confidence interval
+    - Three-layer shaded areas: p1-p99 (8% opacity), p5-p95 (15%), p25-p75 (25%)
+    - Backend API now returns p1 and p99 arrays (server/index.js:3969-4010)
+    - Conditional rendering with null safety checks
+  - **Null Safety Improvements**:
+    - Added existence check for timeseries.statistics before rendering
+    - Null coalescing operators for array spreading: `...(timeseries.statistics.p1 || [])`
+    - Conditional path generation: `const hasP1P99 = timeseries.statistics.p1 && timeseries.statistics.p99`
+    - Prevents crashes when selecting specific line items (partial data)
+  - **AI Insights Fix**:
+    - Fixed variable reference: `allEntities` → `entities` (line 369)
+    - Resolved ReferenceError preventing AI insights generation
+    - Removed duplicate function declaration (lines 494-549)
+- **Financial Statements Panel Complete Redesign** (FinancialStatementsPanel.tsx):
+  - **Removed Features**:
+    - ROI mode completely removed
+    - MAC mode completely removed
+    - Single period selector removed
+  - **New Multi-Select Architecture**:
+    - Multi-scenario selector: `useState<Set<number>>(new Set())`
+    - Multi-entity selector with hierarchical display
+    - Period range selector: `useState<[number, number]>([1, 1])`
+    - Delta mode toggle (With/Without Actions comparison)
+  - **Row Structure** (Entity-based, not column-based):
+    - Entity rows (expandable) → Section rows (expandable) → Line Item rows → Driver sub-rows
+    - Parent entity automatic rollups using `getEntitiesWithParents()` and `getRolledUpValue()`
+    - Recursive aggregation up to root entities
+    - Avoids duplicate rows when parent is explicitly selected
+  - **Column Structure** (nested):
+    - Level 1: With Actions / Without Actions
+    - Level 2: Periods (from range selector)
+    - Level 3: Scenarios (from multi-select)
+    - Column collapse functionality with ChevronRight icons
+  - **Data Management**:
+    - ResultData interface: `[entityId][scenarioId][period] → { withActions, withoutActions }`
+    - DriverData interface: Similar nested structure for driver contributions
+    - `loadAllResults()` fetches all entity/scenario/period combinations
+    - Caches data to avoid redundant API calls
+  - **Core Functions Implemented** (552 lines):
+    - `getEntitiesWithParents()`: Calculates all ancestors up to root
+    - `getRolledUpValue()`: Recursive child entity aggregation
+    - `generateAiInsights()`: Claude API narrative analysis
+    - `addToReport()`: Export with professional black-on-white formatting
+  - **State Management**:
+    - `expandedEntities: Set<number>` - Entity row expansion
+    - `expandedSections: Set<string>` - Section row expansion (format: "entityId-sectionName")
+    - `expandedLineItems: Set<string>` - Line item/driver expansion (format: "entityId-lineItemCode")
+    - `collapsedColumns: Set<string>` - Column collapse tracking (format: "scenarioId-period-action")
+  - **Current Status**: Infrastructure complete (552 lines), placeholder UI showing
+  - **Remaining Work** (~1500 lines):
+    - Complete UI controls (scenario checkboxes, entity tree, range sliders)
+    - Full table rendering (entities → sections → line items)
+    - Complex column headers with collapse functionality
+    - Driver decomposition sub-rows
+    - Professional styling and formatting
+
 **Last Reviewed:** 2025-11-05
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

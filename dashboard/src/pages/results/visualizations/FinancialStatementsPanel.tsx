@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { logger } from '@/utils/logger'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronRight, ChevronDown, Building2, FileText, Sparkles } from 'lucide-react'
@@ -513,40 +513,641 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
     }
   }
 
-  logger.log('FinancialStatementsPanel: Component loaded - showing placeholder')
-  
+  const formatValue = (value: number): string => {
+    if (Math.abs(value) < 1000) return value.toFixed(0)
+    if (Math.abs(value) < 1000000) return (value / 1000).toFixed(1) + 'K'
+    return (value / 1000000).toFixed(1) + 'M'
+  }
+
+  const handleScenarioToggle = (scenarioId: number) => {
+    setSelectedScenarios(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(scenarioId)) newSet.delete(scenarioId)
+      else newSet.add(scenarioId)
+      return newSet
+    })
+  }
+
+  const handleEntityToggle = (entityId: number) => {
+    setSelectedEntities(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(entityId)) newSet.delete(entityId)
+      else newSet.add(entityId)
+      return newSet
+    })
+  }
+
+  const renderEntitySelector = (entity: Entity, depth: number = 0): JSX.Element[] => {
+    const result: JSX.Element[] = []
+    result.push(
+      <div key={entity.entity_id} style={{
+        marginLeft: `${depth * 20}px`,
+        marginBottom: '8px',
+        display: 'flex',
+        alignItems: 'center'
+      }}>
+        <input
+          type="checkbox"
+          checked={selectedEntities.has(entity.entity_id)}
+          onChange={() => handleEntityToggle(entity.entity_id)}
+          style={{ marginRight: '8px', cursor: 'pointer' }}
+        />
+        <Building2 style={{ width: '14px', height: '14px', marginRight: '6px', color: '#06b6d4' }} />
+        <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{entity.name}</span>
+      </div>
+    )
+    if (entity.children) {
+      entity.children.forEach(child => {
+        result.push(...renderEntitySelector(child, depth + 1))
+      })
+    }
+    return result
+  }
+
+  logger.log('FinancialStatementsPanel rendered')
+
   return (
-    <div style={{ padding: '24px', minHeight: '100vh' }}>
+    <div ref={statementRef} style={{ padding: '24px', minHeight: '100vh' }}>
       <Card style={{
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
         border: '1px solid rgba(59, 130, 246, 0.3)'
       }}>
         <CardContent style={{ padding: '24px' }}>
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '60px' }}>
-            <FileText style={{ width: '48px', height: '48px', margin: '0 auto 16px', color: '#06b6d4' }} />
-            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff', marginBottom: '8px' }}>
-              Financial Statements - Under Reconstruction
-            </h2>
-            <p style={{ fontSize: '14px', marginBottom: '16px' }}>
-              This page is being rebuilt with enhanced features:
-            </p>
-            <ul style={{ textAlign: 'left', maxWidth: '500px', margin: '0 auto', lineHeight: '2', fontSize: '13px' }}>
-              <li>✓ Multi-scenario selection and comparison</li>
-              <li>✓ Multi-entity selection with automatic parent rollups</li>
-              <li>✓ Period range selector (two-ended slider)</li>
-              <li>✓ Enhanced expand/collapse for entities, sections, and line items</li>
-              <li>✓ Driver decomposition on computed line items</li>
-              <li>✓ Column collapse/expand functionality</li>
-              <li>✓ Delta mode (With/Without Actions)</li>
-              <li>✓ AI-powered insights generation</li>
-              <li>✓ Export to Report with professional formatting</li>
-            </ul>
-            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '24px' }}>
-              The original version has been backed up. Full implementation coming soon.
-            </p>
+          {/* Title and Controls */}
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#fff', margin: 0, display: 'flex', alignItems: 'center' }}>
+                <FileText style={{ width: '24px', height: '24px', marginRight: '10px', color: '#06b6d4' }} />
+                Financial Statements
+              </h2>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={generateAiInsights}
+                  disabled={aiLoading || selectedScenarios.size === 0 || selectedEntities.size === 0}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                    border: '1px solid #8b5cf6',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    cursor: aiLoading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: (aiLoading || selectedScenarios.size === 0 || selectedEntities.size === 0) ? 0.5 : 1
+                  }}
+                >
+                  <Sparkles style={{ width: '16px', height: '16px' }} />
+                  {aiLoading ? 'Generating...' : 'Generate AI Insights'}
+                </button>
+                <button
+                  onClick={addToReport}
+                  disabled={selectedScenarios.size === 0 || selectedEntities.size === 0}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                    border: '1px solid #a855f7',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    cursor: selectedScenarios.size === 0 || selectedEntities.size === 0 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: (selectedScenarios.size === 0 || selectedEntities.size === 0) ? 0.5 : 1
+                  }}
+                >
+                  <FileText style={{ width: '16px', height: '16px' }} />
+                  Add to Report
+                </button>
+              </div>
+            </div>
+
+            {/* Control Panel */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '20px',
+              marginBottom: '20px'
+            }}>
+              {/* Scenario Selector */}
+              <div style={{
+                backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                padding: '16px',
+                borderRadius: '8px',
+                border: '1px solid rgba(100, 116, 139, 0.3)'
+              }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', marginBottom: '12px' }}>
+                  Scenarios
+                </h3>
+                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  {scenarios.map(scenario => (
+                    <div key={scenario.scenario_id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedScenarios.has(scenario.scenario_id)}
+                        onChange={() => handleScenarioToggle(scenario.scenario_id)}
+                        style={{ marginRight: '8px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{scenario.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Entity Selector */}
+              <div style={{
+                backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                padding: '16px',
+                borderRadius: '8px',
+                border: '1px solid rgba(100, 116, 139, 0.3)'
+              }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', marginBottom: '12px' }}>
+                  Entities
+                </h3>
+                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  {entities.map(entity => renderEntitySelector(entity))}
+                </div>
+              </div>
+
+              {/* Period Range & Options */}
+              <div style={{
+                backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                padding: '16px',
+                borderRadius: '8px',
+                border: '1px solid rgba(100, 116, 139, 0.3)'
+              }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', marginBottom: '12px' }}>
+                  Period Range
+                </h3>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>Start: {periodRange[0]}</span>
+                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>End: {periodRange[1]}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max={maxPeriod}
+                    value={periodRange[0]}
+                    onChange={(e) => setPeriodRange([parseInt(e.target.value), Math.max(parseInt(e.target.value), periodRange[1])])}
+                    style={{ width: '100%', marginBottom: '8px' }}
+                  />
+                  <input
+                    type="range"
+                    min="1"
+                    max={maxPeriod}
+                    value={periodRange[1]}
+                    onChange={(e) => setPeriodRange([periodRange[0], Math.max(periodRange[0], parseInt(e.target.value))])}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: '16px' }}>
+                  <input
+                    type="checkbox"
+                    checked={deltaMode}
+                    onChange={(e) => setDeltaMode(e.target.checked)}
+                    disabled={!lastRunMode?.whatIfMode}
+                    style={{ marginRight: '8px', cursor: lastRunMode?.whatIfMode ? 'pointer' : 'not-allowed' }}
+                  />
+                  <span style={{ fontSize: '13px', color: lastRunMode?.whatIfMode ? '#e2e8f0' : '#64748b' }}>
+                    Show With/Without Actions
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
+
+          {/* Financial Statements Table */}
+          {loading && (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+              Loading financial statements...
+            </div>
+          )}
+
+          {!loading && selectedScenarios.size === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+              Please select at least one scenario
+            </div>
+          )}
+
+          {!loading && selectedScenarios.size > 0 && selectedEntities.size === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+              Please select at least one entity
+            </div>
+          )}
+
+          {!loading && selectedScenarios.size > 0 && selectedEntities.size > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '12px'
+              }}>
+                {/* Column Headers */}
+                <thead>
+                  {/* Top header: With Actions / Without Actions */}
+                  {deltaMode && (
+                    <tr>
+                      <th style={{
+                        position: 'sticky',
+                        left: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                        padding: '12px 8px',
+                        borderBottom: '2px solid rgba(100, 116, 139, 0.3)',
+                        color: '#e2e8f0',
+                        fontWeight: '600',
+                        textAlign: 'left',
+                        zIndex: 20
+                      }}>
+                        Line Item
+                      </th>
+                      {[{ key: 'withActions', label: 'With Actions' }, { key: 'withoutActions', label: 'Without Actions' }].map(actionMode => {
+                        const totalCols = (periodRange[1] - periodRange[0] + 1) * selectedScenarios.size
+                        return (
+                          <th key={actionMode.key} colSpan={totalCols} style={{
+                            padding: '12px 8px',
+                            borderBottom: '2px solid rgba(100, 116, 139, 0.3)',
+                            backgroundColor: 'rgba(30, 41, 59, 0.5)',
+                            color: '#06b6d4',
+                            fontWeight: '700',
+                            textAlign: 'center'
+                          }}>
+                            {actionMode.label}
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  )}
+
+                  {/* Period headers */}
+                  <tr>
+                    <th style={{
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                      padding: '8px',
+                      borderBottom: '1px solid rgba(100, 116, 139, 0.3)',
+                      color: '#94a3b8',
+                      fontWeight: '500',
+                      textAlign: 'left',
+                      fontSize: '11px',
+                      zIndex: 20
+                    }}>
+                      {!deltaMode && 'Line Item'}
+                    </th>
+                    {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
+                      return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                        const period = periodRange[0] + periodIdx
+                        const scenarioCount = selectedScenarios.size
+                        return (
+                          <th key={`${actionMode.key}-period-${period}`} colSpan={scenarioCount} style={{
+                            padding: '8px',
+                            borderBottom: '1px solid rgba(100, 116, 139, 0.3)',
+                            backgroundColor: 'rgba(30, 41, 59, 0.4)',
+                            color: '#a5b4fc',
+                            fontWeight: '600',
+                            textAlign: 'center',
+                            fontSize: '11px'
+                          }}>
+                            Period {period}
+                          </th>
+                        )
+                      })
+                    })}
+                  </tr>
+
+                  {/* Scenario headers */}
+                  <tr>
+                    <th style={{
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                      padding: '8px',
+                      borderBottom: '2px solid rgba(100, 116, 139, 0.5)',
+                      zIndex: 20
+                    }}></th>
+                    {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
+                      return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                        const period = periodRange[0] + periodIdx
+                        return Array.from(selectedScenarios).map(scenarioId => {
+                          const scenario = scenarios.find(s => s.scenario_id === scenarioId)
+                          const colKey = `${actionMode.key}-${scenarioId}-${period}`
+                          const isCollapsed = collapsedColumns.has(colKey)
+                          return (
+                            <th
+                              key={colKey}
+                              data-cell
+                              style={{
+                                padding: '8px 4px',
+                                borderBottom: '2px solid rgba(100, 116, 139, 0.5)',
+                                backgroundColor: 'rgba(30, 41, 59, 0.3)',
+                                color: '#c4b5fd',
+                                fontWeight: '500',
+                                textAlign: 'center',
+                                fontSize: '10px',
+                                cursor: 'pointer',
+                                minWidth: isCollapsed ? '30px' : '80px'
+                              }}
+                              onClick={() => toggleColumnCollapsed(colKey)}
+                            >
+                              {isCollapsed ? (
+                                <ChevronRight style={{ width: '14px', height: '14px', margin: '0 auto' }} />
+                              ) : (
+                                scenario?.name || `S${scenarioId}`
+                              )}
+                            </th>
+                          )
+                        })
+                      })
+                    })}
+                  </tr>
+                </thead>
+
+                {/* Table Body: Entities → Sections → Line Items */}
+                <tbody>
+                  {getEntitiesWithParents(Array.from(selectedEntities)).map(entityId => {
+                    const entity = getEntityById(entityId)
+                    if (!entity) return null
+                    const isParent = isParentEntity(entityId)
+                    const isExpanded = expandedEntities.has(entityId)
+                    const hasData = resultData[entityId]
+
+                    // Get first available section data for this entity
+                    const firstScenarioId = Array.from(selectedScenarios)[0]
+                    const firstPeriod = periodRange[0]
+                    const sections = hasData?.[firstScenarioId]?.[firstPeriod]?.withActions || []
+
+                    return (
+                      <React.Fragment key={`entity-${entityId}`}>
+                        {/* Entity Header Row */}
+                        <tr style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)' }}>
+                          <td
+                            data-cell
+                            style={{
+                              position: 'sticky',
+                              left: 0,
+                              backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                              padding: '10px 8px',
+                              borderBottom: '1px solid rgba(100, 116, 139, 0.3)',
+                              color: '#fff',
+                              fontWeight: '700',
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                              zIndex: 10
+                            }}
+                            onClick={() => toggleEntityExpanded(entityId)}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                              {isExpanded ? (
+                                <ChevronDown style={{ width: '16px', height: '16px', marginRight: '6px' }} />
+                              ) : (
+                                <ChevronRight style={{ width: '16px', height: '16px', marginRight: '6px' }} />
+                              )}
+                              <Building2 style={{ width: '16px', height: '16px', marginRight: '8px', color: '#06b6d4' }} />
+                              {entity.name}
+                              {isParent && <span style={{ marginLeft: '8px', fontSize: '10px', color: '#94a3b8' }}>(rollup)</span>}
+                            </div>
+                          </td>
+                          {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
+                            return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                              const period = periodRange[0] + periodIdx
+                              return Array.from(selectedScenarios).map(scenarioId => {
+                                const colKey = `${actionMode.key}-${scenarioId}-${period}`
+                                const isCollapsed = collapsedColumns.has(colKey)
+                                if (isCollapsed) {
+                                  return <td key={colKey} data-cell style={{ padding: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '1px solid rgba(100, 116, 139, 0.3)' }}></td>
+                                }
+                                return <td key={colKey} data-cell style={{ padding: '4px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderBottom: '1px solid rgba(100, 116, 139, 0.3)' }}></td>
+                              })
+                            })
+                          })}
+                        </tr>
+
+                        {/* Sections and Line Items */}
+                        {isExpanded && sections.map(section => {
+                          const sectionKey = `${entityId}-${section.name}`
+                          const isSectionExpanded = expandedSections.has(sectionKey)
+
+                          return (
+                            <React.Fragment key={sectionKey}>
+                              {/* Section Header Row */}
+                              <tr style={{ backgroundColor: 'rgba(100, 116, 139, 0.1)' }}>
+                                <td
+                                  data-cell
+                                  style={{
+                                    position: 'sticky',
+                                    left: 0,
+                                    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+                                    padding: '8px 8px 8px 24px',
+                                    borderBottom: '1px solid rgba(100, 116, 139, 0.2)',
+                                    color: '#c4b5fd',
+                                    fontWeight: '600',
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                    zIndex: 10
+                                  }}
+                                  onClick={() => toggleSectionExpanded(entityId, section.name)}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    {isSectionExpanded ? (
+                                      <ChevronDown style={{ width: '14px', height: '14px', marginRight: '6px' }} />
+                                    ) : (
+                                      <ChevronRight style={{ width: '14px', height: '14px', marginRight: '6px' }} />
+                                    )}
+                                    {section.name}
+                                  </div>
+                                </td>
+                                {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
+                                  return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                                    const period = periodRange[0] + periodIdx
+                                    return Array.from(selectedScenarios).map(scenarioId => {
+                                      const colKey = `${actionMode.key}-${scenarioId}-${period}`
+                                      const isCollapsed = collapsedColumns.has(colKey)
+                                      if (isCollapsed) {
+                                        return <td key={colKey} data-cell style={{ padding: '4px', backgroundColor: 'rgba(100, 116, 139, 0.05)', borderBottom: '1px solid rgba(100, 116, 139, 0.2)' }}></td>
+                                      }
+                                      return <td key={colKey} data-cell style={{ padding: '4px', backgroundColor: 'rgba(100, 116, 139, 0.05)', borderBottom: '1px solid rgba(100, 116, 139, 0.2)' }}></td>
+                                    })
+                                  })
+                                })}
+                              </tr>
+
+                              {/* Line Item Rows */}
+                              {isSectionExpanded && section.items.map(lineItem => {
+                                const lineItemKey = `${entityId}-${lineItem.code}`
+                                const isLineItemExpanded = expandedLineItems.has(lineItemKey)
+
+                                return (
+                                  <React.Fragment key={lineItemKey}>
+                                    {/* Line Item Row */}
+                                    <tr style={{ backgroundColor: 'rgba(15, 23, 42, 0.3)' }}>
+                                      <td
+                                        data-cell
+                                        style={{
+                                          position: 'sticky',
+                                          left: 0,
+                                          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                                          padding: '6px 8px 6px 40px',
+                                          borderBottom: '1px solid rgba(100, 116, 139, 0.15)',
+                                          color: '#e2e8f0',
+                                          fontSize: '11px',
+                                          cursor: lineItem.is_computed ? 'pointer' : 'default',
+                                          zIndex: 10
+                                        }}
+                                        onClick={() => lineItem.is_computed && toggleLineItemExpanded(entityId, lineItem.code)}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                                          {lineItem.is_computed && (
+                                            isLineItemExpanded ? (
+                                              <ChevronDown style={{ width: '12px', height: '12px', marginRight: '6px' }} />
+                                            ) : (
+                                              <ChevronRight style={{ width: '12px', height: '12px', marginRight: '6px' }} />
+                                            )
+                                          )}
+                                          {lineItem.display_name}
+                                        </div>
+                                      </td>
+                                      {(deltaMode ? [{ key: 'withActions', withActions: true }, { key: 'withoutActions', withActions: false }] : [{ key: 'single', withActions: true }]).map(actionMode => {
+                                        return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                                          const period = periodRange[0] + periodIdx
+                                          return Array.from(selectedScenarios).map(scenarioId => {
+                                            const colKey = `${actionMode.key}-${scenarioId}-${period}`
+                                            const isCollapsed = collapsedColumns.has(colKey)
+                                            if (isCollapsed) {
+                                              return <td key={colKey} data-cell style={{ padding: '4px', borderBottom: '1px solid rgba(100, 116, 139, 0.15)' }}></td>
+                                            }
+
+                                            let value = 0
+                                            if (isParent) {
+                                              value = getRolledUpValue(entityId, scenarioId, period, lineItem.code, actionMode.withActions ?? true)
+                                            } else {
+                                              const data = resultData[entityId]?.[scenarioId]?.[period]
+                                              if (data) {
+                                                const sections = actionMode.withActions ? data.withActions : data.withoutActions
+                                                const foundSection = sections.find(s => s.name === section.name)
+                                                const foundItem = foundSection?.items.find(i => i.code === lineItem.code)
+                                                value = foundItem?.value || 0
+                                              }
+                                            }
+
+                                            return (
+                                              <td key={colKey} data-cell style={{
+                                                padding: '6px 8px',
+                                                borderBottom: '1px solid rgba(100, 116, 139, 0.15)',
+                                                textAlign: 'right',
+                                                color: '#e2e8f0',
+                                                fontFamily: 'monospace',
+                                                fontSize: '11px'
+                                              }}>
+                                                {formatValue(value)}
+                                              </td>
+                                            )
+                                          })
+                                        })
+                                      })}
+                                    </tr>
+
+                                    {/* Driver Decomposition Rows */}
+                                    {isLineItemExpanded && lineItem.is_computed && (
+                                      <>
+                                        {(() => {
+                                          const firstScenarioId = Array.from(selectedScenarios)[0]
+                                          const firstPeriod = periodRange[0]
+                                          const drivers = driverData[entityId]?.[firstScenarioId]?.[firstPeriod]?.[lineItem.code]?.withActions || []
+
+                                          return drivers.map(driver => (
+                                            <tr key={`${lineItemKey}-driver-${driver.driver_code}`} style={{ backgroundColor: 'rgba(139, 92, 246, 0.05)' }}>
+                                              <td
+                                                data-cell
+                                                style={{
+                                                  position: 'sticky',
+                                                  left: 0,
+                                                  backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                                  padding: '4px 8px 4px 56px',
+                                                  borderBottom: '1px solid rgba(100, 116, 139, 0.1)',
+                                                  color: '#c4b5fd',
+                                                  fontSize: '10px',
+                                                  fontStyle: 'italic',
+                                                  zIndex: 10
+                                                }}
+                                              >
+                                                {driver.driver_name}
+                                              </td>
+                                              {(deltaMode ? [{ key: 'withActions', withActions: true }, { key: 'withoutActions', withActions: false }] : [{ key: 'single', withActions: true }]).map(actionMode => {
+                                                return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                                                  const period = periodRange[0] + periodIdx
+                                                  return Array.from(selectedScenarios).map(scenarioId => {
+                                                    const colKey = `${actionMode.key}-${scenarioId}-${period}`
+                                                    const isCollapsed = collapsedColumns.has(colKey)
+                                                    if (isCollapsed) {
+                                                      return <td key={colKey} data-cell style={{ padding: '4px', borderBottom: '1px solid rgba(100, 116, 139, 0.1)' }}></td>
+                                                    }
+
+                                                    const driverValue = driverData[entityId]?.[scenarioId]?.[period]?.[lineItem.code]
+                                                    const drivers = actionMode.withActions ? driverValue?.withActions : driverValue?.withoutActions
+                                                    const foundDriver = drivers?.find(d => d.driver_code === driver.driver_code)
+                                                    const value = foundDriver?.value || 0
+
+                                                    return (
+                                                      <td key={colKey} data-cell style={{
+                                                        padding: '4px 8px',
+                                                        borderBottom: '1px solid rgba(100, 116, 139, 0.1)',
+                                                        textAlign: 'right',
+                                                        color: '#c4b5fd',
+                                                        fontFamily: 'monospace',
+                                                        fontSize: '10px'
+                                                      }}>
+                                                        {formatValue(value)}
+                                                      </td>
+                                                    )
+                                                  })
+                                                })
+                                              })}
+                                            </tr>
+                                          ))
+                                        })()}
+                                      </>
+                                    )}
+                                  </React.Fragment>
+                                )
+                              })}
+                            </React.Fragment>
+                          )
+                        })}
+                      </React.Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* AI Insights Panel */}
+      {aiInsights && (
+        <Card style={{
+          backgroundColor: 'rgba(139, 92, 246, 0.1)',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+          marginTop: '32px'
+        }}>
+          <CardContent style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <Sparkles style={{ width: '20px', height: '20px', marginRight: '12px', color: '#8b5cf6', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#c4b5fd', marginBottom: '8px' }}>
+                  AI Insights
+                </h3>
+                <p style={{ fontSize: '13px', color: '#e9d5ff', lineHeight: '1.6', margin: 0 }}>
+                  {aiInsights}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
