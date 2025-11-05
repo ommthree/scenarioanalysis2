@@ -663,6 +663,80 @@ Archived Background (docs/archive/):
     - Driver decomposition sub-rows
     - Professional styling and formatting
 
-**Last Reviewed:** 2025-11-05
+**2025-11-06 (Session 27 - Financial Statements Screen Complete):**
+- **Full Financial Statements Implementation** (FinancialStatementsPanel.tsx - 1585 lines):
+  - **Multi-Scenario/Multi-Entity Selection**:
+    - Toggle switches for scenario selection (up to N scenarios)
+    - Hierarchical tree selector for entities with expand/collapse
+    - Period range slider (start period to end period)
+    - Automatic parent entity selection when child selected
+  - **Column Structure** (Scenario-first ordering):
+    - Headers: "Scenario 1", "Scenario 2", etc. (indexed from selection order)
+    - Sub-headers: Period columns grouped by scenario
+    - Column collapse functionality: Click period header to minimize column
+  - **Table Organization** (3-level hierarchy):
+    - **Level 1 - Entity Rows**: Expand/collapse with chevrons, Building2 icon, cyan accent
+    - **Level 2 - Section Rows**: Statement sections (Revenue, Expenses, etc.) with purple theme
+    - **Level 3 - Line Item Rows**: Individual line items with driver decomposition drill-down
+  - **Driver Decomposition** (lazy-loaded):
+    - Click chevron on computed line item to expand driver contributions
+    - API: GET `/api/results/driver-decomposition` (requires lineItemCode, period, entity, scenario)
+    - Separate fetches for "With Actions" vs "Without Actions" in delta mode
+    - Purple-themed italic driver rows with formula breakdown
+    - Shows marginal impact of each driver on line item value
+  - **What-If Mode Integration**:
+    - Action selector UI with toggle switches (similar to Risk Dashboard)
+    - Multiple actions can be selected: combinations like "ACTION1+ACTION2"
+    - `buildWhatIfCombination()` generates action string (e.g., "BASE", "ACTION1+ACTION2")
+    - Delta mode toggle: Compare selected actions vs BASE
+    - API calls with `whatIfCombination` query parameter
+  - **Delta Mode** (With/Without Actions Comparison):
+    - Two column sets: "Without Actions" (BASE), then "With Actions" (selected combination)
+    - Reversed column order for intuitive left-to-right comparison
+    - Driver decomposition fetches both combinations in parallel
+    - Action selectors always visible in what-if mode (not hidden when delta toggled)
+  - **Add to Report Functionality**:
+    - Captures table only (excludes control panel toggles/selectors)
+    - Black-on-white print-friendly styling (#ffffff background, #f8f9fa headers, #1e293b text)
+    - Hides chevron icons and buttons during capture
+    - Separate tableRef for isolated table capture
+    - Caption format: "Financial Statements: Scenario 1, Scenario 2 | Entity Name | Periods X-Y | With/Without Actions"
+    - AI insights included as editable text block in report
+    - Success alert: "✓ Financial Statements added to Report!"
+  - **AI Insights Panel** (bottom):
+    - Purple-themed Sparkles icon
+    - "Generate Insights" button with loading spinner
+    - Claude API analysis of financial position, trends, and strategic insights
+    - 3-4 sentence executive summary
+    - Contextual prompt with scenario/entity/period/mode details
+  - **Column Ordering Fix**:
+    - Changed from Period→Scenario nested loops to Scenario→Period
+    - Applied to: Period headers (line 1078-1107), data cells (line 1186+), driver rows (line 1422-1450)
+    - Ensures consistent visual grouping of periods under each scenario
+  - **Driver Data Loading Pattern**:
+    - On-demand lazy loading when line item expanded (not bulk prefetch)
+    - `loadDriverDecomposition()` called per entity/scenario/period/lineItem
+    - Three modes: delta + what-if (with vs BASE), what-if only (selected combo), normal (no what-if)
+    - Success checks before storing data to avoid null/undefined errors
+  - **State Management**:
+    - `resultData: ResultData` - Nested map [entityId][scenarioId][period]{withActions, withoutActions}
+    - `driverData: DriverData` - Nested map [entityId][scenarioId][period][lineItemCode]{withActions, withoutActions}
+    - `selectedActions: Set<string>` - Currently selected management action codes
+    - `expandedEntities`, `expandedSections`, `expandedLineItems`, `collapsedColumns` - UI expansion state
+  - **Technical Implementation**:
+    - TypeScript interfaces: LineItem, DriverContribution, Section, Entity, Scenario, ManagementAction
+    - Dynamic grid layout: 3 columns in normal mode, flexible width (`1fr`) for action panel in what-if mode
+    - Sticky positioning: First column (line item names) remains visible during horizontal scroll
+    - Value formatting: `toLocaleString()` with 0-2 decimal places
+    - Error logging with `logger.debug/error` (not `logger.log` which doesn't exist)
+  - **Key Fixes Applied**:
+    - Fixed parent entity zero values: Removed rollup logic, all entities use actual data from `resultData`
+    - Fixed driver drill-down in delta mode: Use `buildWhatIfCombination(selectedActions)` not hardcoded strings
+    - Fixed 404 errors: Removed bulk `/api/results/drivers` calls (non-existent endpoint)
+    - Fixed logger error: Changed `logger.log` to `logger.debug`
+    - Fixed caption: Use "Scenario 1", "Scenario 2" indexed labels instead of scenario names/IDs
+  - **Status**: ✅ Fully functional with multi-scenario comparison, what-if analysis, driver drill-down, and report export
+
+**Last Reviewed:** 2025-11-06
 **Maintainer:** Development Team
 **Next Review:** After major feature additions

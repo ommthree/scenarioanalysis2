@@ -10,6 +10,7 @@ interface LineItem {
   display_name: string
   section: string
   is_computed: boolean
+  has_drivers?: boolean
   sign_convention?: string
   value: number
 }
@@ -41,6 +42,12 @@ interface Scenario {
   num_periods: number
 }
 
+interface ManagementAction {
+  action_code: string
+  name: string
+  description?: string
+}
+
 interface ResultData {
   [entityId: number]: {
     [scenarioId: number]: {
@@ -67,15 +74,19 @@ interface DriverData {
 
 export default function FinancialStatementsPanel() {
   const statementRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLDivElement>(null)
 
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [selectedScenarios, setSelectedScenarios] = useState<Set<number>>(new Set())
   const [entities, setEntities] = useState<Entity[]>([])
   const [selectedEntities, setSelectedEntities] = useState<Set<number>>(new Set())
-  const [periodRange, setPeriodRange] = useState<[number, number]>([1, 1])
-  const [maxPeriod, setMaxPeriod] = useState(1)
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set())
+  const [periodRange, setPeriodRange] = useState<[number, number]>([0, 0])
+  const [maxPeriod, setMaxPeriod] = useState(0)
   const [deltaMode, setDeltaMode] = useState(false)
   const [lastRunMode, setLastRunMode] = useState<{ whatIfMode: boolean } | null>(null)
+  const [managementActions, setManagementActions] = useState<ManagementAction[]>([])
+  const [selectedActions, setSelectedActions] = useState<Set<string>>(new Set())
   const [expandedEntities, setExpandedEntities] = useState<Set<number>>(new Set())
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set())
@@ -99,10 +110,16 @@ export default function FinancialStatementsPanel() {
   }, [selectedScenarios])
 
   useEffect(() => {
+    if (lastRunMode?.whatIfMode) {
+      loadManagementActions()
+    }
+  }, [lastRunMode])
+
+  useEffect(() => {
     if (selectedScenarios.size > 0 && selectedEntities.size > 0) {
       loadAllResults()
     }
-  }, [selectedScenarios, selectedEntities, periodRange, deltaMode])
+  }, [selectedScenarios, selectedEntities, periodRange, deltaMode, selectedActions])
 
   const checkLastRunMode = () => {
     const saved = localStorage.getItem('lastRunMode')
@@ -110,7 +127,9 @@ export default function FinancialStatementsPanel() {
       try {
         const parsed = JSON.parse(saved)
         setLastRunMode(parsed)
-        setDeltaMode(parsed.whatIfMode === true)
+        // Don't auto-enable delta mode - let user toggle it
+        // setDeltaMode(parsed.whatIfMode === true)
+        logger.debug('Last run mode:', parsed)
       } catch (e) {
         logger.error('Failed to parse lastRunMode', e)
       }
@@ -139,8 +158,15 @@ export default function FinancialStatementsPanel() {
       if (!response.ok) throw new Error('Failed to load entities')
       const data = await response.json()
       const entityMap = new Map<number, Entity>()
-      data.forEach((e: Entity) => {
-        entityMap.set(e.entity_id, { ...e, children: [] })
+      data.forEach((e: any) => {
+        entityMap.set(e.entity_id, {
+          entity_id: e.entity_id,
+          code: e.entity_code,
+          name: e.entity_name,
+          granularity_level: e.level,
+          parent_entity_id: e.parent_id,
+          children: []
+        })
       })
       const rootEntities: Entity[] = []
       entityMap.forEach((entity) => {
@@ -154,9 +180,11 @@ export default function FinancialStatementsPanel() {
         }
       })
       setEntities(rootEntities)
-      if (rootEntities.length > 0 && rootEntities[0].children && rootEntities[0].children.length > 0) {
-        setSelectedEntities(new Set([rootEntities[0].children[0].entity_id]))
-      }
+      logger.debug('Loaded entities:', rootEntities)
+      // Auto-select all parent (root) entities by default
+      const parentEntityIds = rootEntities.map(e => e.entity_id)
+      setSelectedEntities(new Set(parentEntityIds))
+      logger.debug('Auto-selected parent entities:', parentEntityIds)
     } catch (error) {
       logger.error('Error loading entities:', error)
     }
@@ -164,15 +192,45 @@ export default function FinancialStatementsPanel() {
 
   const loadMaxPeriod = async () => {
     try {
+      const dbPath = getDefaultDbPath()
       const firstScenarioId = Array.from(selectedScenarios)[0]
-      const scenario = scenarios.find(s => s.scenario_id === firstScenarioId)
-      if (scenario) {
-        setMaxPeriod(scenario.num_periods)
-        setPeriodRange([1, Math.min(5, scenario.num_periods)])
-      }
+      // Query actual max period from database
+      const response = await fetch(apiUrl(`/api/results/max-period?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${firstScenarioId}`))
+      if (!response.ok) throw new Error('Failed to load max period')
+      const data = await response.json()
+      const maxPeriodValue = data.maxPeriod || 5
+      setMaxPeriod(maxPeriodValue)
+      setPeriodRange([0, maxPeriodValue])
     } catch (error) {
       logger.error('Error loading max period:', error)
+      // Fallback to reasonable default
+      setMaxPeriod(5)
+      setPeriodRange([0, 5])
     }
+  }
+
+  const loadManagementActions = async () => {
+    try {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(`${apiUrl('/api/management-actions')}?dbPath=${encodeURIComponent(dbPath)}`)
+      const actions = await response.json()
+      const formattedActions = actions.map((action: any) => ({
+        action_code: action.action_code,
+        name: action.action_name,
+        description: action.description
+      }))
+      setManagementActions(formattedActions)
+    } catch (error) {
+      logger.error('Failed to load management actions:', error)
+    }
+  }
+
+  const buildWhatIfCombination = (selectedActions: Set<string>): string => {
+    if (selectedActions.size === 0) {
+      return 'BASE'
+    }
+    const sortedActions = Array.from(selectedActions).sort()
+    return sortedActions.join('+')
   }
 
   const loadAllResults = async () => {
@@ -181,9 +239,10 @@ export default function FinancialStatementsPanel() {
       const dbPath = getDefaultDbPath()
       const newResultData: ResultData = {}
       const newDriverData: DriverData = {}
-      const allEntitiesNeeded = getEntitiesWithParents(Array.from(selectedEntities))
-      
-      for (const entityId of allEntitiesNeeded) {
+      if (selectedEntities.size === 0) return
+
+      // Load data for all selected entities
+      for (const entityId of selectedEntities) {
         newResultData[entityId] = {}
         newDriverData[entityId] = {}
         for (const scenarioId of selectedScenarios) {
@@ -191,8 +250,11 @@ export default function FinancialStatementsPanel() {
           newDriverData[entityId][scenarioId] = {}
           for (let period = periodRange[0]; period <= periodRange[1]; period++) {
             if (deltaMode && lastRunMode?.whatIfMode) {
-              const urlWithActions = apiUrl(`/api/results/financial-statements?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&includeActions=true`)
-              const urlWithoutActions = apiUrl(`/api/results/financial-statements?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&includeActions=false`)
+              // Delta mode: compare selected actions vs BASE
+              const combinationWith = buildWhatIfCombination(selectedActions)
+              const combinationWithout = 'BASE'
+              const urlWithActions = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&whatIfCombination=${encodeURIComponent(combinationWith)}`)
+              const urlWithoutActions = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&whatIfCombination=${encodeURIComponent(combinationWithout)}`)
               const [resWithActions, resWithoutActions] = await Promise.all([
                 fetch(urlWithActions),
                 fetch(urlWithoutActions)
@@ -206,8 +268,12 @@ export default function FinancialStatementsPanel() {
                 withActions: organizeSections(dataWithActions.lineItems || []),
                 withoutActions: organizeSections(dataWithoutActions.lineItems || [])
               }
-            } else {
-              const url = apiUrl(`/api/results/financial-statements?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}`)
+              // Driver data loaded on-demand when line items are expanded
+              newDriverData[entityId][scenarioId][period] = {}
+            } else if (lastRunMode?.whatIfMode) {
+              // What-if mode without delta: fetch selected action combination only
+              const combination = buildWhatIfCombination(selectedActions)
+              const url = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&whatIfCombination=${encodeURIComponent(combination)}`)
               const res = await fetch(url)
               if (!res.ok) throw new Error('Failed to fetch financial statements')
               const data = await res.json()
@@ -216,13 +282,28 @@ export default function FinancialStatementsPanel() {
                 withActions: sections,
                 withoutActions: sections
               }
+              // Driver data loaded on-demand when line items are expanded
+              newDriverData[entityId][scenarioId][period] = {}
+            } else {
+              // Normal mode: no what-if
+              const url = apiUrl(`/api/results/statement?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}`)
+              const res = await fetch(url)
+              if (!res.ok) throw new Error('Failed to fetch financial statements')
+              const data = await res.json()
+              const sections = organizeSections(data.lineItems || [])
+              newResultData[entityId][scenarioId][period] = {
+                withActions: sections,
+                withoutActions: sections
+              }
+              // Driver data loaded on-demand when line items are expanded
+              newDriverData[entityId][scenarioId][period] = {}
             }
-            newDriverData[entityId][scenarioId][period] = {}
           }
         }
       }
       setResultData(newResultData)
       setDriverData(newDriverData)
+      logger.debug('Loaded result data:', newResultData)
     } catch (error) {
       logger.error('Error loading results:', error)
     } finally {
@@ -231,14 +312,25 @@ export default function FinancialStatementsPanel() {
   }
 
   const organizeSections = (lineItems: LineItem[]): Section[] => {
-    const sectionMap = new Map<string, LineItem[]>()
+    const sectionMap = new Map<string, Map<string, LineItem>>()
+
+    // Group by section and deduplicate by code (keep last occurrence)
     lineItems.forEach(item => {
       if (!sectionMap.has(item.section)) {
-        sectionMap.set(item.section, [])
+        sectionMap.set(item.section, new Map())
       }
-      sectionMap.get(item.section)!.push(item)
+      // Keep the last occurrence of each line item code (overwrite previous)
+      const sectionItems = sectionMap.get(item.section)!
+      sectionItems.set(item.code, item)
     })
-    return Array.from(sectionMap.entries()).map(([name, items]) => ({ name, items }))
+
+    // Convert to Section array
+    const sections = Array.from(sectionMap.entries()).map(([name, itemsMap]) => ({
+      name,
+      items: Array.from(itemsMap.values())
+    }))
+    logger.debug('Organized sections:', sections)
+    return sections
   }
 
   const getEntitiesWithParents = (entityIds: number[]): number[] => {
@@ -276,7 +368,19 @@ export default function FinancialStatementsPanel() {
   }
 
   const isParentEntity = (entityId: number): boolean => {
-    return !selectedEntities.has(entityId) && getEntitiesWithParents(Array.from(selectedEntities)).includes(entityId)
+    const entity = getEntityById(entityId)
+    return entity !== null && entity.children !== undefined && entity.children.length > 0
+  }
+
+  const hasDrivers = (entityId: number, lineItemCode: string): boolean => {
+    const firstScenarioId = Array.from(selectedScenarios)[0]
+    if (!firstScenarioId) return false
+    // Check if any period has drivers for this line item
+    for (let p = periodRange[0]; p <= periodRange[1]; p++) {
+      const drivers = driverData[entityId]?.[firstScenarioId]?.[p]?.[lineItemCode]?.withActions || []
+      if (drivers.length > 0) return true
+    }
+    return false
   }
 
   const getRolledUpValue = (entityId: number, scenarioId: number, period: number, lineItemCode: string, withActions: boolean): number => {
@@ -301,50 +405,93 @@ export default function FinancialStatementsPanel() {
     try {
       const dbPath = getDefaultDbPath()
       if (deltaMode && lastRunMode?.whatIfMode) {
-        const urlWithActions = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&lineItemCode=${lineItemCode}&includeActions=true`)
-        const urlWithoutActions = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&lineItemCode=${lineItemCode}&includeActions=false`)
+        // Delta mode: compare selected actions vs BASE
+        const combinationWith = buildWhatIfCombination(selectedActions)
+        const combinationWithout = 'BASE'
+        const urlWithActions = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&lineItemCode=${lineItemCode}&whatIfCombination=${encodeURIComponent(combinationWith)}`)
+        const urlWithoutActions = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&lineItemCode=${lineItemCode}&whatIfCombination=${encodeURIComponent(combinationWithout)}`)
         const [resWithActions, resWithoutActions] = await Promise.all([fetch(urlWithActions), fetch(urlWithoutActions)])
-        if (!resWithActions.ok || !resWithoutActions.ok) throw new Error('Failed to fetch driver decomposition')
+        if (!resWithActions.ok || !resWithoutActions.ok) {
+          logger.error(`Failed to fetch driver decomposition: withActions=${resWithActions.status}, withoutActions=${resWithoutActions.status}`)
+          return
+        }
         const dataWithActions = await resWithActions.json()
         const dataWithoutActions = await resWithoutActions.json()
-        setDriverData(prev => ({
-          ...prev,
-          [entityId]: {
-            ...prev[entityId],
-            [scenarioId]: {
-              ...prev[entityId]?.[scenarioId],
-              [period]: {
-                ...prev[entityId]?.[scenarioId]?.[period],
-                [lineItemCode]: {
-                  withActions: dataWithActions.drivers || [],
-                  withoutActions: dataWithoutActions.drivers || []
+        if (dataWithActions.success && dataWithoutActions.success) {
+          setDriverData(prev => ({
+            ...prev,
+            [entityId]: {
+              ...prev[entityId],
+              [scenarioId]: {
+                ...prev[entityId]?.[scenarioId],
+                [period]: {
+                  ...prev[entityId]?.[scenarioId]?.[period],
+                  [lineItemCode]: {
+                    withActions: dataWithActions.drivers || [],
+                    withoutActions: dataWithoutActions.drivers || []
+                  }
                 }
               }
             }
-          }
-        }))
+          }))
+        }
+      } else if (lastRunMode?.whatIfMode) {
+        // What-if mode without delta: use selected action combination
+        const combination = buildWhatIfCombination(selectedActions)
+        const url = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&lineItemCode=${lineItemCode}&whatIfCombination=${encodeURIComponent(combination)}`)
+        const res = await fetch(url)
+        if (!res.ok) {
+          logger.error(`Failed to fetch driver decomposition: ${res.status}`)
+          return
+        }
+        const data = await res.json()
+        if (data.success) {
+          const drivers = data.drivers || []
+          setDriverData(prev => ({
+            ...prev,
+            [entityId]: {
+              ...prev[entityId],
+              [scenarioId]: {
+                ...prev[entityId]?.[scenarioId],
+                [period]: {
+                  ...prev[entityId]?.[scenarioId]?.[period],
+                  [lineItemCode]: {
+                    withActions: drivers,
+                    withoutActions: drivers
+                  }
+                }
+              }
+            }
+          }))
+        }
       } else {
+        // Normal mode: no what-if
         const url = apiUrl(`/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${scenarioId}&period=${period}&entityId=${entityId}&lineItemCode=${lineItemCode}`)
         const res = await fetch(url)
-        if (!res.ok) throw new Error('Failed to fetch driver decomposition')
+        if (!res.ok) {
+          logger.error(`Failed to fetch driver decomposition: ${res.status}`)
+          return
+        }
         const data = await res.json()
-        const drivers = data.drivers || []
-        setDriverData(prev => ({
-          ...prev,
-          [entityId]: {
-            ...prev[entityId],
-            [scenarioId]: {
-              ...prev[entityId]?.[scenarioId],
-              [period]: {
-                ...prev[entityId]?.[scenarioId]?.[period],
-                [lineItemCode]: {
-                  withActions: drivers,
-                  withoutActions: drivers
+        if (data.success) {
+          const drivers = data.drivers || []
+          setDriverData(prev => ({
+            ...prev,
+            [entityId]: {
+              ...prev[entityId],
+              [scenarioId]: {
+                ...prev[entityId]?.[scenarioId],
+                [period]: {
+                  ...prev[entityId]?.[scenarioId]?.[period],
+                  [lineItemCode]: {
+                    withActions: drivers,
+                    withoutActions: drivers
+                  }
                 }
               }
             }
-          }
-        }))
+          }))
+        }
       }
     } catch (error) {
       logger.error('Error loading driver decomposition:', error)
@@ -409,6 +556,7 @@ export default function FinancialStatementsPanel() {
       const entityNames = Array.from(selectedEntities).map(id =>
         getEntityById(id)?.name || `Entity ${id}`
       ).join(', ')
+      const entityName = entityNames
       const periodText = periodRange[0] === periodRange[1]
         ? `period ${periodRange[0]}`
         : `periods ${periodRange[0]} to ${periodRange[1]}`
@@ -416,7 +564,7 @@ export default function FinancialStatementsPanel() {
       const prompt = `You are a financial analyst reviewing financial statements. Provide a concise analytical summary (3-4 sentences) of the financial statements for:
 
 Scenarios: ${scenarioNames}
-Entities: ${entityNames}
+Entity: ${entityName}
 Time Period: ${periodText}
 Display Mode: ${modeText}
 
@@ -445,78 +593,126 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
   }
 
   const addToReport = async () => {
-    if (!statementRef.current) return
+    if (!tableRef.current) return
     try {
-      const element = statementRef.current
+      const element = tableRef.current
+
+      // Store original styles for all elements we'll modify
+      const table = element.querySelector('table') as HTMLElement
+      const headers = element.querySelectorAll('th') as NodeListOf<HTMLElement>
+      const cells = element.querySelectorAll('td') as NodeListOf<HTMLElement>
+      const chevrons = element.querySelectorAll('svg') as NodeListOf<SVGElement>
+
       const originalStyles = {
-        backgroundColor: element.style.backgroundColor,
-        color: element.style.color,
-        padding: element.style.padding
+        elementBg: element.style.backgroundColor,
+        elementPadding: element.style.padding,
+        tableBorder: table?.style.border || '',
+        headers: Array.from(headers).map(h => ({ bg: h.style.backgroundColor, color: h.style.color, border: h.style.border })),
+        cells: Array.from(cells).map(c => ({ bg: c.style.backgroundColor, color: c.style.color, border: c.style.border })),
+        chevrons: Array.from(chevrons).map(c => c.style.display)
       }
+
+      // Apply black-on-white theme
       element.style.backgroundColor = '#ffffff'
-      element.style.color = '#000000'
-      element.style.padding = '40px'
-      const buttons = element.querySelectorAll('button')
-      const originalButtonDisplay: string[] = []
-      buttons.forEach((btn, i) => {
-        originalButtonDisplay[i] = (btn as HTMLElement).style.display
-        ;(btn as HTMLElement).style.display = 'none'
+      element.style.padding = '24px'
+
+      if (table) {
+        table.style.border = '1px solid #333333'
+      }
+
+      // Style headers - dark background with white text
+      headers.forEach(header => {
+        header.style.backgroundColor = '#f8f9fa'
+        header.style.color = '#1e293b'
+        header.style.border = '1px solid #333333'
       })
-      const cells = element.querySelectorAll('[data-cell]')
+
+      // Style data cells - white background with dark text
       cells.forEach(cell => {
-        const el = cell as HTMLElement
-        el.style.border = '1px solid #333'
-        el.style.backgroundColor = '#fff'
-        el.style.color = '#000'
+        cell.style.backgroundColor = '#ffffff'
+        cell.style.color = '#1e293b'
+        cell.style.border = '1px solid #333333'
       })
+
+      // Hide all chevron icons (they don't print well)
+      chevrons.forEach(chevron => {
+        chevron.style.display = 'none'
+      })
+
+      // Wait for style changes to take effect
       await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Capture the table
       const dataUrl = await domtoimage.toPng(element, {
         quality: 0.95,
-        bgcolor: '#ffffff'
+        bgcolor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left' }
       })
-      element.style.backgroundColor = originalStyles.backgroundColor
-      element.style.color = originalStyles.color
-      element.style.padding = originalStyles.padding
-      buttons.forEach((btn, i) => {
-        ;(btn as HTMLElement).style.display = originalButtonDisplay[i]
+
+      // Restore original styles
+      element.style.backgroundColor = originalStyles.elementBg
+      element.style.padding = originalStyles.elementPadding
+
+      if (table) {
+        table.style.border = originalStyles.tableBorder
+      }
+
+      headers.forEach((header, i) => {
+        header.style.backgroundColor = originalStyles.headers[i].bg
+        header.style.color = originalStyles.headers[i].color
+        header.style.border = originalStyles.headers[i].border
       })
-      cells.forEach(cell => {
-        const el = cell as HTMLElement
-        el.style.border = ''
-        el.style.backgroundColor = ''
-        el.style.color = ''
+
+      cells.forEach((cell, i) => {
+        cell.style.backgroundColor = originalStyles.cells[i].bg
+        cell.style.color = originalStyles.cells[i].color
+        cell.style.border = originalStyles.cells[i].border
       })
-      const scenarioNames = Array.from(selectedScenarios).map(id =>
-        scenarios.find(s => s.scenario_id === id)?.name || `Scenario ${id}`
+
+      chevrons.forEach((chevron, i) => {
+        chevron.style.display = originalStyles.chevrons[i]
+      })
+
+      // Build caption
+      const scenarioNames = Array.from(selectedScenarios).map((id, idx) =>
+        `Scenario ${idx + 1}`
       ).join(', ')
-      const entityNames = Array.from(selectedEntities).map(id =>
+      const entityName = Array.from(selectedEntities).map(id =>
         getEntityById(id)?.name || `Entity ${id}`
       ).join(', ')
       const periodText = periodRange[0] === periodRange[1]
         ? `Period ${periodRange[0]}`
         : `Periods ${periodRange[0]}-${periodRange[1]}`
-      const caption = `Financial Statements: ${scenarioNames} | ${entityNames} | ${periodText}${deltaMode ? ' | With/Without Actions' : ''}`
-      const snippets = JSON.parse(localStorage.getItem('reportSnippets') || '[]')
-      snippets.push({
-        id: Date.now(),
-        type: 'visualization',
-        source: 'financial-statements',
+      const caption = `Financial Statements: ${scenarioNames} | ${entityName} | ${periodText}${deltaMode ? ' | With/Without Actions' : ''}`
+
+      // Save snippet
+      const snippet = {
+        id: `financial-statements-${Date.now()}`,
+        type: 'visualization' as const,
+        source: 'financial-statements' as const,
         imageData: dataUrl,
-        caption: caption,
-        aiText: aiInsights || '',
-        timestamp: new Date().toISOString()
-      })
+        caption,
+        aiText: aiInsights || undefined,
+        timestamp: Date.now()
+      }
+
+      const existing = localStorage.getItem('reportSnippets')
+      const snippets = existing ? JSON.parse(existing) : []
+      snippets.push(snippet)
       localStorage.setItem('reportSnippets', JSON.stringify(snippets))
-      logger.log('Added financial statements to report')
+
+      logger.debug('Added financial statements to report')
+
+      // Show success message
+      alert('✓ Financial Statements added to Report!\n\nGo to the Report page to view and edit your capture.')
     } catch (error) {
       logger.error('Error adding to report:', error)
+      alert('Failed to add to report. Please try again.')
     }
   }
 
   const formatValue = (value: number): string => {
-    if (Math.abs(value) < 1000) return value.toFixed(0)
-    if (Math.abs(value) < 1000000) return (value / 1000).toFixed(1) + 'K'
-    return (value / 1000000).toFixed(1) + 'M'
+    return value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
   }
 
   const handleScenarioToggle = (scenarioId: number) => {
@@ -531,40 +727,84 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
   const handleEntityToggle = (entityId: number) => {
     setSelectedEntities(prev => {
       const newSet = new Set(prev)
-      if (newSet.has(entityId)) newSet.delete(entityId)
-      else newSet.add(entityId)
+      if (newSet.has(entityId)) {
+        newSet.delete(entityId)
+      } else {
+        newSet.add(entityId)
+        // Auto-select parent entities when child is selected
+        const entity = getEntityById(entityId)
+        if (entity && entity.parent_entity_id) {
+          let parentId = entity.parent_entity_id
+          while (parentId) {
+            newSet.add(parentId)
+            const parent = getEntityById(parentId)
+            parentId = parent?.parent_entity_id || null
+          }
+        }
+      }
       return newSet
     })
   }
 
-  const renderEntitySelector = (entity: Entity, depth: number = 0): JSX.Element[] => {
-    const result: JSX.Element[] = []
-    result.push(
-      <div key={entity.entity_id} style={{
-        marginLeft: `${depth * 20}px`,
-        marginBottom: '8px',
-        display: 'flex',
-        alignItems: 'center'
-      }}>
-        <input
-          type="checkbox"
-          checked={selectedEntities.has(entity.entity_id)}
-          onChange={() => handleEntityToggle(entity.entity_id)}
-          style={{ marginRight: '8px', cursor: 'pointer' }}
-        />
-        <Building2 style={{ width: '14px', height: '14px', marginRight: '6px', color: '#06b6d4' }} />
-        <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{entity.name}</span>
-      </div>
-    )
-    if (entity.children) {
-      entity.children.forEach(child => {
-        result.push(...renderEntitySelector(child, depth + 1))
-      })
-    }
-    return result
+  const toggleNode = (nodeId: number) => {
+    setExpandedNodes(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(nodeId)) newSet.delete(nodeId)
+      else newSet.add(nodeId)
+      return newSet
+    })
   }
 
-  logger.log('FinancialStatementsPanel rendered')
+  const renderEntityTree = (entities: Entity[], level = 0): React.ReactElement => {
+    return (
+      <div style={{ marginLeft: level > 0 ? '24px' : '0px' }}>
+        {entities.map((entity) => {
+          const hasChildren = entity.children && entity.children.length > 0
+          const isExpanded = expandedNodes.has(entity.entity_id)
+          const isSelected = selectedEntities.has(entity.entity_id)
+
+          return (
+            <div key={entity.entity_id}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '8px 10px',
+                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+                  border: `1px solid ${isSelected ? 'rgba(59, 130, 246, 0.5)' : 'rgba(59, 130, 246, 0.2)'}`,
+                  borderRadius: '4px',
+                  marginBottom: '4px',
+                  cursor: 'pointer'
+                }}
+                onClick={() => handleEntityToggle(entity.entity_id)}
+              >
+                {hasChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleNode(entity.entity_id)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: '6px', padding: 0 }}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown style={{ width: '14px', height: '14px', color: '#94a3b8' }} />
+                    ) : (
+                      <ChevronRight style={{ width: '14px', height: '14px', color: '#94a3b8' }} />
+                    )}
+                  </button>
+                )}
+                <Building2 style={{ width: '14px', height: '14px', marginRight: '8px', color: '#06b6d4', marginLeft: hasChildren ? 0 : '20px' }} />
+                <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{entity.name}</span>
+              </div>
+              {hasChildren && isExpanded && renderEntityTree(entity.children, level + 1)}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  logger.debug('FinancialStatementsPanel rendered')
 
   return (
     <div ref={statementRef} style={{ padding: '24px', minHeight: '100vh' }}>
@@ -580,55 +820,33 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                 <FileText style={{ width: '24px', height: '24px', marginRight: '10px', color: '#06b6d4' }} />
                 Financial Statements
               </h2>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  onClick={generateAiInsights}
-                  disabled={aiLoading || selectedScenarios.size === 0 || selectedEntities.size === 0}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-                    border: '1px solid #8b5cf6',
-                    borderRadius: '6px',
-                    color: '#fff',
-                    fontSize: '13px',
-                    cursor: aiLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    opacity: (aiLoading || selectedScenarios.size === 0 || selectedEntities.size === 0) ? 0.5 : 1
-                  }}
-                >
-                  <Sparkles style={{ width: '16px', height: '16px' }} />
-                  {aiLoading ? 'Generating...' : 'Generate AI Insights'}
-                </button>
-                <button
-                  onClick={addToReport}
-                  disabled={selectedScenarios.size === 0 || selectedEntities.size === 0}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
-                    border: '1px solid #a855f7',
-                    borderRadius: '6px',
-                    color: '#fff',
-                    fontSize: '13px',
-                    cursor: selectedScenarios.size === 0 || selectedEntities.size === 0 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    opacity: (selectedScenarios.size === 0 || selectedEntities.size === 0) ? 0.5 : 1
-                  }}
-                >
-                  <FileText style={{ width: '16px', height: '16px' }} />
-                  Add to Report
-                </button>
-              </div>
+              <button
+                onClick={addToReport}
+                disabled={selectedScenarios.size === 0 || selectedEntities.size === 0}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                  border: '1px solid #a855f7',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  fontSize: '13px',
+                  cursor: selectedScenarios.size === 0 || selectedEntities.size === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: (selectedScenarios.size === 0 || selectedEntities.size === 0) ? 0.5 : 1
+                }}
+              >
+                <FileText style={{ width: '16px', height: '16px' }} />
+                Add to Report
+              </button>
             </div>
 
             {/* Control Panel */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '20px',
+              gridTemplateColumns: lastRunMode?.whatIfMode ? '300px 300px 1fr' : '300px 300px 300px',
+              gap: '16px',
               marginBottom: '20px'
             }}>
               {/* Scenario Selector */}
@@ -641,18 +859,40 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', marginBottom: '12px' }}>
                   Scenarios
                 </h3>
-                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                  {scenarios.map(scenario => (
-                    <div key={scenario.scenario_id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedScenarios.has(scenario.scenario_id)}
-                        onChange={() => handleScenarioToggle(scenario.scenario_id)}
-                        style={{ marginRight: '8px', cursor: 'pointer' }}
-                      />
-                      <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{scenario.name}</span>
-                    </div>
-                  ))}
+                <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                  {scenarios.map(scenario => {
+                    const isSelected = selectedScenarios.has(scenario.scenario_id)
+                    return (
+                      <div key={scenario.scenario_id} style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{scenario.name}</span>
+                        <div
+                          onClick={() => handleScenarioToggle(scenario.scenario_id)}
+                          style={{
+                            width: '44px',
+                            height: '24px',
+                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.5)' : 'rgba(100, 116, 139, 0.3)',
+                            borderRadius: '12px',
+                            position: 'relative',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.2s',
+                            border: `1px solid ${isSelected ? 'rgba(59, 130, 246, 0.8)' : 'rgba(100, 116, 139, 0.5)'}`
+                          }}
+                        >
+                          <div style={{
+                            width: '18px',
+                            height: '18px',
+                            backgroundColor: '#fff',
+                            borderRadius: '50%',
+                            position: 'absolute',
+                            top: '2px',
+                            left: isSelected ? '22px' : '2px',
+                            transition: 'left 0.2s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -664,10 +904,21 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                 border: '1px solid rgba(100, 116, 139, 0.3)'
               }}>
                 <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#e2e8f0', marginBottom: '12px' }}>
-                  Entities
+                  Entity
                 </h3>
-                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                  {entities.map(entity => renderEntitySelector(entity))}
+                <div style={{
+                  maxHeight: '150px',
+                  overflowY: 'auto',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '6px',
+                  padding: '6px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.8)'
+                }}>
+                  {entities.length > 0 ? renderEntityTree(entities, 0) : (
+                    <div style={{ color: '#94a3b8', fontSize: '12px', padding: '6px' }}>
+                      No entities available
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -688,7 +939,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                   </div>
                   <input
                     type="range"
-                    min="1"
+                    min="0"
                     max={maxPeriod}
                     value={periodRange[0]}
                     onChange={(e) => setPeriodRange([parseInt(e.target.value), Math.max(parseInt(e.target.value), periodRange[1])])}
@@ -696,25 +947,121 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                   />
                   <input
                     type="range"
-                    min="1"
+                    min="0"
                     max={maxPeriod}
                     value={periodRange[1]}
                     onChange={(e) => setPeriodRange([periodRange[0], Math.max(periodRange[0], parseInt(e.target.value))])}
                     style={{ width: '100%' }}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', marginTop: '16px' }}>
-                  <input
-                    type="checkbox"
-                    checked={deltaMode}
-                    onChange={(e) => setDeltaMode(e.target.checked)}
-                    disabled={!lastRunMode?.whatIfMode}
-                    style={{ marginRight: '8px', cursor: lastRunMode?.whatIfMode ? 'pointer' : 'not-allowed' }}
-                  />
-                  <span style={{ fontSize: '13px', color: lastRunMode?.whatIfMode ? '#e2e8f0' : '#64748b' }}>
-                    Show With/Without Actions
-                  </span>
-                </div>
+                {lastRunMode?.whatIfMode && (
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ marginBottom: '16px' }}>
+                      <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0', marginBottom: '8px' }}>
+                        Select Actions for "With Actions":
+                      </h4>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {managementActions.map(action => {
+                          const isActive = selectedActions.has(action.action_code)
+                          return (
+                            <div
+                              key={action.action_code}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                padding: '10px 14px',
+                                backgroundColor: 'rgba(51, 65, 85, 0.3)',
+                                border: '1px solid rgba(100, 116, 139, 0.3)',
+                                borderRadius: '6px',
+                                minWidth: '280px',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              <div style={{ flex: 1, marginRight: '12px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: '500', color: '#fff' }}>
+                                  {action.name}
+                                </div>
+                                {action.description && (
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                    {action.description}
+                                  </div>
+                                )}
+                              </div>
+                              <div
+                                onClick={() => {
+                                  const newActions = new Set(selectedActions)
+                                  if (isActive) {
+                                    newActions.delete(action.action_code)
+                                  } else {
+                                    newActions.add(action.action_code)
+                                  }
+                                  setSelectedActions(newActions)
+                                }}
+                                style={{
+                                  width: '48px',
+                                  height: '24px',
+                                  backgroundColor: isActive ? '#a855f7' : 'rgba(100, 116, 139, 0.5)',
+                                  borderRadius: '12px',
+                                  position: 'relative',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.3s',
+                                  flexShrink: 0
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: '20px',
+                                    height: '20px',
+                                    backgroundColor: '#ffffff',
+                                    borderRadius: '50%',
+                                    position: 'absolute',
+                                    top: '2px',
+                                    left: isActive ? '26px' : '2px',
+                                    transition: 'left 0.3s',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid rgba(100, 116, 139, 0.3)' }}>
+                      <span style={{ fontSize: '13px', color: '#e2e8f0', marginRight: '12px' }}>
+                        Show Comparison (With vs Without)
+                      </span>
+                      <div
+                        onClick={() => setDeltaMode(!deltaMode)}
+                        style={{
+                          width: '48px',
+                          height: '24px',
+                          backgroundColor: deltaMode ? '#3b82f6' : 'rgba(100, 116, 139, 0.5)',
+                          borderRadius: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s',
+                          flexShrink: 0
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            backgroundColor: '#ffffff',
+                            borderRadius: '50%',
+                            position: 'absolute',
+                            top: '2px',
+                            left: deltaMode ? '26px' : '2px',
+                            transition: 'left 0.3s',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -739,7 +1086,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
           )}
 
           {!loading && selectedScenarios.size > 0 && selectedEntities.size > 0 && (
-            <div style={{ overflowX: 'auto' }}>
+            <div ref={tableRef} style={{ overflowX: 'auto', marginBottom: '20px' }}>
               <table style={{
                 width: '100%',
                 borderCollapse: 'collapse',
@@ -763,7 +1110,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                       }}>
                         Line Item
                       </th>
-                      {[{ key: 'withActions', label: 'With Actions' }, { key: 'withoutActions', label: 'Without Actions' }].map(actionMode => {
+                      {[{ key: 'withoutActions', label: 'Without Actions' }, { key: 'withActions', label: 'With Actions' }].map(actionMode => {
                         const totalCols = (periodRange[1] - periodRange[0] + 1) * selectedScenarios.size
                         return (
                           <th key={actionMode.key} colSpan={totalCols} style={{
@@ -797,12 +1144,11 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                     }}>
                       {!deltaMode && 'Line Item'}
                     </th>
-                    {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
-                      return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
-                        const period = periodRange[0] + periodIdx
-                        const scenarioCount = selectedScenarios.size
+                    {(deltaMode ? [{ key: 'withoutActions' }, { key: 'withActions' }] : [{ key: 'single' }]).flatMap(actionMode => {
+                      return Array.from(selectedScenarios).map((scenarioId, scenarioIdx) => {
+                        const periodCount = periodRange[1] - periodRange[0] + 1
                         return (
-                          <th key={`${actionMode.key}-period-${period}`} colSpan={scenarioCount} style={{
+                          <th key={`${actionMode.key}-scenario-${scenarioId}`} colSpan={periodCount} style={{
                             padding: '8px',
                             borderBottom: '1px solid rgba(100, 116, 139, 0.3)',
                             backgroundColor: 'rgba(30, 41, 59, 0.4)',
@@ -811,7 +1157,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                             textAlign: 'center',
                             fontSize: '11px'
                           }}>
-                            Period {period}
+                            Scenario {scenarioIdx + 1}
                           </th>
                         )
                       })
@@ -828,11 +1174,10 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                       borderBottom: '2px solid rgba(100, 116, 139, 0.5)',
                       zIndex: 20
                     }}></th>
-                    {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
-                      return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
-                        const period = periodRange[0] + periodIdx
-                        return Array.from(selectedScenarios).map(scenarioId => {
-                          const scenario = scenarios.find(s => s.scenario_id === scenarioId)
+                    {(deltaMode ? [{ key: 'withoutActions' }, { key: 'withActions' }] : [{ key: 'single' }]).flatMap(actionMode => {
+                      return Array.from(selectedScenarios).flatMap((scenarioId, scenarioIdx) => {
+                        return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                          const period = periodRange[0] + periodIdx
                           const colKey = `${actionMode.key}-${scenarioId}-${period}`
                           const isCollapsed = collapsedColumns.has(colKey)
                           return (
@@ -855,7 +1200,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                               {isCollapsed ? (
                                 <ChevronRight style={{ width: '14px', height: '14px', margin: '0 auto' }} />
                               ) : (
-                                scenario?.name || `S${scenarioId}`
+                                `Period ${period}`
                               )}
                             </th>
                           )
@@ -867,17 +1212,44 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
 
                 {/* Table Body: Entities → Sections → Line Items */}
                 <tbody>
-                  {getEntitiesWithParents(Array.from(selectedEntities)).map(entityId => {
+                  {Array.from(selectedEntities).map(entityId => {
                     const entity = getEntityById(entityId)
                     if (!entity) return null
                     const isParent = isParentEntity(entityId)
                     const isExpanded = expandedEntities.has(entityId)
                     const hasData = resultData[entityId]
 
-                    // Get first available section data for this entity
+                    // Collect all unique sections and line items across all periods in range
                     const firstScenarioId = Array.from(selectedScenarios)[0]
-                    const firstPeriod = periodRange[0]
-                    const sections = hasData?.[firstScenarioId]?.[firstPeriod]?.withActions || []
+                    const sectionMap = new Map<string, Section>()
+
+                    for (let p = periodRange[0]; p <= periodRange[1]; p++) {
+                      const periodSections = hasData?.[firstScenarioId]?.[p]?.withActions || []
+                      periodSections.forEach(section => {
+                        if (!sectionMap.has(section.name)) {
+                          sectionMap.set(section.name, { name: section.name, items: [] })
+                        }
+                        const existingSection = sectionMap.get(section.name)!
+                        section.items.forEach(item => {
+                          const existingItemIdx = existingSection.items.findIndex(i => i.code === item.code)
+                          if (existingItemIdx === -1) {
+                            existingSection.items.push(item)
+                          } else {
+                            // Merge has_drivers - if any period has drivers, show chevron
+                            const existingItem = existingSection.items[existingItemIdx]
+                            if (item.has_drivers && !existingItem.has_drivers) {
+                              existingItem.has_drivers = true
+                            }
+                          }
+                        })
+                      })
+                    }
+
+                    const sections = Array.from(sectionMap.values())
+
+                    if (sections.length === 0) {
+                      logger.debug(`No sections for entity ${entityId}, scenario ${firstScenarioId} across periods ${periodRange[0]}-${periodRange[1]}`)
+                    }
 
                     return (
                       <React.Fragment key={`entity-${entityId}`}>
@@ -910,8 +1282,8 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                               {isParent && <span style={{ marginLeft: '8px', fontSize: '10px', color: '#94a3b8' }}>(rollup)</span>}
                             </div>
                           </td>
-                          {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
-                            return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                          {(deltaMode ? [{ key: 'withoutActions' }, { key: 'withActions' }] : [{ key: 'single' }]).flatMap(actionMode => {
+                            return [...Array(periodRange[1] - periodRange[0] + 1)].flatMap((_, periodIdx) => {
                               const period = periodRange[0] + periodIdx
                               return Array.from(selectedScenarios).map(scenarioId => {
                                 const colKey = `${actionMode.key}-${scenarioId}-${period}`
@@ -959,8 +1331,8 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                     {section.name}
                                   </div>
                                 </td>
-                                {(deltaMode ? [{ key: 'withActions' }, { key: 'withoutActions' }] : [{ key: 'single' }]).map(actionMode => {
-                                  return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                                {(deltaMode ? [{ key: 'withoutActions' }, { key: 'withActions' }] : [{ key: 'single' }]).flatMap(actionMode => {
+                                  return [...Array(periodRange[1] - periodRange[0] + 1)].flatMap((_, periodIdx) => {
                                     const period = periodRange[0] + periodIdx
                                     return Array.from(selectedScenarios).map(scenarioId => {
                                       const colKey = `${actionMode.key}-${scenarioId}-${period}`
@@ -978,6 +1350,8 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                               {isSectionExpanded && section.items.map(lineItem => {
                                 const lineItemKey = `${entityId}-${lineItem.code}`
                                 const isLineItemExpanded = expandedLineItems.has(lineItemKey)
+                                // Only show chevron if line item has actual driver data in database
+                                const canExpand = lineItem.has_drivers === true
 
                                 return (
                                   <React.Fragment key={lineItemKey}>
@@ -993,26 +1367,28 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                           borderBottom: '1px solid rgba(100, 116, 139, 0.15)',
                                           color: '#e2e8f0',
                                           fontSize: '11px',
-                                          cursor: lineItem.is_computed ? 'pointer' : 'default',
+                                          cursor: canExpand ? 'pointer' : 'default',
                                           zIndex: 10
                                         }}
-                                        onClick={() => lineItem.is_computed && toggleLineItemExpanded(entityId, lineItem.code)}
+                                        onClick={() => canExpand && toggleLineItemExpanded(entityId, lineItem.code)}
                                       >
                                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                                          {lineItem.is_computed && (
+                                          {canExpand ? (
                                             isLineItemExpanded ? (
                                               <ChevronDown style={{ width: '12px', height: '12px', marginRight: '6px' }} />
                                             ) : (
                                               <ChevronRight style={{ width: '12px', height: '12px', marginRight: '6px' }} />
                                             )
+                                          ) : (
+                                            <span style={{ width: '18px', display: 'inline-block' }} />
                                           )}
                                           {lineItem.display_name}
                                         </div>
                                       </td>
-                                      {(deltaMode ? [{ key: 'withActions', withActions: true }, { key: 'withoutActions', withActions: false }] : [{ key: 'single', withActions: true }]).map(actionMode => {
-                                        return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
-                                          const period = periodRange[0] + periodIdx
-                                          return Array.from(selectedScenarios).map(scenarioId => {
+                                      {(deltaMode ? [{ key: 'withoutActions', withActions: false }, { key: 'withActions', withActions: true }] : [{ key: 'single', withActions: true }]).flatMap(actionMode => {
+                                        return Array.from(selectedScenarios).flatMap(scenarioId => {
+                                          return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                                            const period = periodRange[0] + periodIdx
                                             const colKey = `${actionMode.key}-${scenarioId}-${period}`
                                             const isCollapsed = collapsedColumns.has(colKey)
                                             if (isCollapsed) {
@@ -1020,15 +1396,15 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                             }
 
                                             let value = 0
-                                            if (isParent) {
-                                              value = getRolledUpValue(entityId, scenarioId, period, lineItem.code, actionMode.withActions ?? true)
-                                            } else {
-                                              const data = resultData[entityId]?.[scenarioId]?.[period]
-                                              if (data) {
-                                                const sections = actionMode.withActions ? data.withActions : data.withoutActions
-                                                const foundSection = sections.find(s => s.name === section.name)
-                                                const foundItem = foundSection?.items.find(i => i.code === lineItem.code)
-                                                value = foundItem?.value || 0
+                                            let hasValue = false
+                                            const data = resultData[entityId]?.[scenarioId]?.[period]
+                                            if (data) {
+                                              const sections = actionMode.withActions ? data.withActions : data.withoutActions
+                                              const foundSection = sections.find(s => s.name === section.name)
+                                              const foundItem = foundSection?.items.find(i => i.code === lineItem.code)
+                                              if (foundItem !== undefined) {
+                                                hasValue = true
+                                                value = foundItem.value
                                               }
                                             }
 
@@ -1041,7 +1417,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                                 fontFamily: 'monospace',
                                                 fontSize: '11px'
                                               }}>
-                                                {formatValue(value)}
+                                                {hasValue ? formatValue(value) : '-'}
                                               </td>
                                             )
                                           })
@@ -1054,11 +1430,30 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                       <>
                                         {(() => {
                                           const firstScenarioId = Array.from(selectedScenarios)[0]
-                                          const firstPeriod = periodRange[0]
-                                          const drivers = driverData[entityId]?.[firstScenarioId]?.[firstPeriod]?.[lineItem.code]?.withActions || []
+                                          // Collect all unique drivers across all periods in range
+                                          const driverMap = new Map<string, DriverContribution>()
+                                          for (let p = periodRange[0]; p <= periodRange[1]; p++) {
+                                            // Check both withActions and withoutActions to get all driver names
+                                            const withActionsDrivers = driverData[entityId]?.[firstScenarioId]?.[p]?.[lineItem.code]?.withActions || []
+                                            const withoutActionsDrivers = driverData[entityId]?.[firstScenarioId]?.[p]?.[lineItem.code]?.withoutActions || []
+                                            withActionsDrivers.forEach(driver => {
+                                              if (!driverMap.has(driver.driver_code)) {
+                                                driverMap.set(driver.driver_code, driver)
+                                              }
+                                            })
+                                            withoutActionsDrivers.forEach(driver => {
+                                              if (!driverMap.has(driver.driver_code)) {
+                                                driverMap.set(driver.driver_code, driver)
+                                              }
+                                            })
+                                          }
+                                          const drivers = Array.from(driverMap.values())
 
-                                          return drivers.map(driver => (
-                                            <tr key={`${lineItemKey}-driver-${driver.driver_code}`} style={{ backgroundColor: 'rgba(139, 92, 246, 0.05)' }}>
+                                          // Only render rows if there are actually drivers
+                                          if (drivers.length === 0) return null
+
+                                          return drivers.map((driver, driverIdx) => (
+                                            <tr key={`${lineItemKey}-driver-${driver.driver_code}-${driverIdx}`} style={{ backgroundColor: 'rgba(139, 92, 246, 0.05)' }}>
                                               <td
                                                 data-cell
                                                 style={{
@@ -1075,10 +1470,10 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                               >
                                                 {driver.driver_name}
                                               </td>
-                                              {(deltaMode ? [{ key: 'withActions', withActions: true }, { key: 'withoutActions', withActions: false }] : [{ key: 'single', withActions: true }]).map(actionMode => {
-                                                return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
-                                                  const period = periodRange[0] + periodIdx
-                                                  return Array.from(selectedScenarios).map(scenarioId => {
+                                              {(deltaMode ? [{ key: 'withoutActions', withActions: false }, { key: 'withActions', withActions: true }] : [{ key: 'single', withActions: true }]).flatMap(actionMode => {
+                                                return Array.from(selectedScenarios).flatMap((scenarioId) => {
+                                                  return [...Array(periodRange[1] - periodRange[0] + 1)].map((_, periodIdx) => {
+                                                    const period = periodRange[0] + periodIdx
                                                     const colKey = `${actionMode.key}-${scenarioId}-${period}`
                                                     const isCollapsed = collapsedColumns.has(colKey)
                                                     if (isCollapsed) {
@@ -1088,6 +1483,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                                     const driverValue = driverData[entityId]?.[scenarioId]?.[period]?.[lineItem.code]
                                                     const drivers = actionMode.withActions ? driverValue?.withActions : driverValue?.withoutActions
                                                     const foundDriver = drivers?.find(d => d.driver_code === driver.driver_code)
+                                                    const hasValue = foundDriver !== undefined
                                                     const value = foundDriver?.value || 0
 
                                                     return (
@@ -1099,7 +1495,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                                         fontFamily: 'monospace',
                                                         fontSize: '10px'
                                                       }}>
-                                                        {formatValue(value)}
+                                                        {hasValue ? formatValue(value) : '-'}
                                                       </td>
                                                     )
                                                   })
@@ -1127,7 +1523,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
       </Card>
 
       {/* AI Insights Panel */}
-      {aiInsights && (
+      {(selectedScenarios.size > 0 && selectedEntities.size > 0) && (
         <Card style={{
           backgroundColor: 'rgba(139, 92, 246, 0.1)',
           border: '1px solid rgba(139, 92, 246, 0.3)',
@@ -1137,12 +1533,53 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
             <div style={{ display: 'flex', alignItems: 'flex-start' }}>
               <Sparkles style={{ width: '20px', height: '20px', marginRight: '12px', color: '#8b5cf6', flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#c4b5fd', marginBottom: '8px' }}>
-                  AI Insights
-                </h3>
-                <p style={{ fontSize: '13px', color: '#e9d5ff', lineHeight: '1.6', margin: 0 }}>
-                  {aiInsights}
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#c4b5fd', margin: 0 }}>
+                    AI Insights
+                  </h3>
+                  <button
+                    onClick={generateAiInsights}
+                    disabled={aiLoading}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: '#8b5cf6',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: aiLoading ? 'not-allowed' : 'pointer',
+                      opacity: aiLoading ? 0.6 : 1,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {aiLoading ? (
+                      <>
+                        <span style={{
+                          display: 'inline-block',
+                          width: '12px',
+                          height: '12px',
+                          border: '2px solid #fff',
+                          borderTopColor: 'transparent',
+                          borderRadius: '50%',
+                          animation: 'spin 0.8s linear infinite',
+                          marginRight: '6px'
+                        }}></span>
+                        Generating...
+                      </>
+                    ) : 'Generate Insights'}
+                  </button>
+                </div>
+                {aiInsights && (
+                  <p style={{ fontSize: '13px', color: '#e9d5ff', lineHeight: '1.6', margin: 0 }}>
+                    {aiInsights}
+                  </p>
+                )}
+                {!aiInsights && !aiLoading && (
+                  <p style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', margin: 0 }}>
+                    Click "Generate Insights" to get AI-powered analysis of the financial statements.
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>

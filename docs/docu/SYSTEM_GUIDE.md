@@ -1,8 +1,8 @@
 # Financial Scenario Analysis System - Technical Guide
 
-**Version:** 2.7
-**Last Updated:** 2025-11-05
-**Status:** Production System with Comprehensive Monte Carlo Visualization (Probability Distributions, Fan Charts, 3D Joint Distributions, Correlation Matrix), Three-Mode Waterfall, Animated Risk Dashboard, Physical Risk Location Display, Levers/No Regrets Dashboard with AI Insights, and Report Builder with Drag-and-Drop Visualization Snippets
+**Version:** 2.8
+**Last Updated:** 2025-11-06
+**Status:** Production System with Comprehensive Monte Carlo Visualization (Probability Distributions, Fan Charts, 3D Joint Distributions, Correlation Matrix), Three-Mode Waterfall, Animated Risk Dashboard, Physical Risk Location Display, Levers/No Regrets Dashboard with AI Insights, Report Builder with Drag-and-Drop Visualization Snippets, and Financial Statements Panel with Multi-Scenario Comparison and Driver Drill-Down
 **Target Audience:** Technical users, analysts, system administrators
 
 ---
@@ -1202,7 +1202,99 @@ Return: success, rows_ingested, errors[]
    Display waterfall chart showing driver contributions
    ```
 
-3. **Time Series Chart**
+3. **Financial Statements Panel** (Session 27)
+   ```
+   User navigates to Results > Financial Statements
+   ↓
+   Page displays hierarchical financial statement table:
+     - Multi-scenario comparison (up to 3 scenarios side-by-side)
+     - Multi-entity selection with hierarchical tree selector
+     - Period range slider (dual-handle) for filtering
+     - Column structure: Scenario → Period → Action (with/without)
+     - Three-level hierarchy: Entities → Sections → Line Items
+     - Click chevron to expand driver decomposition per line item
+   ↓
+   Features:
+     - Absolute/Delta mode toggle (orange "What If?" toggle)
+     - Action selection controls (multi-select with color-coded badges)
+     - AI insights button (purple) generates 2-4 sentence analysis
+     - Add to Report button (purple) with print-friendly capture
+     - Collapsible entity rows (chevron icons, indented children)
+     - Collapsible section rows (P&L, Balance Sheet, Cash Flow, Carbon)
+     - Expandable driver rows showing marginal contributions
+     - Column collapse indicators (≡) for condensed view
+   ```
+
+   **Data Loading Flow:**
+   ```javascript
+   // Scenario selection
+   Multi-select from /api/scenarios/list endpoint (up to 3)
+
+   // Entity selection
+   Hierarchical tree fetched from /api/entities?dbPath=...
+   Supports parent/child relationships and filtering
+
+   // Period range
+   Dual-handle slider (periodRange state)
+
+   // Results fetching
+   For each scenario × entity × period × action mode:
+     GET /api/results?dbPath=...&scenarioId=...&periodId=...&entityId=...&whatIfCombination=...
+     Returns: { withActions: [...lineItems], withoutActions: [...lineItems] }
+
+   // Delta mode
+   If deltaMode=true:
+     Fetch BASE combination and selected combination in parallel
+     Calculate delta: selectedValue - baseValue
+     Display in single column
+
+   // Driver decomposition
+   When line item chevron clicked:
+     loadDriverDecomposition(entityId, scenarioId, period, lineItemCode)
+     GET /api/results/driver-decomposition?dbPath=...&scenarioId=...&period=...&entityId=...&lineItemCode=...&whatIfCombination=...
+     Returns: { success, drivers: [{ driver_code, driver_name, value }] }
+
+     Three modes handled:
+       1. Delta + what-if: Fetch combinationWith vs combinationWithout
+       2. What-if only: Fetch selected combination
+       3. Normal: Fetch without what-if parameter
+   ```
+
+   **Key UI Elements:**
+   - **Table Structure (lines 843-1549):**
+     * Outer scroll container (max-height: calc(100vh - 250px))
+     * Fixed header row with scenario/period/action headers
+     * Nested table structure: entities → sections → line items → drivers
+     * Color-coded cells: light blue (with actions), light amber (without), white (delta)
+
+   - **Entity Hierarchy (lines 1053-1170):**
+     * Tree structure with expandedEntities state set
+     * Parent rows: chevron icons, bold names, aggregate values
+     * Child rows: indented (paddingLeft based on entity.level)
+     * Collapse toggles per entity with smooth transition
+
+   - **Driver Decomposition (lines 1373-1451):**
+     * Expandable per line item (expandedLineItems state set)
+     * Fetches on-demand when clicked (lazy loading)
+     * Column ordering matches parent: Scenario → Period → Action
+     * Driver rows: indented, italic driver names, blue-tinted background
+     * Values show marginal contributions per driver
+
+   - **AI Insights (lines 729-821):**
+     * Purple-themed button with Sparkles icon
+     * Calls POST /api/claude/messages with comprehensive context
+     * Context includes: scenarios, entities, periods, line items, values
+     * Displays 2-4 sentence analysis in expandable panel
+
+   - **Add to Report (lines 663-726):**
+     * Purple-themed button with FileText icon
+     * Captures table only (tableRef, not full page)
+     * Print-friendly styling: white background, dark text, hidden buttons
+     * Builds caption with indexed scenario labels ("Scenario 1, Scenario 2")
+     * Alert dialog confirms success
+     * Saves to localStorage as ReportSnippet
+
+4. **Time Series Chart**
    - Line charts for key metrics across periods
    - Multiple scenarios overlaid for comparison
    - Drill-down to period-specific details
@@ -2462,7 +2554,7 @@ The Risk Dashboard provides interactive visualization of scenario comparisons wi
 
 ---
 
-**Document Version:** 2.5
-**Last Updated:** 2025-10-30 (Session 18 - Risk Dashboard What-If Mode Action Filtering)
+**Document Version:** 2.6
+**Last Updated:** 2025-11-06 (Session 27 - Financial Statements Panel with Multi-Scenario Comparison)
 **Maintained By:** Development Team
 **Next Review:** After major feature additions

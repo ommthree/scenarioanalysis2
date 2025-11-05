@@ -1,8 +1,27 @@
 # Code Files Documentation
 
-**Last Updated:** 2025-11-05
+**Last Updated:** 2025-11-06
 **Total Files:** 80 (27 C++ source, 28 C++ headers, 50 TypeScript/React, 4 JavaScript server, 2 config/utility files)
-**Status:** Production - Unified Engine Architecture with What-If Mode, Comprehensive Monte Carlo Visualization, Three-Mode Waterfall with AI Descriptions, and Physical Risk Page with Location Display
+**Status:** Production - Unified Engine Architecture with What-If Mode, Comprehensive Monte Carlo Visualization, Three-Mode Waterfall with AI Descriptions, Physical Risk Page with Location Display, and Financial Statements Panel with Multi-Scenario Comparison
+
+**Recent Changes (2025-11-06):**
+- ✅ Added comprehensive Financial Statements panel (Session 27)
+- ✅ Multi-scenario comparison (up to 3 scenarios side-by-side)
+- ✅ Multi-entity selection with hierarchical tree selector
+- ✅ Period range filtering with dual-handle slider
+- ✅ Complex column structure: Scenario → Period → Action (with/without actions)
+- ✅ Three-level table hierarchy: Entities → Sections → Line Items
+- ✅ Expandable driver decomposition with lazy-loading
+- ✅ What-if mode integration with action selection controls
+- ✅ Delta mode for with/without action comparison
+- ✅ AI insights panel with Claude-powered analysis
+- ✅ Add to Report functionality with print-friendly capture
+- ✅ Column collapse indicators for condensed view
+- ✅ Fixed logger.log → logger.debug (logger only has debug/info/warn/error methods)
+- ✅ Fixed caption format to show "Scenario 1, Scenario 2" instead of scenario IDs
+- ✅ Added alert() dialogs for user feedback on report export
+- ✅ Collapsible entity/section rows with smooth animations
+- ✅ Financial Statements now fully functional (~1585 lines)
 
 **Recent Changes (2025-11-05):**
 - ✅ Added comprehensive Monte Carlo visualization panel (Session 25)
@@ -1205,6 +1224,125 @@ All map pages follow similar pattern: Column mapping → validation → producti
 ---
 
 ### Results Pages (✅ Complete)
+
+#### `dashboard/src/pages/results/visualizations/FinancialStatementsPanel.tsx`
+**Lines:** ~1585
+**Purpose:** Comprehensive financial statements panel with multi-scenario comparison and driver drill-down
+**Status:** ✅ Production (Session 27)
+
+**Features:**
+- **Multi-Scenario Comparison:** Select up to 3 scenarios for side-by-side analysis
+- **Multi-Entity Selection:** Hierarchical tree selector with expand/collapse
+- **Period Range Filtering:** Dual-handle slider for flexible period selection
+- **Complex Column Structure:** Scenario → Period → Action (with/without actions)
+- **Three-Level Hierarchy:**
+  * Entities: Parent rows aggregate child values, collapsible with chevron icons
+  * Sections: P&L, Balance Sheet, Cash Flow, Carbon - collapsible per entity
+  * Line Items: Individual financial metrics with expand-to-drivers
+- **Driver Decomposition:**
+  * Click chevron to expand driver contributions per line item
+  * Lazy-loading: Fetches on-demand via GET /api/results/driver-decomposition
+  * Three modes: delta+what-if, what-if only, normal
+  * Shows marginal contributions per driver
+- **What-If Mode Integration:**
+  * Orange "What If?" toggle for delta mode
+  * Action selection controls with color-coded badges
+  * Delta calculation: selected combination - BASE combination
+  * Parallel API calls for efficient data fetching
+- **AI Insights:**
+  * Purple Sparkles button generates Claude-powered 2-4 sentence analysis
+  * Context includes scenarios, entities, periods, line items, values, changes
+  * Expandable panel below controls
+- **Add to Report:**
+  * Purple FileText button captures table as PNG
+  * Print-friendly styling: white background, dark text, hidden UI elements
+  * Builds caption with indexed scenario labels ("Scenario 1, Scenario 2")
+  * Alert dialog confirms successful export
+  * Saves to localStorage for Report Builder
+- **Column Collapse Indicators:** ≡ symbols show condensed columns
+- **Responsive Design:** Outer scroll container with fixed headers
+
+**Key Data Structures:**
+```typescript
+interface LineItem {
+  code: string
+  display_name: string
+  section: string
+  is_computed: boolean
+  sign_convention?: string
+  value: number
+}
+
+interface Section {
+  name: string
+  items: LineItem[]
+}
+
+interface ResultData {
+  [entityId: number]: {
+    [scenarioId: number]: {
+      [period: number]: {
+        withActions: Section[]
+        withoutActions: Section[]
+      }
+    }
+  }
+}
+
+interface DriverData {
+  [entityId: number]: {
+    [scenarioId: number]: {
+      [period: number]: {
+        [lineItemCode: string]: {
+          withActions: DriverContribution[]
+          withoutActions: DriverContribution[]
+        }
+      }
+    }
+  }
+}
+```
+
+**API Endpoints Used:**
+- `GET /api/scenarios/list` — Fetch available scenarios
+- `GET /api/entities` — Fetch entity hierarchy
+- `GET /api/results` — Fetch statement results with what-if filtering
+- `GET /api/results/driver-decomposition` — Fetch driver contributions (lazy-loaded)
+- `POST /api/claude/messages` — Generate AI insights
+
+**State Management:**
+- Core Data: scenarios, entities, selectedScenarios (Set<number>), selectedEntities (Set<number>)
+- Display Options: periodRange ([number, number]), deltaMode (boolean), lastRunMode
+- Expand/Collapse: expandedEntities, expandedSections, expandedLineItems, collapsedColumns (all Set<string>)
+- Data Cache: resultData (ResultData), driverData (DriverData)
+- Loading: loading (boolean), aiLoading (boolean)
+- AI: aiInsights (string)
+
+**Key Functions:**
+- `loadAllResults()` — Bulk fetch all scenario/entity/period combinations
+- `loadDriverDecomposition()` — On-demand driver fetching (lines 464-559)
+  * Three-mode handling: delta+what-if, what-if only, normal
+  * Uses buildWhatIfCombination() for combination string generation
+  * Parallel API calls for with/without actions in delta mode
+- `generateAIDescription()` — Claude API integration (lines 729-821)
+- `addToReport()` — Capture table as PNG with print-friendly styling (lines 663-726)
+- `toggleEntityExpanded()`, `toggleSectionExpanded()`, `toggleLineItemExpanded()` — Hierarchy controls
+
+**UI Sections:**
+1. **Controls Panel** (lines 822-1052): Scenarios, entities, period range, delta mode, actions, AI button
+2. **Table** (lines 1053-1549): Hierarchical nested structure with headers, entity rows, section rows, line item rows, driver rows
+3. **AI Insights Panel** (lines 779-821): Expandable analysis display
+4. **Validation Panel** (future): Integrated validation results display
+
+**Bug Fixes (Session 27):**
+- Fixed driver column ordering: Changed from Period→Scenario to Scenario→Period loops (lines 1422-1450)
+- Fixed driver data collection: Now checks both withActions and withoutActions arrays (lines 1383-1397)
+- Rewrote loadDriverDecomposition: Uses correct /api/results/driver-decomposition endpoint with proper parameters
+- Changed logger.log → logger.debug (logger only has debug/info/warn/error methods)
+- Fixed caption to show "Scenario 1, Scenario 2" instead of scenario IDs
+- Added alert() dialogs for user feedback on report export
+
+---
 
 #### `dashboard/src/pages/results/ViewResults.tsx`
 **Lines:** ~2970
