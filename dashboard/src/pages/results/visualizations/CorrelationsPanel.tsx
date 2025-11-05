@@ -355,7 +355,11 @@ export default function CorrelationsPanel() {
   }
 
   const generateAiInsights = async () => {
-    if (!primaryVariable || !primaryDistribution) return
+    console.log('generateAiInsights called', { primaryVariable, primaryDistribution })
+    if (!primaryVariable || !primaryDistribution) {
+      console.log('Early return: missing primaryVariable or primaryDistribution')
+      return
+    }
 
     setAiLoading(true)
     try {
@@ -485,63 +489,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
         })}
       </div>
     )
-  }
-
-  const generateAiInsights = async () => {
-    if (!mcDistribution || !primaryVariable || !mcResults) return
-
-    setAiLoading(true)
-
-    const prompt = `Analyze this Monte Carlo simulation result:
-
-Variable: ${primaryVariable}
-${mcResults.lineItems.find(item => item.code === primaryVariable)?.name || ''}
-
-Statistics:
-- Mean: ${formatValue(mcDistribution.statistics.mean)}
-- Median: ${formatValue(mcDistribution.statistics.median)}
-- Std Dev: ${formatValue(mcDistribution.statistics.std)}
-- 5th percentile: ${formatValue(mcDistribution.percentiles.p5)}
-- 95th percentile: ${formatValue(mcDistribution.percentiles.p95)}
-- Min: ${formatValue(mcDistribution.statistics.min)}
-- Max: ${formatValue(mcDistribution.statistics.max)}
-- Skewness: ${mcDistribution.statistics.skew.toFixed(2)}
-- Kurtosis: ${mcDistribution.statistics.kurtosis.toFixed(2)}
-- Number of draws: ${mcDistribution.numDraws}
-
-Scenario: ${scenarios.find(s => s.scenario_id === currentScenario)?.name || ''}
-Entity: ${entities.find(e => e.entity_id === currentEntity)?.name || ''}
-MC Period: ${mcResults.mcPeriod}
-
-Provide insights on:
-1. Distribution shape and what it indicates (symmetric, skewed, fat tails)
-2. Risk assessment based on the spread and percentiles
-3. Key findings for decision-making
-4. Any notable patterns or concerns
-
-Keep response concise (3-4 paragraphs).`
-
-    try {
-      const response = await fetch(apiUrl('/api/claude/messages'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 1000
-        })
-      })
-
-      const data = await response.json()
-
-      if (data.content && data.content[0]?.text) {
-        setAiInsights(data.content[0].text)
-      }
-    } catch (error) {
-      logger.error('Error generating AI insights:', error)
-      setAiInsights('Failed to generate insights. Please try again.')
-    } finally {
-      setAiLoading(false)
-    }
   }
 
   const addToReport = async (elementRef: React.RefObject<HTMLDivElement>, panelType: string, variables: string[]) => {
@@ -1388,7 +1335,7 @@ Keep response concise (3-4 paragraphs).`
       )
     }
 
-    const chartWidth = 800
+    const chartWidth = 900
     const chartHeight = 300
     const margin = { top: 30, right: 40, bottom: 60, left: 60 }
     const plotWidth = chartWidth - margin.left - margin.right
