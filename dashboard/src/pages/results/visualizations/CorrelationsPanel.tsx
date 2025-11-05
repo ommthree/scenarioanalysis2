@@ -366,7 +366,7 @@ export default function CorrelationsPanel() {
       // Find the selected line item details
       const selectedItem = mcResults?.lineItems.find(item => item.code === primaryVariable)
       const selectedScenario = scenarios.find(s => s.scenario_id === currentScenario)
-      const selectedEntity = allEntities.find(e => e.entity_id === currentEntity)
+      const selectedEntity = entities.find(e => e.entity_id === currentEntity)
 
       // Build context for the AI
       const contextDescription = `Analyzing Monte Carlo simulation results for ${selectedItem?.name || primaryVariable} in scenario "${selectedScenario?.name || currentScenario}" at entity "${selectedEntity?.name || currentEntity}".`
@@ -1327,7 +1327,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
   }
 
   function renderFanChart(timeseries: McTimeseries) {
-    if (!timeseries || !timeseries.periods || timeseries.periods.length === 0) {
+    if (!timeseries || !timeseries.periods || timeseries.periods.length === 0 || !timeseries.statistics) {
       return (
         <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
           No timeseries data available
@@ -1347,9 +1347,9 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
 
     // Find min/max values across all series
     const allValues = [
-      ...timeseries.statistics.p1,
-      ...timeseries.statistics.p99,
-      ...timeseries.deterministic
+      ...(timeseries.statistics.p1 || []),
+      ...(timeseries.statistics.p99 || []),
+      ...(timeseries.deterministic || [])
     ].filter(v => v != null && !isNaN(v))
 
     if (allValues.length === 0) {
@@ -1402,25 +1402,30 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.deterministic[i])}`
     ).join(' ')
 
-    const p99Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p99[i])}`).join(' ')
-    const p95Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p95[i])}`).join(' ')
-    const p75Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p75[i])}`).join(' ')
-    const p25Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p25[i])}`).join(' ')
-    const p5Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p5[i])}`).join(' ')
-    const p1Path = periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p1[i])}`).join(' ')
+    // Only generate percentile paths if the data exists
+    const hasP1P99 = timeseries.statistics.p1 && timeseries.statistics.p99
+    const hasP5P95 = timeseries.statistics.p5 && timeseries.statistics.p95
+    const hasP25P75 = timeseries.statistics.p25 && timeseries.statistics.p75
+
+    const p99Path = hasP1P99 ? periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p99[i])}`).join(' ') : ''
+    const p95Path = hasP5P95 ? periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p95[i])}`).join(' ') : ''
+    const p75Path = hasP25P75 ? periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p75[i])}`).join(' ') : ''
+    const p25Path = hasP25P75 ? periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p25[i])}`).join(' ') : ''
+    const p5Path = hasP5P95 ? periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p5[i])}`).join(' ') : ''
+    const p1Path = hasP1P99 ? periods.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p)} ${yScale(timeseries.statistics.p1[i])}`).join(' ') : ''
 
     // Create area paths (need to reverse for closing)
-    const p1ToP99Area = p1Path + ' ' + periods.slice().reverse().map((p, i) =>
+    const p1ToP99Area = hasP1P99 ? p1Path + ' ' + periods.slice().reverse().map((p, i) =>
       `L ${xScale(p)} ${yScale(timeseries.statistics.p99[periods.length - 1 - i])}`
-    ).join(' ') + ' Z'
+    ).join(' ') + ' Z' : ''
 
-    const p5ToP95Area = p5Path + ' ' + periods.slice().reverse().map((p, i) =>
+    const p5ToP95Area = hasP5P95 ? p5Path + ' ' + periods.slice().reverse().map((p, i) =>
       `L ${xScale(p)} ${yScale(timeseries.statistics.p95[periods.length - 1 - i])}`
-    ).join(' ') + ' Z'
+    ).join(' ') + ' Z' : ''
 
-    const p25ToP75Area = p25Path + ' ' + periods.slice().reverse().map((p, i) =>
+    const p25ToP75Area = hasP25P75 ? p25Path + ' ' + periods.slice().reverse().map((p, i) =>
       `L ${xScale(p)} ${yScale(timeseries.statistics.p75[periods.length - 1 - i])}`
-    ).join(' ') + ' Z'
+    ).join(' ') + ' Z' : ''
 
     return (
       <div style={{ position: 'relative' }}>
@@ -1454,17 +1459,17 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
           })}
 
           {/* Shaded areas */}
-          <path d={p1ToP99Area} fill="rgba(168, 85, 247, 0.08)" stroke="none" />
-          <path d={p5ToP95Area} fill="rgba(168, 85, 247, 0.15)" stroke="none" />
-          <path d={p25ToP75Area} fill="rgba(168, 85, 247, 0.25)" stroke="none" />
+          {hasP1P99 && <path d={p1ToP99Area} fill="rgba(168, 85, 247, 0.08)" stroke="none" />}
+          {hasP5P95 && <path d={p5ToP95Area} fill="rgba(168, 85, 247, 0.15)" stroke="none" />}
+          {hasP25P75 && <path d={p25ToP75Area} fill="rgba(168, 85, 247, 0.25)" stroke="none" />}
 
           {/* Percentile lines */}
-          <path d={p1Path} stroke="#ef4444" strokeWidth="1" strokeDasharray="3,3" fill="none" opacity="0.4" />
-          <path d={p5Path} stroke="#ef4444" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.6" />
-          <path d={p25Path} stroke="#f97316" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.7" />
-          <path d={p75Path} stroke="#3b82f6" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.7" />
-          <path d={p95Path} stroke="#10b981" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.6" />
-          <path d={p99Path} stroke="#10b981" strokeWidth="1" strokeDasharray="3,3" fill="none" opacity="0.4" />
+          {hasP1P99 && <path d={p1Path} stroke="#ef4444" strokeWidth="1" strokeDasharray="3,3" fill="none" opacity="0.4" />}
+          {hasP5P95 && <path d={p5Path} stroke="#ef4444" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.6" />}
+          {hasP25P75 && <path d={p25Path} stroke="#f97316" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.7" />}
+          {hasP25P75 && <path d={p75Path} stroke="#3b82f6" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.7" />}
+          {hasP5P95 && <path d={p95Path} stroke="#10b981" strokeWidth="1" strokeDasharray="2,2" fill="none" opacity="0.6" />}
+          {hasP1P99 && <path d={p99Path} stroke="#10b981" strokeWidth="1" strokeDasharray="3,3" fill="none" opacity="0.4" />}
 
           {/* Deterministic line */}
           <path d={deterministicPath} stroke="#a78bfa" strokeWidth="3" fill="none" />
