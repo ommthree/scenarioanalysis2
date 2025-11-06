@@ -208,7 +208,7 @@ export default function MapStatements() {
     const types: Array<{ key: 'pnl' | 'bs' | 'cf' | 'carbon', apiType: string }> = [
       { key: 'pnl', apiType: 'pnl' },
       { key: 'bs', apiType: 'balance_sheet' },
-      { key: 'cf', apiType: 'cashflow' },
+      { key: 'cf', apiType: 'cash_flow' },
       { key: 'carbon', apiType: 'carbon' }
     ]
     for (const { key, apiType } of types) {
@@ -399,6 +399,19 @@ export default function MapStatements() {
     })
 
     return roots
+  }
+
+  // Helper to flatten entity tree back to flat list (for AI mapping entity search)
+  const flattenEntities = (entities: Entity[]): Entity[] => {
+    const flat: Entity[] = []
+    const traverse = (entity: Entity) => {
+      flat.push(entity)
+      if (entity.children) {
+        entity.children.forEach(traverse)
+      }
+    }
+    entities.forEach(traverse)
+    return flat
   }
 
   const getRootCompanies = (): Entity[] => {
@@ -654,12 +667,20 @@ export default function MapStatements() {
     setAiMappingInProgress(prev => ({ ...prev, [statementType]: true }))
     setAiMappingMessage(prev => ({ ...prev, [statementType]: 'Analyzing with AI...' }))
 
+    // Get child entities of selected company for multi-entity hint (before try block so we can use in response handler)
+    // Note: entities is a tree structure, so flatten it first to get all entities including children
+    const allEntitiesFlat = flattenEntities(entities)
+    const childEntities = allEntitiesFlat.filter(e => e.parent_entity_id === selectedCompany.entity_id)
+
     try {
       // Prepare data for Claude
       const csvSample = mapping.csvData.slice(0, 20).map((row, idx) => ({
         index: idx,
         data: row
       }))
+      const entityNamesHint = childEntities.length > 0
+        ? `\n\nAvailable child entities: ${childEntities.map(e => e.name.toUpperCase()).join(', ')}`
+        : ''
 
       const prompt = `You are a financial data mapping assistant. Analyze the CSV data and map it to the template line items.
 
@@ -670,12 +691,40 @@ ${JSON.stringify(csvSample, null, 2)}
 Template Line Items to map:
 ${lineItems.map(item => `- ${item.code}: ${item.display_name}`).join('\n')}
 
-Company Entity: ${selectedCompany.name}
+Company Entity: ${selectedCompany.name}${entityNamesHint}
+
+IMPORTANT - Entity-Prefixed Line Items with Flexible Matching:
+
+CSV line items contain entity prefixes in format: ENTITYNAME_LINEITEMNAME
+
+Entity Matching (FUZZY):
+- Entity prefix may be exact (BETA) or partial match (BETA found in "Beta AG", "Beta Ltd")
+- Available entities: ${childEntities.map(e => `${e.name} (match: ${e.name.toLowerCase().split(/[^a-z0-9]+/)[0]})`).join(', ')}
+- Extract the first word/token before underscore, convert to lowercase
+- Match against entity names using contains/startsWith logic
+
+Line Item Matching (FUZZY):
+- Template codes may differ from CSV names (e.g., "COGS" → "cogs" OR "cost_of_goods_sold")
+- Common variations:
+  * REVENUE → revenue
+  * COGS/COST_OF_GOODS_SOLD → cogs OR cost_of_sales OR cost_of_goods_sold
+  * OPEX/OPERATING_EXPENSES → opex OR operating_expenses
+  * DEPRECIATION → depreciation OR depreciation_amortization
+  * INTEREST_EXPENSE → interest_expense OR interest
+  * CAPEX/CAPITAL_EXPENDITURE → capex OR capital_expenditure
+  * SCOPE1_EMISSIONS → scope1_emissions OR scope_1_emissions
+
+Mapping Process:
+1. Split CSV line_item at first underscore: "BETA_REVENUE" → ["BETA", "REVENUE"]
+2. Entity: match "BETA" (case-insensitive) against available entity names
+3. Line item: match "REVENUE" against template codes (try exact lowercase first, then fuzzy match common variations)
+4. Return: entity_name (lowercase, best match), line_item_code (exact template code)
 
 Instructions:
 1. Analyze the CSV column headers and identify which columns contain the financial data values
 2. Analyze ALL CSV data rows and map as many as possible to template line items
-3. Return ONLY a JSON object with two arrays in this exact format:
+3. For entity-prefixed line items, extract the base line item name after the underscore
+4. Return ONLY a JSON object with two arrays in this exact format:
 {
   "column_mappings": [
     {
@@ -687,12 +736,14 @@ Instructions:
   "row_mappings": [
     {
       "csv_row_index": 0,
+      "entity_name": "beta",
       "line_item_code": "revenue",
       "confidence": "high"
     },
     {
       "csv_row_index": 1,
-      "line_item_code": "cost_of_sales",
+      "entity_name": "beta",
+      "line_item_code": "cogs",
       "confidence": "high"
     }
   ]
@@ -707,10 +758,12 @@ Rules for column_mappings:
 Rules for row_mappings:
 - Only map rows where you have reasonable confidence
 - csv_row_index must match the index from the CSV sample above
-- line_item_code must match one of the codes from the template
+- entity_name: Extract from CSV line_item prefix (BETA_ → "beta", GAMMA_ → "gamma", DELTA_ → "delta") - MUST be lowercase
+- line_item_code must match one of the codes from the template (without entity prefix)
 - confidence can be "high", "medium", or "low"
 - If a row matches multiple line items, choose the best match
 - Look for common financial statement items like revenue, expenses, assets, liabilities, etc.
+- Strip entity prefixes when mapping (e.g., "DELTA_CAPEX" → entity_name: "delta", line_item_code: "capex")
 
 Respond with ONLY the JSON object, no other text`
 
@@ -741,6 +794,10 @@ Respond with ONLY the JSON object, no other text`
       const rowMappings = aiResponse.row_mappings || []
       const columnMappings = aiResponse.column_mappings || []
 
+      // Debug logging
+      console.log('AI Response row mappings:', rowMappings.slice(0, 3))
+      console.log('Available child entities for matching:', childEntities.map(e => ({ id: e.entity_id, name: e.name, parent: e.parent_entity_id })))
+
       // Find the first data column for value mapping
       const dataColumns = columnMappings.filter((c: ColumnMapping) => c.column_type === 'data')
       const valueColumn = dataColumns.length > 0 ? dataColumns[0].csv_column_name : null
@@ -749,16 +806,57 @@ Respond with ONLY the JSON object, no other text`
       const labelColumn = columnMappings.find((c: ColumnMapping) => c.column_type === 'label')
       const lineItemColumn = labelColumn ? labelColumn.csv_column_name : null
 
+      // Helper to find entity by fuzzy name match (searches only child entities)
+      const findEntityByName = (entityName: string): Entity | null => {
+        if (!entityName) return null
+        const searchLower = entityName.toLowerCase().trim()
+
+        // Try exact match first
+        let match = childEntities.find(e => e.name.toLowerCase() === searchLower)
+        if (match) return match
+
+        // Try starts-with match
+        match = childEntities.find(e => e.name.toLowerCase().startsWith(searchLower))
+        if (match) return match
+
+        // Try contains match
+        match = childEntities.find(e => e.name.toLowerCase().includes(searchLower))
+        if (match) return match
+
+        // Try matching first token
+        const firstToken = searchLower.split(/[^a-z0-9]+/)[0]
+        match = childEntities.find(e => {
+          const entityFirstToken = e.name.toLowerCase().split(/[^a-z0-9]+/)[0]
+          return entityFirstToken === firstToken
+        })
+
+        return match || null
+      }
+
       // Apply the AI-suggested row mappings and column config
       setStatementMappings(prev => ({
         ...prev,
         [statementType]: {
           ...prev[statementType],
-          hierarchicalMappings: rowMappings.map((m: HierarchicalMapping) => ({
-            entity_path: [selectedCompany.entity_id],
-            line_item_code: m.line_item_code,
-            csv_row_index: m.csv_row_index
-          })),
+          hierarchicalMappings: rowMappings.map((m: any) => {
+            const entityName = m.entity_name || ''
+            const matchedEntity = findEntityByName(entityName)
+
+            // Debug logging for entity matching
+            console.log(`Mapping row ${m.csv_row_index}: entity_name="${entityName}" → matched:`,
+              matchedEntity ? `${matchedEntity.name} (ID ${matchedEntity.entity_id})` : 'NOT FOUND')
+
+            // Build entity_path: [parent, child] if entity found, otherwise just parent
+            const entity_path = matchedEntity
+              ? [selectedCompany.entity_id, matchedEntity.entity_id]
+              : [selectedCompany.entity_id]
+
+            return {
+              entity_path,
+              line_item_code: m.line_item_code,
+              csv_row_index: m.csv_row_index
+            }
+          }),
           columnConfig: {
             lineItemColumn,
             valueColumn,
@@ -1379,7 +1477,7 @@ Respond with ONLY the JSON object, no other text`
               'pnl': 'pnl',
               'bs': 'balance_sheet',
               'carbon': 'carbon',
-              'cf': 'cashflow'
+              'cf': 'cash_flow'
             }
             const fileType = fileTypeMap[statementType] || statementType
             const filesResponse = await fetch(apiUrl(`/api/staged-files/${fileType}?dbPath=${encodeURIComponent(dbPath)}`))
