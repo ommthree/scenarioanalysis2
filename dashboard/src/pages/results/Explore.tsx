@@ -14,13 +14,15 @@ import {
   LayoutDashboard,
   Dices,
   Sliders,
-  Waves
+  Waves,
+  FileText
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import RiskDashboard from './visualizations/RiskDashboard'
 import WaterfallChart from './visualizations/WaterfallChart'
 import RibbonChart from './visualizations/RibbonChart'
 import ScenariosPanel from './visualizations/ScenariosPanel'
+import FinancialStatementsPanel from './visualizations/FinancialStatementsPanel'
 import CorrelationsPanel from './visualizations/CorrelationsPanel'
 import HazardMapsPanel from './visualizations/HazardMapsPanel'
 import LocationsPanel from './visualizations/LocationsPanel'
@@ -59,6 +61,7 @@ export default function Explore() {
     { id: 'waterfall', icon: BarChart2, label: 'Waterfall', color: '#f97316', requiresWhatIf: false },
     { id: 'ribbon', icon: Waves, label: 'Ribbon Chart', color: '#06b6d4', requiresWhatIf: false },
     { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6', requiresWhatIf: false },
+    { id: 'financial-statements', icon: FileText, label: 'Financial Statements', color: '#14b8a6', requiresWhatIf: false },
     { id: 'correlations', icon: Dices, label: 'Monte Carlo', color: '#10b981', requiresWhatIf: false },
     { id: 'levers', icon: Sliders, label: 'Levers', color: '#8b5cf6', requiresWhatIf: true },
     { id: 'hazard-maps', icon: Map, label: 'Physical Risk', color: '#ec4899', requiresWhatIf: false },
@@ -221,6 +224,8 @@ export default function Explore() {
           <RibbonChart />
         ) : selectedViz === 'scenarios' ? (
           <ScenariosPanel />
+        ) : selectedViz === 'financial-statements' ? (
+          <FinancialStatementsPanel />
         ) : selectedViz === 'correlations' ? (
           <CorrelationsPanel />
         ) : selectedViz === 'levers' ? (

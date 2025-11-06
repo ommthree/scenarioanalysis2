@@ -745,6 +745,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                 {selectedDrivers.size === 0 ? 'Select at least one driver to plot.' : 'No data available for selected drivers.'}
               </p>
             )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -839,7 +840,6 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                 Click the button above to generate AI-powered insights about this scenario comparison
               </div>
             )}
-            </div>
           </CardContent>
         </Card>
       )}
