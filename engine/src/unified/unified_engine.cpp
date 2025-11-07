@@ -155,12 +155,17 @@ UnifiedResult UnifiedEngine::calculate(
         // - is_computed=true: Pure within-period calculations, CAN be calculated in period 0
         // - no_driver=true: Uses BASE:/[t-1] without drivers, CANNOT be calculated in period 0
         // - no_driver=false and is_computed=false: Uses drivers, CANNOT be calculated in period 0
+        // - Formulas with [t-1] references: CANNOT be calculated in period 0 (no prior period exists)
         bool should_skip = false;
         if (period_id == 0) {
             // Skip items that have no_driver=true (they need BASE or [t-1] data)
             // Skip items that have no_driver=false and is_computed=false (they need driver data)
             // Only calculate items with is_computed=true (pure calculations)
             if (line_item->no_driver || (!line_item->is_computed && !line_item->no_driver)) {
+                should_skip = true;
+            }
+            // Skip items whose formula contains [t-1] references (no period -1 exists)
+            else if (line_item->formula.has_value() && line_item->formula->find("[t-1]") != std::string::npos) {
                 should_skip = true;
             }
             // Also skip computed items that depend on any skipped items (cascading)

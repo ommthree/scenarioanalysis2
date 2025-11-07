@@ -962,9 +962,15 @@ int main(int argc, char* argv[]) {
                     }
 
                     // Now calculate derived values (is_computed=true) for all entities
+                    // Skip items with [t-1] references in period 0 (no prior period exists)
                     std::cout << "  Calculating derived values" << std::endl;
                     for (const auto& item : line_items) {
                         if (item.is_computed) {
+                            // Skip items with [t-1] in formula during period 0
+                            if (item.formula.has_value() && item.formula->find("[t-1]") != std::string::npos) {
+                                continue;
+                            }
+
                             for (const auto& entity_id : hierarchy->get_all_entities()) {
                                 bool is_populated = false;
                                 double value = engine.calculate_single_line_item(
