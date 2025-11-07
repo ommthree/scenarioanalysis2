@@ -15,6 +15,7 @@ interface LineItem {
   formula: string | null
   base_value_source?: string
   is_computed: boolean
+  no_driver: boolean
   sign_convention: 'positive' | 'negative'
   dependencies?: string[]
   is_mac_numerator?: boolean
@@ -106,7 +107,8 @@ export default function DefineStatements() {
           ...item,
           // Use item's section if it exists (unified templates), otherwise use default
           section: item.section || defaultSection,
-          sign_convention: item.sign_convention || 'positive'
+          sign_convention: item.sign_convention || 'positive',
+          no_driver: item.no_driver || false
         }))
         setLineItems(mappedLineItems)
         setSelectedSection(defaultSection)  // Start with the default tab for the template type
@@ -138,6 +140,7 @@ export default function DefineStatements() {
       formula: null,
       base_value_source: '',
       is_computed: false,
+      no_driver: false,
       sign_convention: 'positive',
       dependencies: [],
       is_mac_numerator: false,
@@ -218,6 +221,7 @@ export default function DefineStatements() {
             formula: item.formula || null,
             base_value_source: item.base_value_source || '',
             is_computed: item.is_computed || false,
+            no_driver: item.no_driver || false,
             sign_convention: item.sign_convention || 'positive',
             dependencies: item.dependencies || [],
             is_mac_numerator: item.is_mac_numerator || false,
@@ -653,10 +657,17 @@ export default function DefineStatements() {
                                   </div>
                                 </div>
                                 <div>
-                                  <label className="text-sm font-medium text-muted-foreground">Derived Mode</label>
+                                  <label className="text-sm font-medium text-muted-foreground">Purely Computed</label>
                                   <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <button
-                                      onClick={() => updateLineItem(index, 'is_computed', !item.is_computed)}
+                                      onClick={() => {
+                                        const newValue = !item.is_computed
+                                        updateLineItem(index, 'is_computed', newValue)
+                                        // Enforce mutual exclusivity: if turning on is_computed, turn off no_driver
+                                        if (newValue && item.no_driver) {
+                                          updateLineItem(index, 'no_driver', false)
+                                        }
+                                      }}
                                       style={{
                                         position: 'relative',
                                         width: '44px',
@@ -683,7 +694,49 @@ export default function DefineStatements() {
                                       />
                                     </button>
                                     <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                                      {item.is_computed ? 'Purely derived (formula only)' : 'Can use any data'}
+                                      {item.is_computed ? 'Pure within-period calculation' : 'Not purely computed'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-muted-foreground">No Driver</label>
+                                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <button
+                                      onClick={() => {
+                                        const newValue = !item.no_driver
+                                        updateLineItem(index, 'no_driver', newValue)
+                                        // Enforce mutual exclusivity: if turning on no_driver, turn off is_computed
+                                        if (newValue && item.is_computed) {
+                                          updateLineItem(index, 'is_computed', false)
+                                        }
+                                      }}
+                                      style={{
+                                        position: 'relative',
+                                        width: '44px',
+                                        height: '24px',
+                                        backgroundColor: item.no_driver ? '#f59e0b' : '#64748b',
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        transition: 'background-color 0.2s',
+                                        padding: 0
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          top: '2px',
+                                          left: item.no_driver ? '22px' : '2px',
+                                          width: '20px',
+                                          height: '20px',
+                                          backgroundColor: '#ffffff',
+                                          borderRadius: '50%',
+                                          transition: 'left 0.2s'
+                                        }}
+                                      />
+                                    </button>
+                                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+                                      {item.no_driver ? 'Uses BASE/[t-1] without drivers' : 'Uses drivers'}
                                     </span>
                                   </div>
                                 </div>

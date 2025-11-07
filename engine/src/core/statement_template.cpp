@@ -183,7 +183,31 @@ void StatementTemplate::parse_json(const std::string& json_content) {
                 item.level = item_json.value("level", 1);
                 item.driver_applicable = item_json.value("driver_applicable", false);
                 item.category = item_json.value("category", "");
-                item.is_computed = item_json.value("is_computed", false);
+                // Handle is_computed as both integer (0/1) and boolean (true/false)
+                if (item_json.contains("is_computed")) {
+                    if (item_json["is_computed"].is_boolean()) {
+                        item.is_computed = item_json["is_computed"].get<bool>();
+                    } else if (item_json["is_computed"].is_number_integer()) {
+                        item.is_computed = item_json["is_computed"].get<int>() != 0;
+                    } else {
+                        item.is_computed = false;
+                    }
+                } else {
+                    item.is_computed = false;
+                }
+
+                // Handle no_driver as both integer (0/1) and boolean (true/false)
+                if (item_json.contains("no_driver")) {
+                    if (item_json["no_driver"].is_boolean()) {
+                        item.no_driver = item_json["no_driver"].get<bool>();
+                    } else if (item_json["no_driver"].is_number_integer()) {
+                        item.no_driver = item_json["no_driver"].get<int>() != 0;
+                    } else {
+                        item.no_driver = false;
+                    }
+                } else {
+                    item.no_driver = false;
+                }
 
                 // Optional fields
                 if (item_json.contains("formula") && !item_json["formula"].is_null()) {
@@ -298,6 +322,7 @@ std::string StatementTemplate::to_json() const {
         item_json["driver_applicable"] = item.driver_applicable;
         item_json["category"] = item.category;
         item_json["is_computed"] = item.is_computed;
+        item_json["no_driver"] = item.no_driver;
 
         if (item.formula.has_value()) {
             item_json["formula"] = item.formula.value();

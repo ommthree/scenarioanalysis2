@@ -144,12 +144,23 @@ UnifiedResult UnifiedEngine::calculate(
             return result;
         }
 
-        // In period 0 (opening balance), only calculate is_computed=true items
-        // is_computed=true means: computed from current period statement values only
-        // is_computed=false means: requires external data (drivers, prior periods, etc.)
+        // Validate mutual exclusivity of is_computed and no_driver
+        if (line_item->is_computed && line_item->no_driver) {
+            result.success = false;
+            result.errors.push_back("Line item '" + code + "' has both is_computed=true and no_driver=true (mutually exclusive)");
+            return result;
+        }
+
+        // Period 0 (opening balance) calculation logic:
+        // - is_computed=true: Pure within-period calculations, CAN be calculated in period 0
+        // - no_driver=true: Uses BASE:/[t-1] without drivers, CANNOT be calculated in period 0
+        // - no_driver=false and is_computed=false: Uses drivers, CANNOT be calculated in period 0
         bool should_skip = false;
         if (period_id == 0) {
-            if (!line_item->is_computed) {
+            // Skip items that have no_driver=true (they need BASE or [t-1] data)
+            // Skip items that have no_driver=false and is_computed=false (they need driver data)
+            // Only calculate items with is_computed=true (pure calculations)
+            if (line_item->no_driver || (!line_item->is_computed && !line_item->no_driver)) {
                 should_skip = true;
             }
             // Also skip computed items that depend on any skipped items (cascading)

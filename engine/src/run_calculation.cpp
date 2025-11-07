@@ -639,7 +639,24 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        const auto& line_items = tmpl->get_line_items();
+        // Compute calculation order from dependencies
+        try {
+            tmpl->compute_calculation_order();
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR: Failed to compute calculation order: " << e.what() << std::endl;
+            return 1;
+        }
+
+        // Get line items ordered by calculation dependencies
+        const auto& calculation_order = tmpl->get_calculation_order();
+        std::vector<core::LineItem> line_items;
+        for (const auto& code : calculation_order) {
+            const auto* item = tmpl->get_line_item(code);
+            if (item) {
+                line_items.push_back(*item);
+            }
+        }
+
         std::cout << "Template has " << line_items.size() << " line items to calculate" << std::endl;
 
         // Initialize unified engine
