@@ -923,8 +923,9 @@ app.post('/api/statements/staging', express.json(), (req, res) => {
       'pnl': 'staging_statement_pnl',
       'bs': 'staging_statement_balance_sheet',
       'balance_sheet': 'staging_statement_balance_sheet',
-      'cf': 'staging_statement_cashflow',
-      'cashflow': 'staging_statement_cashflow',
+      'cf': 'staging_statement_cash_flow',
+      'cashflow': 'staging_statement_cash_flow',
+      'cash_flow': 'staging_statement_cash_flow',
       'carbon': 'staging_statement_carbon'
     }
 
@@ -1264,8 +1265,9 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           'bs': { staging: 'staging_statement_balance_sheet', result: 'bs_result' },
           'balance_sheet': { staging: 'staging_statement_balance_sheet', result: 'bs_result' },
           'carbon': { staging: 'staging_statement_carbon', result: 'carbon_result' },
-          'cf': { staging: 'staging_statement_cashflow', result: 'cf_result' },
-          'cashflow': { staging: 'staging_statement_cashflow', result: 'cf_result' }
+          'cf': { staging: 'staging_statement_cash_flow', result: 'cf_result' },
+          'cashflow': { staging: 'staging_statement_cash_flow', result: 'cf_result' },
+          'cash_flow': { staging: 'staging_statement_cash_flow', result: 'cf_result' }
         }
 
         const tables = tableMap[statementType]
@@ -6615,7 +6617,8 @@ app.post('/api/ingest/statements', async (req, res) => {
                   break
                 case 'cashflow':
                 case 'cf':
-                  stagingTable = 'staging_statement_cashflow'
+                case 'cash_flow':
+                  stagingTable = 'staging_statement_cash_flow'
                   break
                 case 'carbon':
                   stagingTable = 'staging_statement_carbon'
@@ -6643,19 +6646,25 @@ app.post('/api/ingest/statements', async (req, res) => {
 
                 const value = parseFloat(csvRow.Value || csvRow.value || 0)
                 const units = csvRow.units || csvRow.Units || csvRow.currency || csvRow.Currency || null
+                // Extract entity_id from entity_path (last element is the leaf entity)
+                const entityId = hm.entity_path && hm.entity_path.length > 0
+                  ? hm.entity_path[hm.entity_path.length - 1]
+                  : null
 
                 logDebug(`Inserting into ${stagingTable}:`, {
                   source_csv_row: hm.csv_row_index,
                   source_csv_value: csvRow.Value || csvRow.value,
                   parsed_value: value,
                   units: units,
-                  line_item_code: hm.line_item_code
+                  line_item_code: hm.line_item_code,
+                  entity_id: entityId,
+                  entity_path: hm.entity_path
                 })
 
                 await new Promise((res, rej) => {
                   db.run(
-                    `INSERT INTO ${stagingTable} (line_item, units, value) VALUES (?, ?, ?)`,
-                    [hm.line_item_code, units, value.toString()],
+                    `INSERT INTO ${stagingTable} (line_item, units, value, entity_id) VALUES (?, ?, ?, ?)`,
+                    [hm.line_item_code, units, value.toString(), entityId],
                     (err) => (err ? rej(err) : (totalInserted++, res()))
                   )
                 })

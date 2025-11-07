@@ -798,9 +798,13 @@ int main(int argc, char* argv[]) {
                     auto fx_provider = std::make_shared<fx::FXProvider>(db);
                     auto unit_converter = std::make_shared<core::UnitConverter>(db, fx_provider);
 
+                    // Load statement values per entity (NEW: entity-specific loading)
+                    // Build map of entity_id -> (line_item -> value)
+                    std::map<int, std::map<std::string, double>> entity_staging_values;
+
                     // Load all values from staging balance sheet with unit conversion
                     auto bs_query = db->execute_query(
-                        "SELECT line_item, units, value FROM staging_statement_balance_sheet",
+                        "SELECT line_item, units, value, entity_id FROM staging_statement_balance_sheet",
                         {}
                     );
                     int bs_count = 0;
@@ -808,13 +812,14 @@ int main(int argc, char* argv[]) {
                         std::string line_item_code = bs_query->get_string("line_item");
                         std::string units = bs_query->get_string("units");
                         double value = std::stod(bs_query->get_string("value"));
+                        int entity_id = bs_query->get_int("entity_id");
 
                         // Convert to base unit if units specified
                         if (!units.empty()) {
                             value = unit_converter->to_base_unit(value, units, 0);
                         }
 
-                        staging_values[line_item_code] = value;
+                        entity_staging_values[entity_id][line_item_code] = value;
                         bs_count++;
                         std::cout << "    Loaded BS: " << line_item_code << " = " << value
                                   << (units.empty() ? "" : " (from " + units + ")") << std::endl;
@@ -823,7 +828,7 @@ int main(int argc, char* argv[]) {
 
                     // Load all values from staging P&L with unit conversion
                     auto pnl_query = db->execute_query(
-                        "SELECT line_item, units, value FROM staging_statement_pnl",
+                        "SELECT line_item, units, value, entity_id FROM staging_statement_pnl",
                         {}
                     );
                     int pnl_count = 0;
@@ -831,13 +836,14 @@ int main(int argc, char* argv[]) {
                         std::string line_item_code = pnl_query->get_string("line_item");
                         std::string units = pnl_query->get_string("units");
                         double value = std::stod(pnl_query->get_string("value"));
+                        int entity_id = pnl_query->get_int("entity_id");
 
                         // Convert to base unit if units specified
                         if (!units.empty()) {
                             value = unit_converter->to_base_unit(value, units, 0);
                         }
 
-                        staging_values[line_item_code] = value;
+                        entity_staging_values[entity_id][line_item_code] = value;
                         pnl_count++;
                         std::cout << "    Loaded PNL: " << line_item_code << " = " << value
                                   << (units.empty() ? "" : " (from " + units + ")") << std::endl;
@@ -847,7 +853,7 @@ int main(int argc, char* argv[]) {
                     // Load all values from staging carbon with unit conversion (if table exists)
                     try {
                         auto carbon_query = db->execute_query(
-                            "SELECT line_item, units, value FROM staging_statement_carbon",
+                            "SELECT line_item, units, value, entity_id FROM staging_statement_carbon",
                             {}
                         );
                         int carbon_count = 0;
@@ -855,13 +861,14 @@ int main(int argc, char* argv[]) {
                             std::string line_item_code = carbon_query->get_string("line_item");
                             std::string units = carbon_query->get_string("units");
                             double value = std::stod(carbon_query->get_string("value"));
+                            int entity_id = carbon_query->get_int("entity_id");
 
                             // Convert to base unit if units specified
                             if (!units.empty()) {
                                 value = unit_converter->to_base_unit(value, units, 0);
                             }
 
-                            staging_values[line_item_code] = value;
+                            entity_staging_values[entity_id][line_item_code] = value;
                             carbon_count++;
                             std::cout << "    Loaded CARBON: " << line_item_code << " = " << value
                                       << (units.empty() ? "" : " (from " + units + ")") << std::endl;
@@ -872,20 +879,54 @@ int main(int argc, char* argv[]) {
                         std::cout << "  No carbon statement data (table may not exist)" << std::endl;
                     }
 
-                    // Populate leaf entities only
-                    auto levels = hierarchy->get_levels();
-                    if (!levels.empty()) {
-                        const auto& leaf_level = levels[0]; // First level is deepest (leaf nodes)
-                        for (const auto& entity_id : leaf_level) {
-                            for (const auto& [line_item_code, value] : staging_values) {
-                                period_results[entity_id][line_item_code] = {value, true};
+                    // Load all values from staging cash flow with unit conversion (if table exists)
+                    try {
+                        auto cf_query = db->execute_query(
+                            "SELECT line_item, units, value, entity_id FROM staging_statement_cash_flow",
+                            {}
+                        );
+                        int cf_count = 0;
+                        while (cf_query->next()) {
+                            std::string line_item_code = cf_query->get_string("line_item");
+                            std::string units = cf_query->get_string("units");
+                            double value = std::stod(cf_query->get_string("value"));
+                            int entity_id = cf_query->get_int("entity_id");
+
+                            // Convert to base unit if units specified
+                            if (!units.empty()) {
+                                value = unit_converter->to_base_unit(value, units, 0);
                             }
+
+                            entity_staging_values[entity_id][line_item_code] = value;
+                            cf_count++;
+                            std::cout << "    Loaded CF: " << line_item_code << " = " << value
+                                      << (units.empty() ? "" : " (from " + units + ")") << std::endl;
+                        }
+                        std::cout << "  Loaded " << cf_count << " cash flow items" << std::endl;
+                    } catch (const std::exception& e) {
+                        // Table may not exist if cash flow statement not used
+                        std::cout << "  No cash flow statement data (table may not exist)" << std::endl;
+                    }
+
+                    // Populate entities with their specific values
+                    for (const auto& [entity_id, line_item_values] : entity_staging_values) {
+                        std::string entity_id_str = std::to_string(entity_id);
+                        for (const auto& [line_item_code, value] : line_item_values) {
+                            period_results[entity_id_str][line_item_code] = {value, true};
                         }
                     }
 
                     // Roll up base values to parent entities
                     std::cout << "  Rolling up to parent entities" << std::endl;
-                    for (const auto& [line_item_code, _] : staging_values) {
+                    // Collect all unique line items across all entities
+                    std::set<std::string> all_line_items;
+                    for (const auto& [entity_id, line_item_values] : entity_staging_values) {
+                        for (const auto& [line_item_code, _] : line_item_values) {
+                            all_line_items.insert(line_item_code);
+                        }
+                    }
+                    auto levels = hierarchy->get_levels();
+                    for (const auto& line_item_code : all_line_items) {
                         // Find the line item definition to get aggregation method
                         auto line_item_def = tmpl->get_line_item(line_item_code);
                         if (line_item_def && line_item_def->aggregation_method == "sum") {
