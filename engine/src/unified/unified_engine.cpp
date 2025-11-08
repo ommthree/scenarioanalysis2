@@ -144,32 +144,30 @@ UnifiedResult UnifiedEngine::calculate(
             return result;
         }
 
-        // Validate mutual exclusivity of is_computed and no_driver
-        if (line_item->is_computed && line_item->no_driver) {
-            result.success = false;
-            result.errors.push_back("Line item '" + code + "' has both is_computed=true and no_driver=true (mutually exclusive)");
-            return result;
-        }
-
         // Period 0 (opening balance) calculation logic:
-        // - is_computed=true: Pure within-period calculations, CAN be calculated in period 0
-        // - no_driver=true: Uses BASE:/[t-1] without drivers, CANNOT be calculated in period 0
-        // - no_driver=false and is_computed=false: Uses drivers, CANNOT be calculated in period 0
-        // - Formulas with [t-1] references: CANNOT be calculated in period 0 (no prior period exists)
+        // Skip items that cannot be calculated in period 0:
+        // 1. Items with [t-1] references (no prior period exists)
+        // 2. Items with BASE: references (base values not loaded in period 0)
+        // 3. Items that need driver data (is_computed=false and no formula with BASE:/[t-1])
+        // 4. Items that depend on any skipped items (cascading)
         bool should_skip = false;
         if (period_id == 0) {
-            // Skip items that have no_driver=true (they need BASE or [t-1] data)
-            // Skip items that have no_driver=false and is_computed=false (they need driver data)
-            // Only calculate items with is_computed=true (pure calculations)
-            if (line_item->no_driver || (!line_item->is_computed && !line_item->no_driver)) {
-                should_skip = true;
+            // Check if formula contains [t-1] or BASE: references
+            bool has_temporal_ref = false;
+            if (line_item->formula.has_value()) {
+                const std::string& formula = line_item->formula.value();
+                has_temporal_ref = (formula.find("[t-1]") != std::string::npos ||
+                                   formula.find("BASE:") != std::string::npos);
             }
-            // Skip items whose formula contains [t-1] references (no period -1 exists)
-            else if (line_item->formula.has_value() && line_item->formula->find("[t-1]") != std::string::npos) {
+
+            if (has_temporal_ref) {
+                // Skip items with [t-1] or BASE: references
                 should_skip = true;
-            }
-            // Also skip computed items that depend on any skipped items (cascading)
-            else if (!line_item->dependencies.empty()) {
+            } else if (!line_item->is_computed) {
+                // Skip items that need driver data (not computed, no temporal references)
+                should_skip = true;
+            } else if (!line_item->dependencies.empty()) {
+                // Skip computed items that depend on any skipped items (cascading)
                 for (const auto& dep : line_item->dependencies) {
                     // Extract base name from dependency (remove [t-1] suffix if present)
                     std::string base_dep = dep;
@@ -214,15 +212,10 @@ UnifiedResult UnifiedEngine::calculate(
             // Calculate value using formula or provider lookup
             double value = calculate_line_item(code, line_item->formula, line_item->sign_convention, ctx, line_item);
 
-            // Apply sign convention when storing (so formulas see correct signs)
-            double signed_value = value;
-            if (line_item->sign_convention == SignConvention::NEGATIVE) {
-                signed_value = -value;
-            }
-
-            // Store in result (with original sign) and current_values (with convention applied)
+            // Store value as-is (no sign convention applied)
+            // Sign conventions are only applied during display/reporting
             result.line_items[code] = value;
-            current_values_[code] = signed_value;
+            current_values_[code] = value;
 
             // Update statement provider so subsequent formulas can reference this
             statement_provider_->set_current_values(current_values_);
@@ -403,11 +396,7 @@ double UnifiedEngine::calculate_line_item(
                 // Driver contribution = (full result) - (result with driver at period 1)
                 double contrib_value = value - value_with_period1_driver;
 
-                // Apply sign convention
-                if (line_item && line_item->sign_convention == SignConvention::NEGATIVE) {
-                    contrib_value = -contrib_value;
-                }
-
+                // No sign convention applied - stored as raw values
                 DriverContribution contrib;
                 contrib.line_item_code = code;
                 contrib.driver_code = driver_code;
@@ -695,14 +684,8 @@ double UnifiedEngine::calculate_single_line_item(
     try {
         double value = calculate_line_item(line_item_code, line_item->formula, line_item->sign_convention, ctx, line_item);
 
-        // Apply sign convention when storing (so formulas see correct signs)
-        double signed_value = value;
-        if (line_item->sign_convention == SignConvention::NEGATIVE) {
-            signed_value = -value;
-        }
-
-        // Store in current values for subsequent calculations (with sign applied)
-        current_values_[line_item_code] = signed_value;
+        // Store in current values for subsequent calculations (no sign convention applied)
+        current_values_[line_item_code] = value;
         statement_provider_->set_current_values(current_values_);
 
         is_populated = true;

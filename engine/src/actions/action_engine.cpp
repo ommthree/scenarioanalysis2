@@ -10,6 +10,8 @@
 #include <sstream>
 #include <optional>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 using json = nlohmann::json;
 
@@ -107,7 +109,8 @@ std::vector<ManagementAction> ActionEngine::load_actions(int scenario_id) {
 
         // Load transformations from action_transformation table
         std::string trans_sql = R"(
-            SELECT line_item, type, new_formula, comment, period
+            SELECT line_item, type, new_formula, comment, period,
+                   COALESCE(is_carbon_transformation, 0) as is_carbon
             FROM action_transformation
             WHERE action_code = :action_code
             ORDER BY period NULLS LAST
@@ -121,21 +124,24 @@ std::vector<ManagementAction> ActionEngine::load_actions(int scenario_id) {
             t.transformation_type = trans_result->get_string("type");
             t.new_formula = trans_result->get_string("new_formula");
             t.comment = trans_result->is_null("comment") ? "" : trans_result->get_string("comment");
+            bool is_carbon = trans_result->get_int("is_carbon") == 1;
 
             // Read period field (nullable)
             if (!trans_result->is_null("period")) {
                 int period_value = trans_result->get_int("period");
                 t.period = period_value;
                 std::cerr << "[LOAD] Action=" << action.action_code << " LineItem=" << t.line_item_code
-                          << " Type=" << t.transformation_type << " Period=" << period_value << std::endl;
+                          << " Type=" << t.transformation_type << " Period=" << period_value
+                          << " Carbon=" << is_carbon << std::endl;
             } else {
                 t.period = std::nullopt;  // NULL = applies to all periods
                 std::cerr << "[LOAD] Action=" << action.action_code << " LineItem=" << t.line_item_code
-                          << " Type=" << t.transformation_type << " Period=NULL" << std::endl;
+                          << " Type=" << t.transformation_type << " Period=NULL"
+                          << " Carbon=" << is_carbon << std::endl;
             }
 
-            // Separate into financial vs carbon based on type
-            if (t.transformation_type == "carbon_formula_override") {
+            // Separate into financial vs carbon based on flag
+            if (is_carbon) {
                 action.carbon_transformations.push_back(t);
             } else {
                 action.financial_transformations.push_back(t);
@@ -313,7 +319,11 @@ bool ActionEngine::apply_transformations_to_line_item(
     // Check if any transformation is type FORMULA (mutually exclusive)
     const Transformation* formula_transformation = nullptr;
     for (const auto& t : transformations) {
-        if (t.transformation_type == "FORMULA" || t.transformation_type == "formula_override") {
+        // Case-insensitive comparison for transformation types
+        std::string type_upper = t.transformation_type;
+        std::transform(type_upper.begin(), type_upper.end(), type_upper.begin(), ::toupper);
+
+        if (type_upper == "FORMULA" || type_upper == "FORMULA_OVERRIDE") {
             formula_transformation = &t;
             break;  // First FORMULA wins
         }
@@ -342,7 +352,11 @@ bool ActionEngine::apply_transformations_to_line_item(
         std::vector<double> deltas;
 
         for (const auto& t : transformations) {
-            if (t.transformation_type == "MULTIPLIER") {
+            // Case-insensitive comparison for transformation types
+            std::string type_upper = t.transformation_type;
+            std::transform(type_upper.begin(), type_upper.end(), type_upper.begin(), ::toupper);
+
+            if (type_upper == "MULTIPLIER") {
                 // Parse multiplier from new_formula field
                 try {
                     double mult = std::stod(t.new_formula);
@@ -351,7 +365,7 @@ bool ActionEngine::apply_transformations_to_line_item(
                     // Invalid multiplier - skip
                     continue;
                 }
-            } else if (t.transformation_type == "DELTA") {
+            } else if (type_upper == "DELTA") {
                 // Parse delta from new_formula field
                 try {
                     double delta = std::stod(t.new_formula);
