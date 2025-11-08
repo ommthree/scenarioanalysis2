@@ -1329,16 +1329,23 @@ export default function ViewResults() {
                                 {item.display_name}
                               </span>
                             </div>
-                            <span style={{
-                              fontSize: '16px',
-                              color: (item.sign_convention === 'negative' || item.value < 0) ? '#ef4444' : '#22c55e',
-                              fontWeight: '600',
-                              fontFamily: 'monospace',
-                              minWidth: '150px',
-                              textAlign: 'right'
-                            }}>
-                              {(item.sign_convention === 'negative' || item.value < 0) ? '(' : ''}{formatValue(Math.abs(item.value))}{(item.sign_convention === 'negative' || item.value < 0) ? ')' : ''}
-                            </span>
+                            {(() => {
+                              // Apply sign convention: flip sign if convention is 'negative'
+                              const displayValue = item.sign_convention === 'negative' ? -item.value : item.value
+                              const isNegative = displayValue < 0
+                              return (
+                                <span style={{
+                                  fontSize: '16px',
+                                  color: isNegative ? '#ef4444' : '#22c55e',
+                                  fontWeight: '600',
+                                  fontFamily: 'monospace',
+                                  minWidth: '150px',
+                                  textAlign: 'right'
+                                }}>
+                                  {isNegative ? '(' : ''}{formatValue(Math.abs(displayValue))}{isNegative ? ')' : ''}
+                                </span>
+                              )
+                            })()}
                           </div>
 
                           {/* Driver Contributions */}
@@ -2547,16 +2554,23 @@ export default function ViewResults() {
                               {item.display_name}
                             </span>
                           </div>
-                          <span style={{
-                            fontSize: '16px',
-                            color: (item.sign_convention === 'negative' || item.meanValue < 0) ? '#f87171' : '#86efac',
-                            fontWeight: '600',
-                            fontFamily: 'monospace',
-                            minWidth: '150px',
-                            textAlign: 'right'
-                          }}>
-                            {(item.sign_convention === 'negative' || item.meanValue < 0) ? '(' : ''}{formatValue(Math.abs(item.meanValue))}{(item.sign_convention === 'negative' || item.meanValue < 0) ? ')' : ''}
-                          </span>
+                          {(() => {
+                            // Apply sign convention: flip sign if convention is 'negative'
+                            const displayValue = item.sign_convention === 'negative' ? -item.meanValue : item.meanValue
+                            const isNegative = displayValue < 0
+                            return (
+                              <span style={{
+                                fontSize: '16px',
+                                color: isNegative ? '#f87171' : '#86efac',
+                                fontWeight: '600',
+                                fontFamily: 'monospace',
+                                minWidth: '150px',
+                                textAlign: 'right'
+                              }}>
+                                {isNegative ? '(' : ''}{formatValue(Math.abs(displayValue))}{isNegative ? ')' : ''}
+                              </span>
+                            )
+                          })()}
                         </div>
                       ))}
                     </div>
