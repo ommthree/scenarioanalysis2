@@ -646,86 +646,61 @@ Be concise and focus on actionable insights for decision-makers.`
           {/* Time Range Selector */}
           {periods.length > 0 && (
             <div>
-              <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: '600', color: '#a855f7' }}>
-                Time Range: Period {startPeriod} to Period {endPeriod}
+              <label style={{ display: 'block', marginBottom: '16px', fontSize: '14px', fontWeight: '600', color: '#a855f7' }}>
+                Time Range
               </label>
-              <div style={{ position: 'relative', height: '40px', marginBottom: '8px' }}>
-                <input
-                  type="range"
-                  min={Math.min(...periods)}
-                  max={Math.max(...periods)}
-                  value={startPeriod}
-                  onChange={(e) => {
-                    const newStart = parseInt(e.target.value)
-                    setStartPeriod(newStart)
-                    if (newStart > endPeriod) {
-                      setEndPeriod(newStart)
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    top: 0,
-                    left: 0,
-                    height: '6px',
-                    borderRadius: '3px',
-                    backgroundColor: 'transparent',
-                    outline: 'none',
-                    appearance: 'none',
-                    pointerEvents: 'auto',
-                    zIndex: 2
-                  }}
-                />
-                <input
-                  type="range"
-                  min={Math.min(...periods)}
-                  max={Math.max(...periods)}
-                  value={endPeriod}
-                  onChange={(e) => {
-                    const newEnd = parseInt(e.target.value)
-                    setEndPeriod(newEnd)
-                    if (newEnd < startPeriod) {
-                      setStartPeriod(newEnd)
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    top: 0,
-                    left: 0,
-                    height: '6px',
-                    borderRadius: '3px',
-                    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-                    outline: 'none',
-                    appearance: 'none',
-                    pointerEvents: 'auto',
-                    zIndex: 1
-                  }}
-                />
-                <style>{`
-                  input[type="range"]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    appearance: none;
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #a855f7;
-                    border: 2px solid #fff;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                  }
 
-                  input[type="range"]::-moz-range-thumb {
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #a855f7;
-                    border: 2px solid #fff;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                  }
-                `}</style>
+              {/* Separate Period Range Selectors */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '8px' }}>
+                {/* Start Period Slider */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    Start Period: P{startPeriod}
+                  </label>
+                  <input
+                    type="range"
+                    min={Math.min(...periods)}
+                    max={Math.max(...periods)}
+                    value={startPeriod}
+                    onChange={(e) => {
+                      const newStart = parseInt(e.target.value)
+                      setStartPeriod(newStart)
+                      if (newStart > endPeriod) {
+                        setEndPeriod(newStart)
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+
+                {/* End Period Slider */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    End Period: P{endPeriod}
+                  </label>
+                  <input
+                    type="range"
+                    min={Math.min(...periods)}
+                    max={Math.max(...periods)}
+                    value={endPeriod}
+                    onChange={(e) => {
+                      const newEnd = parseInt(e.target.value)
+                      setEndPeriod(newEnd)
+                      if (newEnd < startPeriod) {
+                        setStartPeriod(newEnd)
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
               </div>
+
               <div style={{
                 fontSize: '12px',
                 color: '#64748b',
@@ -819,10 +794,10 @@ Be concise and focus on actionable insights for decision-makers.`
                           {result.carbonAbatement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
                         <td style={{ padding: '12px 16px', color: '#e2e8f0', textAlign: 'right' }}>
-                          {result.cost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          {(-result.cost).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
                         <td style={{ padding: '12px 16px', color: '#e2e8f0', textAlign: 'right', fontWeight: '600' }}>
-                          {result.mac !== null ? result.mac.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A'}
+                          {result.mac !== null ? (-result.mac).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A'}
                         </td>
                       </tr>
                     ))}
@@ -832,10 +807,13 @@ Be concise and focus on actionable insights for decision-makers.`
 
               {/* MAC Chart */}
               {(() => {
-                const sortedResults = [...macResults].sort((a, b) => (a.mac || 0) - (b.mac || 0))
-                const chartData = sortedResults.map(result => {
-                  const prevAbatement = sortedResults
-                    .slice(0, sortedResults.indexOf(result))
+                // Backend sorts by MAC ascending (most negative first)
+                // Reverse to get lowest to highest cost order after flipping signs
+                const reversedResults = [...macResults].reverse()
+                const flippedResults = reversedResults.map(r => ({ ...r, mac: r.mac === null ? null : -r.mac }))
+                const chartData = flippedResults.map(result => {
+                  const prevAbatement = flippedResults
+                    .slice(0, flippedResults.indexOf(result))
                     .reduce((sum, r) => sum + r.carbonAbatement, 0)
                   return {
                     ...result,
@@ -843,11 +821,12 @@ Be concise and focus on actionable insights for decision-makers.`
                   }
                 })
 
-                const minMAC = Math.min(...macResults.map(r => r.mac === null ? 0 : r.mac))
-                const maxMAC = Math.max(...macResults.map(r => r.mac === null ? 0 : r.mac))
+                const minMAC = Math.min(...flippedResults.map(r => r.mac === null ? 0 : r.mac))
+                const maxMAC = Math.max(...flippedResults.map(r => r.mac === null ? 0 : r.mac))
                 const yPadding = Math.abs(maxMAC - minMAC) * 0.15
-                const yMin = minMAC - yPadding
-                const yMax = maxMAC + yPadding
+                // Always include 0 in the range for MAC curve (baseline)
+                const yMin = Math.min(0, minMAC - yPadding)
+                const yMax = Math.max(0, maxMAC + yPadding)
 
                 const chartWidth = 1000
                 const chartHeight = 500
@@ -1087,14 +1066,32 @@ Be concise and focus on actionable insights for decision-makers.`
                     {roiResults.map((result, index) => (
                       <tr key={index} style={{ borderBottom: '1px solid rgba(71, 85, 105, 0.3)' }}>
                         <td style={{ padding: '12px 16px', color: '#e2e8f0' }}>{result.action}</td>
-                        <td style={{ padding: '12px 16px', color: '#e2e8f0', textAlign: 'right' }}>
-                          {result.investment.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        <td style={{
+                          padding: '12px 16px',
+                          color: result.investment < 0 ? '#ef4444' : result.investment > 0 ? '#10b981' : '#94a3b8',
+                          textAlign: 'right',
+                          fontFamily: 'monospace'
+                        }}>
+                          {result.investment < 0 ?
+                            `(${Math.abs(result.investment).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` :
+                            result.investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td style={{ padding: '12px 16px', color: '#e2e8f0', textAlign: 'right' }}>
-                          {result.benefit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        <td style={{
+                          padding: '12px 16px',
+                          color: result.benefit > 0 ? '#10b981' : result.benefit < 0 ? '#ef4444' : '#94a3b8',
+                          textAlign: 'right',
+                          fontFamily: 'monospace'
+                        }}>
+                          {result.benefit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: result.roi !== null && result.roi > 0 ? '#22c55e' : '#ef4444' }}>
-                          {result.roi !== null ? result.roi.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' : 'N/A'}
+                        <td style={{
+                          padding: '12px 16px',
+                          color: result.roi === null ? '#64748b' : -result.roi > 1 ? '#10b981' : '#a855f7',
+                          textAlign: 'right',
+                          fontFamily: 'monospace',
+                          fontWeight: '700'
+                        }}>
+                          {result.roi === null ? 'N/A' : (-result.roi).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))}
@@ -1104,7 +1101,9 @@ Be concise and focus on actionable insights for decision-makers.`
 
               {/* ROI Chart */}
               {(() => {
-                const sortedResults = [...roiResults].sort((a, b) => (b.roi || 0) - (a.roi || 0))
+                // Flip ROI signs for display
+                const flippedResults = roiResults.map(r => ({ ...r, roi: r.roi === null ? null : -r.roi }))
+                const sortedResults = [...flippedResults].sort((a, b) => (b.roi || 0) - (a.roi || 0))
 
                 const chartWidth = 1000
                 const chartHeight = Math.max(400, sortedResults.length * 60)
@@ -1115,8 +1114,9 @@ Be concise and focus on actionable insights for decision-makers.`
                 const plotWidth = chartWidth - marginLeft - marginRight
                 const plotHeight = chartHeight - marginTop - marginBottom
 
-                const maxROI = Math.max(...sortedResults.map(r => r.roi || 0), 10)
-                const minROI = Math.min(...sortedResults.map(r => r.roi || 0), -10)
+                // Ensure range includes 0
+                const maxROI = Math.max(...sortedResults.map(r => r.roi || 0), 0)
+                const minROI = Math.min(...sortedResults.map(r => r.roi || 0), 0)
                 const maxAbsROI = Math.max(Math.abs(maxROI), Math.abs(minROI))
 
                 return (
@@ -1143,7 +1143,7 @@ Be concise and focus on actionable insights for decision-makers.`
                             fill="#94a3b8"
                             fontSize="11"
                           >
-                            {roiValue.toFixed(1)}%
+                            {roiValue.toFixed(1)}
                           </text>
                         </g>
                       )
@@ -1223,9 +1223,9 @@ Be concise and focus on actionable insights for decision-makers.`
                             fontWeight="700"
                             dominantBaseline="middle"
                           >
-                            {roi.toFixed(1)}%
+                            {roi.toFixed(1)}
                           </text>
-                          <title>{`${d.action}\nROI: ${roi.toFixed(2)}%\nInvestment: $${d.investment.toFixed(0)}\nBenefit: $${d.benefit.toFixed(0)}`}</title>
+                          <title>{`${d.action}\nROI: ${roi.toFixed(2)}\nInvestment: $${d.investment.toFixed(0)}\nBenefit: $${d.benefit.toFixed(0)}`}</title>
                         </g>
                       )
                     })}
@@ -1296,9 +1296,18 @@ Be concise and focus on actionable insights for decision-makers.`
                 const marginBottom = 120
                 const plotHeight = chartHeight - marginTop - marginBottom
 
-                // Find min/max ROI across all data with 10% padding
+                // Flip ROI signs for display
+                const flippedActionMap: {[action: string]: {[scenarioId: number]: number}} = {}
+                Object.keys(actionMap).forEach(action => {
+                  flippedActionMap[action] = {}
+                  Object.entries(actionMap[action]).forEach(([scenarioId, roi]) => {
+                    flippedActionMap[action][parseInt(scenarioId)] = -roi
+                  })
+                })
+
+                // Find min/max ROI across all flipped data with 10% padding
                 const allROIs = actions.flatMap(action =>
-                  Object.values(actionMap[action])
+                  Object.values(flippedActionMap[action])
                 )
                 const rawMaxROI = Math.max(...allROIs, 0)
                 const rawMinROI = Math.min(...allROIs, 0)
@@ -1307,10 +1316,10 @@ Be concise and focus on actionable insights for decision-makers.`
                 const maxROI = rawMaxROI + padding
                 const minROI = rawMinROI - padding
 
-                // Check for "no regret" actions (all scenarios have positive ROI)
+                // Check for "no regret" actions (all scenarios have ROI > 1 after flipping)
                 const noRegretActions = actions.filter(action => {
-                  const rois = Object.values(actionMap[action])
-                  return rois.length > 0 && rois.every(roi => roi > 0)
+                  const rois = Object.values(flippedActionMap[action])
+                  return rois.length > 0 && rois.every(roi => roi > 1)
                 })
 
                 // Color palette for scenarios
@@ -1318,7 +1327,7 @@ Be concise and focus on actionable insights for decision-makers.`
 
                 return (
                   <div style={{ overflowX: 'auto', width: '100%' }}>
-                    <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+                    <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={{ display: 'block' }}>
                       {/* Grid lines */}
                       {[...Array(5)].map((_, idx) => {
                         const roiValue = minROI + (maxROI - minROI) * idx / 4
@@ -1342,7 +1351,7 @@ Be concise and focus on actionable insights for decision-makers.`
                               fill="#94a3b8"
                               fontSize="11"
                             >
-                              {roiValue.toFixed(0)}%
+                              {roiValue.toFixed(1)}
                             </text>
                           </g>
                         )
@@ -1357,28 +1366,20 @@ Be concise and focus on actionable insights for decision-makers.`
                         stroke="#64748b"
                         strokeWidth="2"
                       />
-                      {/* X-axis */}
-                      <line
-                        x1={marginLeft}
-                        y1={chartHeight - marginBottom}
-                        x2={chartWidth - marginRight}
-                        y2={chartHeight - marginBottom}
-                        stroke="#64748b"
-                        strokeWidth="2"
-                      />
-                      {/* Zero line */}
-                      {minROI < 0 && maxROI > 0 && (
-                        <line
-                          x1={marginLeft}
-                          y1={marginTop + plotHeight - ((0 - minROI) / (maxROI - minROI)) * plotHeight}
-                          x2={chartWidth - marginRight}
-                          y2={marginTop + plotHeight - ((0 - minROI) / (maxROI - minROI)) * plotHeight}
-                          stroke="#f97316"
-                          strokeWidth="2"
-                          strokeDasharray="6 3"
-                          opacity={0.6}
-                        />
-                      )}
+                      {/* X-axis - positioned at ROI = 0 */}
+                      {(() => {
+                        const zeroY = marginTop + plotHeight - ((0 - minROI) / (maxROI - minROI)) * plotHeight
+                        return (
+                          <line
+                            x1={marginLeft}
+                            y1={zeroY}
+                            x2={chartWidth - marginRight}
+                            y2={zeroY}
+                            stroke="#64748b"
+                            strokeWidth="2"
+                          />
+                        )
+                      })()}
 
                       {/* Y-axis label */}
                       <text
@@ -1390,7 +1391,7 @@ Be concise and focus on actionable insights for decision-makers.`
                         fontWeight="600"
                         transform={`rotate(-90, ${marginLeft - 60}, ${chartHeight / 2})`}
                       >
-                        Return on Investment (%)
+                        Return on Investment
                       </text>
 
                       {/* Grouped Bars */}
@@ -1415,7 +1416,7 @@ Be concise and focus on actionable insights for decision-makers.`
                             {/* Bars for each scenario */}
                             {scenarios.map((scenario, scenarioIdx) => {
                               const scenarioId = scenario.scenario_id
-                              const roi = actionMap[action][scenarioId] || 0
+                              const roi = flippedActionMap[action][scenarioId] || 0
                               const barX = groupX + scenarioIdx * barWidth
                               const barHeight = Math.abs((roi / (maxROI - minROI)) * plotHeight)
                               const barY = roi >= 0
@@ -1432,7 +1433,7 @@ Be concise and focus on actionable insights for decision-makers.`
                                   fill={colors[scenarioIdx % colors.length]}
                                   opacity={0.85}
                                 >
-                                  <title>{`${action}\n${scenarios.find(s => s.scenario_id === scenarioId)?.name}\nROI: ${roi.toFixed(1)}%`}</title>
+                                  <title>{`${action}\n${scenarios.find(s => s.scenario_id === scenarioId)?.name}\nROI: ${roi.toFixed(1)}`}</title>
                                 </rect>
                               )
                             })}

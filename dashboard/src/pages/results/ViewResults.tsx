@@ -1411,42 +1411,13 @@ export default function ViewResults() {
                 </label>
               </div>
 
-              {/* Combined Period Range Selector */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {/* Separate Period Range Selectors */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Start Period Slider */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
-                    Start: P{macStartPeriod}
+                    Start Period: P{macStartPeriod}
                   </label>
-                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
-                    End: P{macEndPeriod}
-                  </label>
-                </div>
-
-                {/* Dual-handle range slider container */}
-                <div style={{ position: 'relative', width: '100%', height: '40px' }}>
-                  {/* Background track */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '17px',
-                    left: 0,
-                    right: 0,
-                    height: '6px',
-                    backgroundColor: 'rgba(71, 85, 105, 0.5)',
-                    borderRadius: '3px'
-                  }} />
-
-                  {/* Active range highlight */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '17px',
-                    left: `${((macStartPeriod - periods[0]) / (periods[periods.length - 1] - periods[0])) * 100}%`,
-                    width: `${((macEndPeriod - macStartPeriod) / (periods[periods.length - 1] - periods[0])) * 100}%`,
-                    height: '6px',
-                    backgroundColor: '#f97316',
-                    borderRadius: '3px'
-                  }} />
-
-                  {/* Start Period Slider */}
                   <input
                     type="range"
                     min={periods[0]}
@@ -1460,21 +1431,17 @@ export default function ViewResults() {
                       }
                     }}
                     style={{
-                      position: 'absolute',
                       width: '100%',
-                      top: 0,
-                      left: 0,
-                      height: '40px',
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      background: 'transparent',
-                      pointerEvents: 'all',
-                      cursor: 'pointer',
-                      zIndex: macStartPeriod >= macEndPeriod - 1 ? 5 : 4
-                    } as React.CSSProperties}
+                      cursor: 'pointer'
+                    }}
                   />
+                </div>
 
-                  {/* End Period Slider */}
+                {/* End Period Slider */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    End Period: P{macEndPeriod}
+                  </label>
                   <input
                     type="range"
                     min={periods[0]}
@@ -1488,44 +1455,11 @@ export default function ViewResults() {
                       }
                     }}
                     style={{
-                      position: 'absolute',
                       width: '100%',
-                      top: 0,
-                      left: 0,
-                      height: '40px',
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      background: 'transparent',
-                      pointerEvents: 'all',
-                      cursor: 'pointer',
-                      zIndex: 3
-                    } as React.CSSProperties}
+                      cursor: 'pointer'
+                    }}
                   />
                 </div>
-
-                <style>{`
-                  input[type="range"]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    appearance: none;
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #f97316;
-                    border: 2px solid #fff;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                  }
-
-                  input[type="range"]::-moz-range-thumb {
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #f97316;
-                    border: 2px solid #fff;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                  }
-                `}</style>
               </div>
 
               <div style={{
@@ -1668,20 +1602,20 @@ export default function ViewResults() {
                           </td>
                           <td style={{
                             padding: '12px 16px',
-                            color: result.cost > 0 ? '#ef4444' : result.cost < 0 ? '#10b981' : '#94a3b8',
+                            color: result.cost < 0 ? '#ef4444' : result.cost > 0 ? '#10b981' : '#94a3b8',
                             textAlign: 'right',
                             fontFamily: 'monospace'
                           }}>
-                            {result.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {(-result.cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td style={{
                             padding: '12px 16px',
-                            color: result.mac === null ? '#64748b' : result.mac < 0 ? '#10b981' : '#f97316',
+                            color: result.mac === null ? '#64748b' : result.mac > 0 ? '#10b981' : '#f97316',
                             textAlign: 'right',
                             fontFamily: 'monospace',
                             fontWeight: '700'
                           }}>
-                            {result.mac === null ? 'N/A' : result.mac.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {result.mac === null ? 'N/A' : (-result.mac).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       ))}
@@ -1692,27 +1626,40 @@ export default function ViewResults() {
 
               {/* MAC Curve Visualization */}
               {!macLoading && macResults.length > 0 && (() => {
-                // Calculate cumulative carbon abatement and find min/max MAC for scaling
+                // Backend sorts by MAC ascending (most negative first)
+                // When we flip signs, most negative becomes most positive (highest cost)
+                // So we need to reverse to get lowest to highest cost order
+                const reversedResults = [...macResults].reverse()
+
+                // Calculate cumulative carbon abatement and flip MAC signs
                 let cumulativeCarbon = 0
-                const chartData = macResults.map(result => {
+                const chartData = reversedResults.map(result => {
                   const start = cumulativeCarbon
                   cumulativeCarbon += result.carbonAbatement
                   return {
                     ...result,
+                    mac: result.mac === null ? null : -result.mac,  // Flip MAC sign for display
                     startX: start,
                     endX: cumulativeCarbon
                   }
                 })
 
                 const maxCarbon = cumulativeCarbon
-                const minMAC = Math.min(...macResults.map(r => r.mac === null ? 0 : r.mac))
-                const maxMAC = Math.max(...macResults.map(r => r.mac === null ? 0 : r.mac))
+                // Filter out null MAC values for min/max calculation (using flipped values)
+                const validMacValues = chartData.filter(r => r.mac !== null).map(r => r.mac)
+                const minMAC = validMacValues.length > 0 ? Math.min(...validMacValues) : 0
+                const maxMAC = validMacValues.length > 0 ? Math.max(...validMacValues) : 0
 
-                // Add padding to y-axis
+                console.log('[MAC DEBUG] minMAC:', minMAC, 'maxMAC:', maxMAC, 'validMacValues:', validMacValues)
+
+                // Add padding to y-axis, ensuring 0 is always included
                 const yPadding = Math.max(Math.abs(minMAC), Math.abs(maxMAC)) * 0.1
-                const yMin = minMAC - yPadding
-                const yMax = maxMAC + yPadding
+                // Always include 0 in the range for MAC curve (baseline)
+                const yMin = Math.min(0, minMAC - yPadding)
+                const yMax = Math.max(0, maxMAC + yPadding)
                 const yRange = yMax - yMin
+
+                console.log('[MAC DEBUG] yMin:', yMin, 'yMax:', yMax, 'yRange:', yRange)
 
                 const chartWidth = 800
                 const chartHeight = 400
@@ -1742,28 +1689,37 @@ export default function ViewResults() {
                           stroke="#64748b"
                           strokeWidth="2"
                         />
-                        {/* X-axis */}
-                        <line
-                          x1={margin.left}
-                          y1={chartHeight - margin.bottom}
-                          x2={chartWidth - margin.right}
-                          y2={chartHeight - margin.bottom}
-                          stroke="#64748b"
-                          strokeWidth="2"
-                        />
+                        {/* X-axis - positioned at MAC = 0 */}
+                        {(() => {
+                          const xAxisY = margin.top + plotHeight * ((yMax - 0) / yRange)
+                          return (
+                            <line
+                              x1={margin.left}
+                              y1={xAxisY}
+                              x2={chartWidth - margin.right}
+                              y2={xAxisY}
+                              stroke="#64748b"
+                              strokeWidth="2"
+                            />
+                          )
+                        })()}
 
                         {/* Zero line */}
-                        {yMin < 0 && yMax > 0 && (
-                          <line
-                            x1={margin.left}
-                            y1={margin.top + plotHeight * (1 - (0 - yMin) / yRange)}
-                            x2={chartWidth - margin.right}
-                            y2={margin.top + plotHeight * (1 - (0 - yMin) / yRange)}
-                            stroke="#94a3b8"
-                            strokeWidth="1"
-                            strokeDasharray="4 4"
-                          />
-                        )}
+                        {yMin < 0 && yMax > 0 && (() => {
+                          // Calculate the y position where MAC = 0
+                          const zeroY = margin.top + plotHeight * ((yMax - 0) / yRange)
+                          return (
+                            <line
+                              x1={margin.left}
+                              y1={zeroY}
+                              x2={chartWidth - margin.right}
+                              y2={zeroY}
+                              stroke="#94a3b8"
+                              strokeWidth="1"
+                              strokeDasharray="4 4"
+                            />
+                          )
+                        })()}
 
                         {/* Y-axis labels */}
                         {[...Array(6)].map((_, i) => {
@@ -1917,41 +1873,13 @@ export default function ViewResults() {
               </div>
 
               {/* Combined Period Range Selector */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {/* Separate Period Range Selectors */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Start Period Slider */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
-                    Start: P{roiStartPeriod}
+                    Start Period: P{roiStartPeriod}
                   </label>
-                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
-                    End: P{roiEndPeriod}
-                  </label>
-                </div>
-
-                {/* Dual-handle range slider container */}
-                <div style={{ position: 'relative', width: '100%', height: '40px' }}>
-                  {/* Background track */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '17px',
-                    left: 0,
-                    right: 0,
-                    height: '6px',
-                    backgroundColor: 'rgba(71, 85, 105, 0.5)',
-                    borderRadius: '3px'
-                  }} />
-
-                  {/* Active range highlight */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '17px',
-                    left: `${((roiStartPeriod - periods[0]) / (periods[periods.length - 1] - periods[0])) * 100}%`,
-                    width: `${((roiEndPeriod - roiStartPeriod) / (periods[periods.length - 1] - periods[0])) * 100}%`,
-                    height: '6px',
-                    backgroundColor: '#a855f7',
-                    borderRadius: '3px'
-                  }} />
-
-                  {/* Start Period Slider */}
                   <input
                     type="range"
                     min={periods[0]}
@@ -1965,21 +1893,17 @@ export default function ViewResults() {
                       }
                     }}
                     style={{
-                      position: 'absolute',
                       width: '100%',
-                      top: 0,
-                      left: 0,
-                      height: '40px',
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      background: 'transparent',
-                      pointerEvents: 'all',
-                      cursor: 'pointer',
-                      zIndex: roiStartPeriod >= roiEndPeriod - 1 ? 5 : 4
-                    } as React.CSSProperties}
+                      cursor: 'pointer'
+                    }}
                   />
+                </div>
 
-                  {/* End Period Slider */}
+                {/* End Period Slider */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#94a3b8' }}>
+                    End Period: P{roiEndPeriod}
+                  </label>
                   <input
                     type="range"
                     min={periods[0]}
@@ -1993,44 +1917,11 @@ export default function ViewResults() {
                       }
                     }}
                     style={{
-                      position: 'absolute',
                       width: '100%',
-                      top: 0,
-                      left: 0,
-                      height: '40px',
-                      WebkitAppearance: 'none',
-                      appearance: 'none',
-                      background: 'transparent',
-                      pointerEvents: 'all',
-                      cursor: 'pointer',
-                      zIndex: 3
-                    } as React.CSSProperties}
+                      cursor: 'pointer'
+                    }}
                   />
                 </div>
-
-                <style>{`
-                  input[type="range"]::-webkit-slider-thumb {
-                    -webkit-appearance: none;
-                    appearance: none;
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #a855f7;
-                    border: 2px solid #fff;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                  }
-
-                  input[type="range"]::-moz-range-thumb {
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #a855f7;
-                    border: 2px solid #fff;
-                    cursor: pointer;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                  }
-                `}</style>
               </div>
 
               <div style={{
@@ -2165,11 +2056,11 @@ export default function ViewResults() {
                           </td>
                           <td style={{
                             padding: '12px 16px',
-                            color: result.investment > 0 ? '#ef4444' : result.investment < 0 ? '#10b981' : '#94a3b8',
+                            color: result.investment < 0 ? '#ef4444' : result.investment > 0 ? '#10b981' : '#94a3b8',
                             textAlign: 'right',
                             fontFamily: 'monospace'
                           }}>
-                            {result.investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {result.investment < 0 ? `(${Math.abs(result.investment).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : result.investment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td style={{
                             padding: '12px 16px',
@@ -2181,12 +2072,12 @@ export default function ViewResults() {
                           </td>
                           <td style={{
                             padding: '12px 16px',
-                            color: result.roi === null ? '#64748b' : result.roi > 1 ? '#10b981' : '#a855f7',
+                            color: result.roi === null ? '#64748b' : -result.roi > 1 ? '#10b981' : '#a855f7',
                             textAlign: 'right',
                             fontFamily: 'monospace',
                             fontWeight: '700'
                           }}>
-                            {result.roi === null ? 'N/A' : result.roi.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {result.roi === null ? 'N/A' : (-result.roi).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       ))}
@@ -2201,16 +2092,16 @@ export default function ViewResults() {
                 const sortedResults = [...roiResults].sort((a, b) => (b.roi || 0) - (a.roi || 0))
 
                 // Find min/max ROI for scaling
-                const validRois = sortedResults.filter(r => r.roi !== null).map(r => r.roi!)
+                const validRois = sortedResults.filter(r => r.roi !== null).map(r => -r.roi!)
                 if (validRois.length === 0) return null
 
                 const minROI = Math.min(...validRois)
                 const maxROI = Math.max(...validRois)
 
-                // Add padding to y-axis
+                // Add padding to y-axis, ensuring 0 is always included
                 const yPadding = Math.max(Math.abs(minROI), Math.abs(maxROI)) * 0.1
-                const yMin = minROI - yPadding
-                const yMax = maxROI + yPadding
+                const yMin = Math.min(0, minROI - yPadding)
+                const yMax = Math.max(0, maxROI + yPadding)
                 const yRange = yMax - yMin
 
                 const chartWidth = 800
@@ -2252,19 +2143,6 @@ export default function ViewResults() {
                           stroke="#64748b"
                           strokeWidth="2"
                         />
-
-                        {/* Zero line (ROI = 1.0 break-even) */}
-                        {yMin < 1 && yMax > 1 && (
-                          <line
-                            x1={margin.left}
-                            y1={margin.top + plotHeight * (1 - (1 - yMin) / yRange)}
-                            x2={chartWidth - margin.right}
-                            y2={margin.top + plotHeight * (1 - (1 - yMin) / yRange)}
-                            stroke="#94a3b8"
-                            strokeWidth="1"
-                            strokeDasharray="4 4"
-                          />
-                        )}
 
                         {/* Y-axis labels */}
                         {[...Array(6)].map((_, i) => {
@@ -2325,24 +2203,25 @@ export default function ViewResults() {
                           if (item.roi === null) return null
 
                           const x = margin.left + index * barWidth
-                          const roiNormalized = (item.roi - yMin) / yRange
-                          const oneNormalized = (1 - yMin) / yRange
+                          const flippedRoi = -item.roi
+                          const roiNormalized = (flippedRoi - yMin) / yRange
+                          const zeroNormalized = (0 - yMin) / yRange
 
                           let barY, barHeight
-                          if (item.roi >= 1) {
-                            // ROI >= 1 (positive): bar goes from 1.0 line up
+                          if (flippedRoi >= 0) {
+                            // Positive ROI: bar goes from zero line up
                             barY = margin.top + plotHeight * (1 - roiNormalized)
-                            barHeight = plotHeight * (roiNormalized - oneNormalized)
+                            barHeight = plotHeight * (roiNormalized - zeroNormalized)
                           } else {
-                            // ROI < 1 (negative): bar goes from 1.0 line down
-                            barY = margin.top + plotHeight * (1 - oneNormalized)
-                            barHeight = plotHeight * (oneNormalized - roiNormalized)
+                            // Negative ROI: bar goes from zero line down
+                            barY = margin.top + plotHeight * (1 - zeroNormalized)
+                            barHeight = plotHeight * (zeroNormalized - roiNormalized)
                           }
 
-                          const color = item.roi > 1 ? '#10b981' : '#a855f7'
+                          const color = flippedRoi > 1 ? '#10b981' : '#a855f7'
 
                           const centerX = x + barWidth / 2
-                          const textY = item.roi >= 1 ? barY - 5 : barY + Math.abs(barHeight) + 15
+                          const textY = flippedRoi >= 0 ? barY - 5 : barY + Math.abs(barHeight) + 15
 
                           return (
                             <g key={index}>
@@ -2356,7 +2235,7 @@ export default function ViewResults() {
                                 stroke="rgba(255, 255, 255, 0.3)"
                                 strokeWidth="1"
                               />
-                              <title>{`${item.action}\nInvestment: $${item.investment.toLocaleString()}\nBenefit: $${item.benefit.toLocaleString()}\nROI: ${item.roi.toFixed(2)}`}</title>
+                              <title>{`${item.action}\nInvestment: $${item.investment.toLocaleString()}\nBenefit: $${item.benefit.toLocaleString()}\nROI: ${flippedRoi.toFixed(2)}`}</title>
                               {/* Action label */}
                               <text
                                 x={centerX}
