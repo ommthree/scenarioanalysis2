@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <sstream>
+#include <iomanip>
 #include <optional>
 #include <iostream>
 #include <algorithm>
@@ -380,6 +381,7 @@ bool ActionEngine::apply_transformations_to_line_item(
         // Build new formula: (base * mult1 * mult2 * ...) + delta1 + delta2 + ...
         if (!multipliers.empty() || !deltas.empty()) {
             std::ostringstream formula_builder;
+            formula_builder << std::fixed << std::setprecision(0);  // Format numbers as fixed-point with no decimals
 
             // Start with base (possibly wrapped in multipliers)
             if (!multipliers.empty()) {
@@ -410,6 +412,9 @@ bool ActionEngine::apply_transformations_to_line_item(
 
     // Update the line item formula
     template_ptr->update_line_item_formula(line_item_code, new_formula);
+
+    // Output diagnostic showing the final formula after transformation
+    std::cout << "    [FORMULA] " << line_item_code << " → " << new_formula << std::endl;
 
     // NOTE: We intentionally do NOT clear base_value_source here.
     // Keeping base_value_source allows the formula to reference driver codes directly.

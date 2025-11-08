@@ -254,6 +254,13 @@ UnifiedResult UnifiedEngine::calculate(
             }
 
         } catch (const std::exception& e) {
+            // Print diagnostic information about the failure
+            std::cerr << "[CALC ERROR] Line item: " << code
+                      << " | Entity: " << entity_id
+                      << " | Period: " << period_id
+                      << " | Formula: " << (line_item->formula.has_value() ? line_item->formula.value() : "<none>")
+                      << " | Error: " << e.what() << std::endl;
+
             // If calculation failed and we have hierarchy, try rollup from children
             if (hierarchy_ && line_item->aggregation_method == "sum") {
                 auto rollup_value = try_rollup_from_children(
