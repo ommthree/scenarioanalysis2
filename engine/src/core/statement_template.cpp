@@ -140,9 +140,10 @@ void StatementTemplate::compute_calculation_order() {
                     dep_code = dep.substr(0, dep.size() - 5);  // Strip "[t-1]"
                 }
 
-                // Skip time-shifted self-references (e.g., ACCOUNTS_PAYABLE[t-1] in ACCOUNTS_PAYABLE formula)
+                // Skip ALL time-shifted references (e.g., ACCOUNTS_PAYABLE[t-1], REVENUE[t-1])
                 // These are inter-period dependencies, not intra-period circular dependencies
-                if (is_time_shifted && dep_code == item.code) {
+                // They reference the previous period's value, so they don't create cycles in current period
+                if (is_time_shifted) {
                     continue;
                 }
 
@@ -194,19 +195,6 @@ void StatementTemplate::parse_json(const std::string& json_content) {
                     }
                 } else {
                     item.is_computed = false;
-                }
-
-                // Handle no_driver as both integer (0/1) and boolean (true/false)
-                if (item_json.contains("no_driver")) {
-                    if (item_json["no_driver"].is_boolean()) {
-                        item.no_driver = item_json["no_driver"].get<bool>();
-                    } else if (item_json["no_driver"].is_number_integer()) {
-                        item.no_driver = item_json["no_driver"].get<int>() != 0;
-                    } else {
-                        item.no_driver = false;
-                    }
-                } else {
-                    item.no_driver = false;
                 }
 
                 // Optional fields
@@ -322,7 +310,6 @@ std::string StatementTemplate::to_json() const {
         item_json["driver_applicable"] = item.driver_applicable;
         item_json["category"] = item.category;
         item_json["is_computed"] = item.is_computed;
-        item_json["no_driver"] = item.no_driver;
 
         if (item.formula.has_value()) {
             item_json["formula"] = item.formula.value();

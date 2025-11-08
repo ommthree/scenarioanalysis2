@@ -94,7 +94,7 @@ export default function MapStatements() {
   const [aiMappingMessage, setAiMappingMessage] = useState<Record<string, string>>({})
 
   // State for each statement type
-  const [statementMappings, setStatementMappings] = useState<Record<string, StatementMapping>>({
+  const [statementMappings, setStatementMappingsRaw] = useState<Record<string, StatementMapping>>({
     pnl: {
       statementType: 'pnl',
       label: 'Profit & Loss',
@@ -161,14 +161,35 @@ export default function MapStatements() {
     }
   })
 
+  // Wrapper to log all state updates
+  const setStatementMappings = (updater: any) => {
+    const stack = new Error().stack
+    const caller = stack?.split('\n')[2]?.trim() || 'unknown'
+    logger.debug(`📍 setStatementMappings called from:`, caller)
+    setStatementMappingsRaw(updater)
+  }
+
   useEffect(() => {
     loadTemplates()
     loadEntities()
     loadAllStagedFiles()
   }, [])
 
-  // NOTE: Automatic restoration removed - mappings now restore when user clicks CSV file button
-  // This ensures the page loads with no files selected, requiring user to click a file to see mappings
+  // Restore saved mappings when component loads and when company changes
+  useEffect(() => {
+    logger.debug(`🔴 useEffect triggered - selectedCompany:`, selectedCompany?.entity_id, `templates:`, templates.length)
+    if (selectedCompany && templates.length > 0) {
+      logger.debug(`🔴 Calling restoreSavedMappings`)
+      restoreSavedMappings()
+    } else {
+      logger.debug(`🔴 NOT calling restoreSavedMappings - missing requirements`)
+    }
+  }, [selectedCompany, templates.length])
+
+  // Debug: Watch for changes to statementMappings
+  useEffect(() => {
+    logger.debug(`🎯 statementMappings changed - pnl hierarchicalMappings:`, statementMappings.pnl.hierarchicalMappings?.length || 0)
+  }, [statementMappings])
 
   const loadTemplates = async () => {
     try {
@@ -222,20 +243,23 @@ export default function MapStatements() {
       const response = await fetch(apiUrl(`/api/staged-files/${apiType}?dbPath=${encodeURIComponent(dbPath)}`))
       const result = await response.json()
       if (result.success) {
-        setStatementMappings(prev => ({
-          ...prev,
-          [statementType]: {
-            ...prev[statementType],
-            stagedFiles: result.files || []
+        setStatementMappings(prev => {
+          logger.debug(`⚠️ loadStagedFiles updating ${statementType}, prev.hierarchicalMappings.length:`, prev[statementType].hierarchicalMappings?.length || 0)
+          return {
+            ...prev,
+            [statementType]: {
+              ...prev[statementType],
+              stagedFiles: result.files || []
+            }
           }
-        }))
+        })
       }
     } catch (error) {
       logger.error(`Failed to load staged files for ${statementType}:`, error)
     }
   }
 
-  const loadStagingData = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', fileId: number) => {
+  const loadStagingData = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', fileId: number, updateState = true): Promise<{ csvData: CsvRow[], csvColumns: string[], csvFileName: string } | null> => {
     try {
       const dbPath = getDefaultDbPath()
       const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
@@ -250,65 +274,56 @@ export default function MapStatements() {
         }) as CsvRow[]
 
         const columns = records.length > 0 ? Object.keys(records[0]) : []
-
         logger.debug(`✅ Loaded CSV for ${statementType}:`, records.length, 'rows')
-        setStatementMappings(prev => ({
-          ...prev,
-          [statementType]: {
-            ...prev[statementType],
-            csvData: records,
-            csvColumns: columns,
-            csvFileName: result.fileName
-            // Note: columnConfig is preserved via ...prev[statementType]
-          }
-        }))
+
+        const csvResult = {
+          csvData: records,
+          csvColumns: columns,
+          csvFileName: result.fileName
+        }
+
+        if (updateState) {
+          setStatementMappings(prev => ({
+            ...prev,
+            [statementType]: {
+              ...prev[statementType],
+              ...csvResult
+            }
+          }))
+        }
+
+        return csvResult
       }
     } catch (error) {
       logger.error(`Failed to load staging data for ${statementType}:`, error)
     }
+    return null
   }
 
   const restoreSavedMappings = async (targetStatementType?: 'pnl' | 'bs' | 'cf' | 'carbon') => {
-    if (!selectedCompany || templates.length === 0) return
+    logger.debug(`🟢 restoreSavedMappings called for: ${targetStatementType || 'ALL'}`)
+    logger.debug(`🟢 selectedCompany:`, selectedCompany?.entity_id, `templates:`, templates.length)
+    if (!selectedCompany || templates.length === 0) {
+      logger.debug(`🟢 Skipping: no company (${!!selectedCompany}) or no templates (${templates.length})`)
+      return
+    }
 
     try {
       const dbPath = getDefaultDbPath()
-
-      // Only reset state when restoring all types (e.g., on company change)
-      // When restoring a specific type (after file selection), don't reset - just update if mapping exists
-      if (!targetStatementType) {
-        setStatementMappings(prev => ({
-          pnl: {
-            ...prev.pnl,
-            selectedTemplate: null,
-            hierarchicalMappings: [],
-            expandedNodes: new Set()
-          },
-          bs: {
-            ...prev.bs,
-            selectedTemplate: null,
-            hierarchicalMappings: [],
-            expandedNodes: new Set()
-          },
-          cf: {
-            ...prev.cf,
-            selectedTemplate: null,
-            hierarchicalMappings: [],
-            expandedNodes: new Set()
-          },
-          carbon: {
-            ...prev.carbon,
-            selectedTemplate: null,
-            hierarchicalMappings: [],
-            expandedNodes: new Set()
-          }
-        }))
-      }
+      logger.debug(`🟢 Starting restore process for company ${selectedCompany.entity_id}`)
 
       // Restore mappings for each statement type
       // Query for mappings with the exact frontend type (pnl, bs, cf, carbon)
       const types: Array<'pnl' | 'bs' | 'carbon' | 'cf'> = targetStatementType ? [targetStatementType] : ['pnl', 'bs', 'cf', 'carbon']
+
+      // Collect all updates first, then apply in ONE setState call
+      const updates: Record<string, any> = {}
+
+      // If restoring all types (not a specific type), prepare reset values for any types without mappings
+      const shouldResetAll = !targetStatementType
+
       for (const type of types) {
+        logger.debug(`🟢 Fetching mappings for ${type}`)
         const response = await fetch(
           apiUrl(`/api/statements/get-all-mappings?${new URLSearchParams({
             dbPath,
@@ -316,24 +331,25 @@ export default function MapStatements() {
           })}`)
         )
         const result = await response.json()
+        logger.debug(`🟢 ${type} - API response:`, { success: result.success, mappingsCount: result.mappings?.length || 0 })
 
         if (result.success && result.mappings && result.mappings.length > 0) {
           // Find mapping for current company
           const companyMapping = result.mappings.find((m: SavedMapping) => m.companyId === selectedCompany.entity_id)
+          logger.debug(`🟢 ${type} - Found company mapping:`, !!companyMapping)
 
           if (companyMapping) {
             // Find the template by code
             const template = templates.find(t => t.template_code === companyMapping.templateCode)
 
             if (template) {
-              // First, update state with everything including columnConfig
               logger.debug(`📝 ${type} - Restoring mappings:`, {
                 template: template.template_code,
                 csvFileName: companyMapping.csvFileName,
                 hierarchicalMappingsCount: companyMapping.hierarchicalMappings?.length || 0
               })
 
-              // Find the staged file ID BEFORE updating state
+              // Find the staged file ID
               let fileId: number | null = null
               if (companyMapping.csvFileName) {
                 const stagedFile = statementMappings[type].stagedFiles.find(f => f.file_name === companyMapping.csvFileName)
@@ -342,32 +358,99 @@ export default function MapStatements() {
                 }
               }
 
-              setStatementMappings(prev => {
-                return {
-                  ...prev,
-                  [type]: {
-                    ...prev[type],
-                    selectedTemplate: template,
-                    selectedFileId: fileId,
-                    hierarchicalMappings: companyMapping.hierarchicalMappings || [],
-                    columnConfig: companyMapping.columnConfig || {
-                      lineItemColumn: null,
-                      valueColumn: null,
-                      currencyColumn: null
-                    },
-                    csvFileName: companyMapping.csvFileName || undefined
-                  }
+              // Load CSV data if needed (don't update state yet)
+              let csvData: CsvRow[] = []
+              let csvColumns: string[] = []
+              if (fileId && !targetStatementType) {
+                const csvResult = await loadStagingData(type, fileId, false) // Don't update state
+                if (csvResult) {
+                  csvData = csvResult.csvData
+                  csvColumns = csvResult.csvColumns
+                  logger.debug(`🟢 ${type} - Loaded CSV data:`, csvData.length, 'rows')
                 }
+              }
+
+              logger.debug(`🟢 ${type} - Preparing update with:`, {
+                hierarchicalMappingsCount: companyMapping.hierarchicalMappings?.length || 0,
+                csvDataCount: csvData.length,
+                fileId
               })
 
-              // Then, load the CSV data using the fileId we found earlier
-              // This ensures we don't read stale state
-              if (fileId) {
-                loadStagingData(type, fileId)
+              // Store the update for this type (don't call setState yet)
+              updates[type] = {
+                selectedTemplate: template,
+                selectedFileId: fileId,
+                hierarchicalMappings: companyMapping.hierarchicalMappings || [],
+                columnConfig: companyMapping.columnConfig || {
+                  lineItemColumn: null,
+                  valueColumn: null,
+                  currencyColumn: null
+                },
+                csvFileName: companyMapping.csvFileName || undefined,
+                // Include CSV data if we loaded it
+                ...(csvData.length > 0 && { csvData, csvColumns })
+              }
+            } else if (shouldResetAll) {
+              // No mapping found for this type, and we're resetting all - prepare reset
+              updates[type] = {
+                selectedTemplate: null,
+                hierarchicalMappings: [],
+                expandedNodes: new Set()
               }
             }
+          } else if (shouldResetAll) {
+            // No mappings found at all for this type, and we're resetting all - prepare reset
+            updates[type] = {
+              selectedTemplate: null,
+              hierarchicalMappings: [],
+              expandedNodes: new Set()
+            }
+          }
+        } else if (shouldResetAll) {
+          // No company mapping found for this type, and we're resetting all - prepare reset
+          updates[type] = {
+            selectedTemplate: null,
+            hierarchicalMappings: [],
+            expandedNodes: new Set()
           }
         }
+      }
+
+      // Now apply ALL updates in a SINGLE setState call
+      // Always apply if we have updates OR if we're resetting all types
+      if (Object.keys(updates).length > 0 || shouldResetAll) {
+        logger.debug(`🟢 Applying all updates at once for types:`, Object.keys(updates))
+
+        // Set the unified template from the first statement type that has one
+        // (In a unified template system, all types should have the same template)
+        const firstTemplateUpdate = Object.values(updates).find(u => u.selectedTemplate)
+        if (firstTemplateUpdate?.selectedTemplate) {
+          logger.debug(`🟢 Setting unified template to:`, firstTemplateUpdate.selectedTemplate.template_code)
+          setSelectedUnifiedTemplate(firstTemplateUpdate.selectedTemplate)
+        } else if (shouldResetAll) {
+          logger.debug(`🟢 Clearing unified template`)
+          setSelectedUnifiedTemplate(null)
+        }
+
+        setStatementMappings(prev => {
+          const newState = { ...prev }
+
+          // Apply all collected updates
+          for (const [type, update] of Object.entries(updates)) {
+            newState[type] = {
+              ...prev[type],
+              ...update
+            }
+
+            logger.debug(`🟢 ${type} - Applied update:`, {
+              hierarchicalMappingsCount: newState[type].hierarchicalMappings?.length || 0,
+              csvDataCount: newState[type].csvData?.length || 0,
+              selectedFileId: newState[type].selectedFileId
+            })
+          }
+
+          return newState
+        })
       }
     } catch (error) {
       logger.error('Failed to restore saved mappings:', error)
@@ -420,9 +503,18 @@ export default function MapStatements() {
 
   const handleTemplateSelect = (templateCode: string) => {
     const template = templates.find(t => t.template_code === templateCode)
+
+    // If clicking the same template that's already selected, do nothing
+    if (selectedUnifiedTemplate?.template_code === templateCode) {
+      logger.debug(`🔵 Template ${templateCode} already selected, ignoring click`)
+      return
+    }
+
+    logger.debug(`🔵 Changing template from ${selectedUnifiedTemplate?.template_code || 'none'} to ${templateCode}`)
     setSelectedUnifiedTemplate(template || null)
 
     // Apply the unified template to ALL statement types
+    // Only clear hierarchicalMappings when actually changing templates
     setStatementMappings(prev => ({
       pnl: {
         ...prev.pnl,
@@ -550,12 +642,43 @@ export default function MapStatements() {
     const found = mapping.hierarchicalMappings.find(
       m => JSON.stringify(m.entity_path) === JSON.stringify(entityPath) && m.line_item_code === lineItemCode
     )
+
+    // Debug: Log ALL calls for pnl/REVENUE to see what entity paths are being checked
+    if (statementType === 'pnl' && lineItemCode === 'REVENUE') {
+      if (!(window as any).__revenueChecks) {
+        (window as any).__revenueChecks = 0
+      }
+      (window as any).__revenueChecks++
+      if ((window as any).__revenueChecks <= 5) {
+        logger.debug(`🔍 ${statementType}/${lineItemCode} check #${(window as any).__revenueChecks}:`, {
+          entityPath,
+          entityPathStr: JSON.stringify(entityPath),
+          found: !!found,
+          totalMappings: mapping.hierarchicalMappings.length,
+          allMappings: mapping.hierarchicalMappings.map(m => ({
+            path: m.entity_path,
+            pathStr: JSON.stringify(m.entity_path),
+            code: m.line_item_code
+          }))
+        })
+      }
+    }
+
     return found ? mapping.csvData[found.csv_row_index] : null
   }
 
   const handleFileSelect = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', fileId: string) => {
+    logger.debug(`🔵 handleFileSelect called: ${statementType}, fileId=${fileId}`)
     const fileIdNum = parseInt(fileId)
+
+    // Check if this file is already selected - if so, do nothing
+    if (fileIdNum && statementMappings[statementType].selectedFileId === fileIdNum) {
+      logger.debug(`🔵 File ${fileIdNum} already selected for ${statementType}, ignoring click`)
+      return
+    }
+
     if (!fileIdNum) {
+      logger.debug(`🔵 Clearing selection for ${statementType}`)
       // Clear selection
       setStatementMappings(prev => ({
         ...prev,
@@ -574,6 +697,7 @@ export default function MapStatements() {
       return
     }
 
+    logger.debug(`🔵 Setting selectedFileId=${fileIdNum} for ${statementType}`)
     // Set selected file ID
     setStatementMappings(prev => ({
       ...prev,
@@ -583,14 +707,14 @@ export default function MapStatements() {
       }
     }))
 
+    logger.debug(`🔵 Loading staging data for ${statementType}`)
     // Load the file data and wait for it to complete
     await loadStagingData(statementType, fileIdNum)
 
-    // Add a small delay to ensure state has updated
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    // Restore saved mappings after CSV loads (only for this statement type)
-    await restoreSavedMappings(statementType)
+    logger.debug(`🔵 handleFileSelect complete for ${statementType}`)
+    // Note: We do NOT restore saved mappings here anymore
+    // Saved mappings are only restored on initial page load or company change
+    // When user explicitly selects a file, we show fresh columns for them to map
   }
 
   const [draggedRole, setDraggedRole] = useState<'lineItem' | 'value' | 'currency' | null>(null)

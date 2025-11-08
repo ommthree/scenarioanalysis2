@@ -36,10 +36,11 @@ interface Driver {
 
 interface Transformation {
   line_item: string
-  type: 'FORMULA' | 'MULTIPLIER' | 'DELTA' | 'formula_override' | 'carbon_formula_override'
+  type: 'FORMULA' | 'MULTIPLIER' | 'DELTA' | 'formula_override' | 'carbon_formula_override' | 'formula' | 'delta' | 'multiplier'
   new_formula: string
   comment?: string
   period?: number | null  // Relative period (null = all periods)
+  is_carbon_transformation?: number  // 0 or 1
 }
 
 interface Entity {
@@ -459,8 +460,8 @@ const DefineActions: React.FC<DefineActionsProps> = ({ dbPath }) => {
       const transResponse = await fetch(apiUrl(`/api/action-transformations?action_code=${action.action_code}&db_path=${encodeURIComponent(dbPath || '')}`))
       if (transResponse.ok) {
         const transformations = await transResponse.json()
-        setFinancialTransformations(transformations.filter((t: Transformation) => t.type !== 'carbon_formula_override'))
-        setCarbonTransformations(transformations.filter((t: Transformation) => t.type === 'carbon_formula_override'))
+        setFinancialTransformations(transformations.filter((t: Transformation) => !t.is_carbon_transformation))
+        setCarbonTransformations(transformations.filter((t: Transformation) => t.is_carbon_transformation))
       } else {
         setFinancialTransformations([])
         setCarbonTransformations([])
@@ -1572,7 +1573,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
 
 
                   {/* Add Financial Transformation Buttons */}
-                  {(isEditing || isCreatingNew) && selectedTemplate && (
+                  {(isEditing || isCreatingNew) && (
                     <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <Button
                         onClick={() => {
@@ -1589,30 +1590,6 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                         style={{ backgroundColor: '#10b981', border: 'none' }}
                       >
                         <Plus className="w-4 h-4 mr-1" /> Add Transformation
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          // Investment + Recurring Savings template
-                          const investmentTransform: Transformation = {
-                            line_item: 'CAPEX',
-                            type: 'DELTA',
-                            new_formula: '-500000',
-                            comment: 'Upfront investment',
-                            period: 1
-                          }
-                          const savingsTransform: Transformation = {
-                            line_item: 'OPEX',
-                            type: 'DELTA',
-                            new_formula: '-50000',
-                            comment: 'Annual savings',
-                            period: null
-                          }
-                          setFinancialTransformations([...financialTransformations, investmentTransform, savingsTransform])
-                        }}
-                        size="sm"
-                        style={{ backgroundColor: '#6366f1', border: 'none' }}
-                      >
-                        📊 Investment + Savings Template
                       </Button>
                     </div>
                   )}
@@ -1688,9 +1665,9 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                                     fontWeight: '600'
                                   }}
                                 >
-                                  <option value="FORMULA">FORMULA (Complete replacement)</option>
-                                  <option value="MULTIPLIER">MULTIPLIER (Stackable %)</option>
-                                  <option value="DELTA">DELTA (Stackable amount)</option>
+                                  <option value="formula">formula (Complete replacement)</option>
+                                  <option value="delta">delta (Stackable amount)</option>
+                                  <option value="multiplier">multiplier (Stackable %)</option>
                                 </select>
                               </div>
                               <div>
@@ -1816,7 +1793,7 @@ ${triggerType === 'CONDITIONAL' ? 'IMPORTANT: This action uses a conditional tri
                   )}
 
                   {/* Add Carbon Transformation Button */}
-                  {(isEditing || isCreatingNew) && selectedTemplate && (
+                  {(isEditing || isCreatingNew) && (
                     <div style={{ marginBottom: '16px' }}>
                       <Button
                         onClick={() => {

@@ -2316,7 +2316,7 @@ app.get('/api/scenarios/staging-columns', (req, res) => {
  */
 app.get('/api/scenarios/staging-preview', (req, res) => {
   try {
-    const { dbPath, tableName, limit = '5' } = req.query
+    const { dbPath, tableName, limit } = req.query
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -2339,9 +2339,11 @@ app.get('/api/scenarios/staging-preview', (req, res) => {
       }
     })
 
-    const limitNum = parseInt(limit) || 5
+    // If limit is provided, use it; otherwise fetch all rows
+    const query = limit ? `SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?` : `SELECT * FROM ${security.quoteIdentifier(tableName)}`
+    const params = limit ? [parseInt(limit)] : []
 
-    db.all(`SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?`, [limitNum], (err, rows) => {
+    db.all(query, params, (err, rows) => {
       db.close()
 
       if (err) {
@@ -6100,7 +6102,8 @@ app.get('/api/action-transformations', (req, res) => {
   })
 
   db.all(
-    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, period, created_at
+    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, period, created_at,
+            COALESCE(is_carbon_transformation, 0) as is_carbon_transformation
      FROM action_transformation
      WHERE action_code = ?
      ORDER BY period NULLS LAST, transformation_id`,

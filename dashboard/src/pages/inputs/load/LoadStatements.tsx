@@ -12,13 +12,13 @@ interface CsvData {
   rows: string[][]
 }
 
-type StatementType = 'balance_sheet' | 'pnl' | 'carbon' | 'cashflow'
+type StatementType = 'balance_sheet' | 'pnl' | 'carbon' | 'cash_flow'
 
 const statementLabels: Record<StatementType, string> = {
   balance_sheet: 'Balance Sheet',
   pnl: 'P&L',
   carbon: 'Carbon',
-  cashflow: 'Cash Flow'
+  cash_flow: 'Cash Flow'
 }
 
 interface StagedFile {
@@ -232,7 +232,7 @@ export default function LoadStatements() {
                         border: '#a855f7',
                         borderLight: 'rgba(168, 85, 247, 0.3)'
                       },
-                      cashflow: {
+                      cash_flow: {
                         active: 'rgba(34, 197, 94, 0.2)',   // green
                         border: '#22c55e',
                         borderLight: 'rgba(34, 197, 94, 0.3)'

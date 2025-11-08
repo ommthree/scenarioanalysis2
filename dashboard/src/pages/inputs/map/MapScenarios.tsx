@@ -187,7 +187,7 @@ const MapScenarios: React.FC = () => {
         return
       }
 
-      const url = apiUrl(`/api/scenarios/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}&limit=5`)
+      const url = apiUrl(`/api/scenarios/staging-preview?dbPath=${encodeURIComponent(dbPath)}&tableName=${encodeURIComponent(tableInfo.tableName)}`)
       logger.debug('Fetching:', url)
 
       const response = await fetch(url)
@@ -196,9 +196,32 @@ const MapScenarios: React.FC = () => {
 
       if (result.success && result.data) {
         logger.debug('Setting CSV data, rows:', result.data.length)
-        setCsvData(result.data)
-        if (result.data.length > 0) {
-          const cols = Object.keys(result.data[0]).filter(col =>
+
+        // Filter to unique rows based on variable/driver column to avoid showing duplicates from multiple scenarios
+        const uniqueRows = result.data.reduce((acc: any[], row: any) => {
+          // Find the driver/variable identifier column (common names)
+          const driverCol = Object.keys(row).find(col =>
+            ['DriverName', 'Variable', 'driver', 'variable'].includes(col)
+          )
+
+          if (driverCol) {
+            const driverValue = row[driverCol]
+            // Only keep first occurrence of each driver
+            if (!acc.find(r => r[driverCol] === driverValue)) {
+              acc.push(row)
+            }
+          } else {
+            // No driver column found, keep all rows
+            acc.push(row)
+          }
+          return acc
+        }, [])
+
+        logger.debug('Filtered to unique rows:', uniqueRows.length, 'from', result.data.length)
+        setCsvData(uniqueRows)
+
+        if (uniqueRows.length > 0) {
+          const cols = Object.keys(uniqueRows[0]).filter(col =>
             !['_rowid', 'imported_at', 'is_mapped'].includes(col)
           )
           logger.debug('Columns:', cols)
@@ -951,7 +974,7 @@ Rules:
               </div>
 
               <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
-                Showing first 5 rows
+                Showing {csvData.length} row{csvData.length !== 1 ? 's' : ''}
               </p>
             </div>
           </Card>

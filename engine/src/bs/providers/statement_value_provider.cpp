@@ -86,6 +86,9 @@ double StatementValueProvider::get_value(const std::string& key, const core::Con
             // Previous period: look in opening_values_
             auto it = opening_values_.find(base_name);
             if (it != opening_values_.end()) {
+                if (base_name == "INVENTORY" && ctx.time_index == 1) {
+                    std::cout << "[DEBUG] INVENTORY[t-1] in period 1 returning: " << it->second << std::endl;
+                }
                 return it->second;
             }
             throw std::runtime_error("StatementValueProvider: opening value not found for '" + base_name + "'");

@@ -37,8 +37,7 @@ struct LineItem {
     bool driver_applicable;                     ///< Whether drivers can be applied
     std::optional<std::string> driver_code;     ///< Driver code if applicable
     std::string category;                       ///< Category (revenue, cost, subtotal, etc.)
-    bool is_computed;                           ///< True if pure within-period calculation (cannot have no_driver=true)
-    bool no_driver;                             ///< True if uses BASE/[t-1] without driver multiplier (cannot have is_computed=true)
+    bool is_computed;                           ///< True if pure within-period calculation
     std::vector<std::string> dependencies;      ///< List of line item codes this depends on
     SignConvention sign_convention;             ///< Sign convention (positive/negative/neutral)
     std::string aggregation_method = "sum";     ///< How to aggregate across entities ("sum" or "none")
