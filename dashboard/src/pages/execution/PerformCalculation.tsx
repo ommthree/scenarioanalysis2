@@ -295,7 +295,25 @@ export default function PerformCalculation() {
           addLog('info', 'Loading correlation matrix and performing Cholesky decomposition...')
         }
 
-        const correlationCsvPath = '/Users/Owen/ScenarioAnalysis2/data/inputs/correlations/level2_correlation_matrix.csv'
+        // Fetch the most recent staged correlation file
+        const stagedFilesResponse = await fetch(apiUrl(`/api/staged-files/correlation?dbPath=${encodeURIComponent(dbPath)}`))
+        const stagedFilesResult = await stagedFilesResponse.json()
+
+        if (!stagedFilesResult.success || !stagedFilesResult.files || stagedFilesResult.files.length === 0) {
+          if (verbosity !== 'quiet') {
+            addLog('error', 'No correlation matrix file found. Please load a correlation matrix first.')
+          }
+          throw new Error('No correlation matrix file staged')
+        }
+
+        // Use the most recently uploaded correlation file
+        const correlationFile = stagedFilesResult.files[0]
+        const correlationCsvPath = `/Users/Owen/ScenarioAnalysis2/data/inputs/correlations/${correlationFile.file_name}`
+
+        if (verbosity !== 'quiet') {
+          addLog('info', `Using correlation matrix: ${correlationFile.file_name}`)
+        }
+
         const prepareResponse = await fetch(apiUrl('/api/montecarlo/prepare'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

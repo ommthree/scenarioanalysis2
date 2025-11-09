@@ -251,7 +251,7 @@ export default function CorrelationsPanel() {
 
     try {
       const response = await fetch(
-        apiUrl(`/api/results/mc-distribution?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&periodId=${mcResults.mcPeriod}&entityId=${currentEntity}&lineItemCode=${encodeURIComponent(lineItemCode)}`)
+        apiUrl(`/api/monte-carlo/distribution?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&periodId=${mcResults.mcPeriod}&entityId=${currentEntity}&lineItemCode=${encodeURIComponent(lineItemCode)}`)
       )
       const data = await response.json()
 
@@ -279,7 +279,7 @@ export default function CorrelationsPanel() {
 
     try {
       const response = await fetch(
-        apiUrl(`/api/results/mc-distribution?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&periodId=${mcResults.mcPeriod}&entityId=${currentEntity}&lineItemCode=${encodeURIComponent(lineItemCode)}`)
+        apiUrl(`/api/monte-carlo/distribution?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${currentScenario}&periodId=${mcResults.mcPeriod}&entityId=${currentEntity}&lineItemCode=${encodeURIComponent(lineItemCode)}`)
       )
       const data = await response.json()
 

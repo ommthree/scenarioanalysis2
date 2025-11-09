@@ -4031,12 +4031,13 @@ app.get('/api/mc-timeseries', (req, res) => {
 })
 
 /**
- * Get Monte Carlo draw distribution for a specific line item and period
- * GET /api/results/mc-distribution
+ * Get Monte Carlo draw distribution for exploration/analysis
+ * GET /api/monte-carlo/distribution
  * Query params: dbPath, scenarioId, periodId, entityId, lineItemCode
- * Returns: array of draw values and statistics
+ * Returns: nested structure with distribution object containing values and statistics
+ * Used by: Explore -> Monte Carlo page
  */
-app.get('/api/results/mc-distribution', (req, res) => {
+app.get('/api/monte-carlo/distribution', (req, res) => {
   try {
     const { dbPath, scenarioId, periodId, entityId, lineItemCode } = req.query
 
@@ -7916,8 +7917,8 @@ app.get('/api/results/roi-curve', (req, res) => {
           const denominator = data.denominator
 
           // Calculate deltas relative to base case
-          const benefit = numerator - baseNumerator  // Positive = increased benefit (e.g., more revenue)
-          const investment = denominator - baseDenominator  // Positive = increased investment (e.g., more capex)
+          const benefit = numerator - baseNumerator  // Positive = increased benefit (e.g., OPEX reduction via positive delta)
+          const investment = denominator - baseDenominator  // Positive = increased investment (e.g., CAPEX increase via negative delta)
 
           // Skip actions with zero investment (can't calculate meaningful ROI)
           if (investment === 0) return
@@ -8565,6 +8566,8 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
 
     // Parse correlation matrix
     const correlationMatrix = []
+    const MIN_VARIANCE = 1e-8  // Floor for diagonal elements to ensure positive definiteness
+
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',')
       const row = values.slice(1).map(v => parseFloat(v.trim()))
@@ -8580,6 +8583,14 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
       return res.status(400).json({
         error: `Matrix should be ${n}x${n}, got ${correlationMatrix.length}x${n}`
       })
+    }
+
+    // Apply floor to diagonal elements to ensure positive definiteness
+    // This handles cases where a variable has zero variance
+    for (let i = 0; i < n; i++) {
+      if (correlationMatrix[i][i] < MIN_VARIANCE) {
+        correlationMatrix[i][i] = MIN_VARIANCE
+      }
     }
 
     // Load scenario_mapping to get variable_mappings
@@ -8830,6 +8841,11 @@ app.post('/api/calculate', async (req, res) => {
     command += ` --cholesky-file "${choleskyFilePath}"`
   }
 
+  // Log what-if combination progress
+  if (whatIfCombination) {
+    logger.info(`Running what-if combination: ${whatIfCombination}`)
+  }
+
   exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
     // Clean up Cholesky temp file
     if (choleskyFilePath && fs.existsSync(choleskyFilePath)) {
@@ -8862,6 +8878,9 @@ app.post('/api/calculate', async (req, res) => {
     }
 
     logger.info('Calculation completed successfully')
+    if (whatIfCombination) {
+      logger.info(`✓ What-if combination complete: ${whatIfCombination}`)
+    }
 
     // If this is a Monte Carlo draw, copy results to MC tables
     if (mcDrawNumber) {
