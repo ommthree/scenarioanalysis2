@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles, ChevronRight, ChevronDown, Building2, FileText } from 'lucide-react'
 import domtoimage from 'dom-to-image-more'
+import { getDefaultDbPath } from '@/config'
 
 interface Scenario {
   scenario_id: number
@@ -38,7 +39,7 @@ interface ActionImpact {
 type WaterfallMode = 'period-to-period' | 'scenario-to-scenario' | 'action-impact'
 
 export default function WaterfallChart() {
-  const dbPath = '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db'
+  const dbPath = getDefaultDbPath()
 
   // State
   const [mode, setMode] = useState<WaterfallMode>('period-to-period')
@@ -162,8 +163,17 @@ export default function WaterfallChart() {
   }
 
   const loadPeriods = async () => {
-    // Periods 0-5 based on database query
-    setPeriods([0, 1, 2, 3, 4, 5])
+    try {
+      const response = await fetch(`http://localhost:3001/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`)
+      const data = await response.json()
+      if (data.success && data.periods) {
+        setPeriods(data.periods)
+      }
+    } catch (error) {
+      console.error('Failed to load periods:', error)
+      // Fallback to default periods
+      setPeriods([0, 1, 2, 3, 4, 5])
+    }
   }
 
   // Auto-generate waterfall when all required fields are filled

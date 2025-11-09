@@ -32,6 +32,7 @@ export default function Explore() {
   const [selectedViz, setSelectedViz] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(true)
   const [whatIfMode, setWhatIfMode] = useState(false)
+  const [hasMCData, setHasMCData] = useState(false)
 
   // Check for what-if mode on mount and when storage changes
   useEffect(() => {
@@ -62,7 +63,7 @@ export default function Explore() {
     { id: 'ribbon', icon: Waves, label: 'Ribbon Chart', color: '#06b6d4', requiresWhatIf: false },
     { id: 'scenarios', icon: Activity, label: 'Scenarios', color: '#3b82f6', requiresWhatIf: false },
     { id: 'financial-statements', icon: FileText, label: 'Financial Statements', color: '#14b8a6', requiresWhatIf: false },
-    { id: 'correlations', icon: Dices, label: 'Monte Carlo', color: '#10b981', requiresWhatIf: false },
+    { id: 'correlations', icon: Dices, label: 'Monte Carlo', color: '#10b981', requiresWhatIf: false, requiresMC: true },
     { id: 'levers', icon: Sliders, label: 'Levers', color: '#8b5cf6', requiresWhatIf: true },
     { id: 'hazard-maps', icon: Map, label: 'Physical Risk', color: '#ec4899', requiresWhatIf: false },
   ]
@@ -71,6 +72,10 @@ export default function Explore() {
     const option = vizOptions.find(v => v.id === id)
     // Don't allow selection if what-if mode is required but not active
     if (option?.requiresWhatIf && !whatIfMode) {
+      return
+    }
+    // Don't allow selection if MC data is required but not available
+    if (option?.requiresMC && !hasMCData) {
       return
     }
     setSelectedViz(id)
@@ -151,7 +156,7 @@ export default function Explore() {
               {vizOptions.map((option) => {
                 const Icon = option.icon
                 const isSelected = selectedViz === option.id
-                const isDisabled = option.requiresWhatIf && !whatIfMode
+                const isDisabled = (option.requiresWhatIf && !whatIfMode) || (option.requiresMC && !hasMCData)
                 return (
                   <button
                     key={option.id}

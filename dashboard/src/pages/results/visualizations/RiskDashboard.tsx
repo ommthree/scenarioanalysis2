@@ -733,6 +733,59 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     )
   }
 
+  // Binary space partitioning treemap with alternating horizontal/vertical splits
+  const calculateTreemapLayout = (items: { value: number }[], width: number, height: number) => {
+    const layout: { x: number; y: number; width: number; height: number }[] = []
+    const indexMap: number[] = [] // Track which original index each rect corresponds to
+
+    const layoutRecursive = (
+      itemIndices: number[],
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      horizontal: boolean
+    ) => {
+      if (itemIndices.length === 0) return
+
+      if (itemIndices.length === 1) {
+        const idx = itemIndices[0]
+        layout[idx] = { x, y, width: w, height: h }
+        return
+      }
+
+      // Calculate total value for this group
+      const totalVal = itemIndices.reduce((sum, idx) => sum + items[idx].value, 0)
+
+      // Split into two groups trying to balance them
+      const mid = Math.ceil(itemIndices.length / 2)
+      const firstHalf = itemIndices.slice(0, mid)
+      const secondHalf = itemIndices.slice(mid)
+
+      const firstVal = firstHalf.reduce((sum, idx) => sum + items[idx].value, 0)
+      const ratio = firstVal / totalVal
+
+      if (horizontal) {
+        // Split horizontally - first group gets left portion, second gets right
+        const splitX = x + w * ratio
+        layoutRecursive(firstHalf, x, y, w * ratio, h, !horizontal)
+        layoutRecursive(secondHalf, splitX, y, w * (1 - ratio), h, !horizontal)
+      } else {
+        // Split vertically - first group gets top portion, second gets bottom
+        const splitY = y + h * ratio
+        layoutRecursive(firstHalf, x, y, w, h * ratio, !horizontal)
+        layoutRecursive(secondHalf, x, splitY, w, h * (1 - ratio), !horizontal)
+      }
+    }
+
+    // Initialize layout array with correct size
+    layout.length = items.length
+    // Start with horizontal split at depth 0
+    const indices = items.map((_, i) => i)
+    layoutRecursive(indices, 0, 0, width, height, true)
+    return layout
+  }
+
   const renderDriverBreakdown = (drivers: DriverImpact[], driverCountries: DriverImpact[], title: string, color: string) => {
     // If country is selected, aggregate drivers from driver-country data for that country
     // Otherwise use the pre-aggregated driver data
@@ -808,95 +861,107 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
             <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>{title}</h3>
           </div>
 
-          {/* Mosaic chart */}
+          {/* Treemap with alternating splits */}
           <div style={{
             height: '200px',
             backgroundColor: 'rgba(15, 23, 42, 0.5)',
             borderRadius: '8px',
             border: '1px solid rgba(71, 85, 105, 0.5)',
             padding: '8px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '4px',
-            marginBottom: '16px',
-            alignContent: 'stretch'
+            position: 'relative',
+            marginBottom: '16px'
           }}>
-            {nonZeroDrivers.length > 0 ? nonZeroDrivers.map((driver, index) => {
-              const percentage = (Math.abs(driver.impact) / totalImpact) * 100
+            {nonZeroDrivers.length > 0 ? (() => {
+              // Calculate treemap layout
+              const treemapItems = nonZeroDrivers.map(d => ({ value: Math.abs(d.impact) }))
+              const layout = calculateTreemapLayout(treemapItems, 100, 100) // Use percentage units
 
-              // Simple treemap: calculate width based on percentage
-              // Adjust for gaps
-              const numGaps = nonZeroDrivers.length - 1
-              const availableWidth = containerWidth - (numGaps * (gap / containerWidth * 100))
-              const width = (percentage / 100) * availableWidth
+              return nonZeroDrivers.map((driver, index) => {
+                const rect = layout[index]
+                const gap = 0.3 // percentage gap
 
-              return (
-                <div
-                  key={driver.driver_code}
-                  onClick={() => setSelectedDriver(selectedDriver === driver.driver_code ? null : driver.driver_code)}
-                  style={{
-                    width: `calc(${width}% - ${gap * (nonZeroDrivers.length - 1) / nonZeroDrivers.length}px)`,
-                    height: `calc(100% - ${gap * 0}px)`,
-                    flexGrow: 0,
-                    flexShrink: 0,
-                    backgroundColor: selectedDriver === driver.driver_code ? (driver.impact < 0 ? '#dc2626' : '#16a34a') : getImpactColor(driver.impact),
-                    border: selectedDriver === driver.driver_code ? `2px solid ${driver.impact < 0 ? '#ef4444' : '#22c55e'}` : `1px solid rgba(100, 116, 139, 0.3)`,
-                    borderRadius: '4px',
-                    padding: '8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    overflow: 'hidden',
-                    boxShadow: selectedDriver === driver.driver_code ? '0 8px 16px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
-                    willChange: 'transform, box-shadow'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.03)'
-                    e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.4)'
-                    e.currentTarget.style.zIndex = '10'
-                    setTooltip({
-                      visible: true,
-                      x: e.clientX,
-                      y: e.clientY,
-                      content: `${driver.driver_name}: ${formatNumber(driver.impact)}`
-                    })
-                  }}
-                  onMouseMove={(e) => {
-                    setTooltip(prev => prev ? {...prev, x: e.clientX, y: e.clientY} : null)
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1) translateY(0)'
-                    e.currentTarget.style.boxShadow = selectedDriver === driver.driver_code ? '0 8px 16px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)'
-                    e.currentTarget.style.zIndex = selectedDriver === driver.driver_code ? '5' : '1'
-                    setTooltip(null)
-                  }}
-                >
-                  <div style={{
-                    fontSize: '10px',
-                    fontWeight: '600',
-                    color: '#fff',
-                    textAlign: 'center',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    width: '100%'
-                  }}>
-                    {driver.driver_name}
+                // Calculate actual pixel dimensions (200px container height, aspect varies by width)
+                // Assuming container is roughly square for treemap
+                const containerPixelSize = 200
+                const actualWidth = (rect.width * containerPixelSize) / 100
+                const actualHeight = (rect.height * containerPixelSize) / 100
+
+                // Only show labels if the box is large enough on both axes
+                const showLabels = actualWidth > 70 && actualHeight > 45
+
+                return (
+                  <div
+                    key={driver.driver_code}
+                    onClick={() => setSelectedDriver(selectedDriver === driver.driver_code ? null : driver.driver_code)}
+                    style={{
+                      position: 'absolute',
+                      left: `${rect.x + gap}%`,
+                      top: `${rect.y + gap}%`,
+                      width: `${rect.width - gap * 2}%`,
+                      height: `${rect.height - gap * 2}%`,
+                      backgroundColor: selectedDriver === driver.driver_code ? (driver.impact < 0 ? '#dc2626' : '#16a34a') : getImpactColor(driver.impact),
+                      border: selectedDriver === driver.driver_code ? `2px solid ${driver.impact < 0 ? '#ef4444' : '#22c55e'}` : `1px solid rgba(100, 116, 139, 0.3)`,
+                      borderRadius: '4px',
+                      padding: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      overflow: 'hidden',
+                      boxShadow: selectedDriver === driver.driver_code ? '0 8px 16px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)',
+                      willChange: 'transform, box-shadow'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.03)'
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.4)'
+                      e.currentTarget.style.zIndex = '10'
+                      setTooltip({
+                        visible: true,
+                        x: e.clientX,
+                        y: e.clientY,
+                        content: `${driver.driver_name}: ${formatNumber(driver.impact)}`
+                      })
+                    }}
+                    onMouseMove={(e) => {
+                      setTooltip(prev => prev ? {...prev, x: e.clientX, y: e.clientY} : null)
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1) translateY(0)'
+                      e.currentTarget.style.boxShadow = selectedDriver === driver.driver_code ? '0 8px 16px rgba(0,0,0,0.3)' : '0 2px 4px rgba(0,0,0,0.1)'
+                      e.currentTarget.style.zIndex = selectedDriver === driver.driver_code ? '5' : '1'
+                      setTooltip(null)
+                    }}
+                  >
+                    {showLabels && (
+                      <>
+                        <div style={{
+                          fontSize: '10px',
+                          fontWeight: '600',
+                          color: '#fff',
+                          textAlign: 'center',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          width: '100%'
+                        }}>
+                          {driver.driver_name}
+                        </div>
+                        <div style={{
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          color: '#fff',
+                          marginTop: '2px'
+                        }}>
+                          {formatNumber(driver.impact)}
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div style={{
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    color: '#fff',
-                    marginTop: '2px'
-                  }}>
-                    {formatNumber(driver.impact)}
-                  </div>
-                </div>
-              )
-            }) : (
+                )
+              })
+            })() : (
               <div style={{
                 width: '100%',
                 height: '100%',
