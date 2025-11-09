@@ -14,7 +14,6 @@ interface LineItem {
   section: 'profit_and_loss' | 'balance_sheet' | 'cash_flow' | 'carbon_statement'
   formula: string | null
   base_value_source?: string
-  is_computed: boolean
   sign_convention: 'positive' | 'negative'
   dependencies?: string[]
   is_mac_numerator?: boolean
@@ -137,7 +136,6 @@ export default function DefineStatements() {
       section: selectedSection,
       formula: null,
       base_value_source: '',
-      is_computed: false,
       sign_convention: 'positive',
       dependencies: [],
       is_mac_numerator: false,
@@ -217,7 +215,6 @@ export default function DefineStatements() {
             section: item.section || 'profit_and_loss',
             formula: item.formula || null,
             base_value_source: item.base_value_source || '',
-            is_computed: item.is_computed || false,
             sign_convention: item.sign_convention || 'positive',
             dependencies: item.dependencies || [],
             is_mac_numerator: item.is_mac_numerator || false,
@@ -650,44 +647,6 @@ export default function DefineStatements() {
                                         ROI Denominator (Investment)
                                       </label>
                                     </div>
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="text-sm font-medium text-muted-foreground">Purely Computed</label>
-                                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <button
-                                      onClick={() => {
-                                        const newValue = !item.is_computed
-                                        updateLineItem(index, 'is_computed', newValue)
-                                      }}
-                                      style={{
-                                        position: 'relative',
-                                        width: '44px',
-                                        height: '24px',
-                                        backgroundColor: item.is_computed ? '#22c55e' : '#64748b',
-                                        borderRadius: '12px',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        transition: 'background-color 0.2s',
-                                        padding: 0
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          top: '2px',
-                                          left: item.is_computed ? '22px' : '2px',
-                                          width: '20px',
-                                          height: '20px',
-                                          backgroundColor: '#ffffff',
-                                          borderRadius: '50%',
-                                          transition: 'left 0.2s'
-                                        }}
-                                      />
-                                    </button>
-                                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                                      {item.is_computed ? 'Pure within-period calculation' : 'Not purely computed'}
-                                    </span>
                                   </div>
                                 </div>
                               </div>

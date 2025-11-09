@@ -9,7 +9,6 @@ interface LineItem {
   code: string
   display_name: string
   section: string
-  is_computed: boolean
   has_drivers?: boolean
   sign_convention?: string
   value: number
@@ -1426,7 +1425,7 @@ Use business-friendly language and avoid excessive financial jargon. Write as a 
                                     </tr>
 
                                     {/* Driver Decomposition Rows */}
-                                    {isLineItemExpanded && lineItem.is_computed && (
+                                    {isLineItemExpanded && lineItem.has_drivers && (
                                       <>
                                         {(() => {
                                           const firstScenarioId = Array.from(selectedScenarios)[0]

@@ -10,7 +10,7 @@ interface LineItem {
   code: string
   display_name: string
   section: string
-  is_computed: boolean
+  formula?: string
 }
 
 interface Template {
@@ -773,11 +773,15 @@ export default function MapStatements() {
       return
     }
 
-    // Helper to check if item is mappable: either not computed, or has [t-1] dependencies (needs opening balance)
+    // Helper to check if item is mappable: has formula that requires external data
+    // Items without formulas, or with [t-1], BASE:, or driver: references need mapped data
     const isMappable = (item: LineItem) => {
-      if (!item.is_computed) return true
-      if (item.formula && item.formula.includes('[t-1]')) return true
-      return false
+      if (!item.formula || item.formula.trim() === '') return true
+      const formulaUpper = item.formula.toUpperCase()
+      if (formulaUpper.includes('[T-1]')) return true
+      if (formulaUpper.includes('BASE:')) return true
+      if (formulaUpper.includes('DRIVER:')) return true
+      return false  // Pure within-period calculation, no mapping needed
     }
 
     const lineItems = filteredLineItems(template, statementType).filter(isMappable)
@@ -1542,9 +1546,8 @@ Respond with ONLY the JSON object, no other text`
               </div>
               <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
                 {lineItems.map(lineItem => {
-                  // Check if item needs opening balance (has [t-1])
-                  const needsOpeningBalance = lineItem.formula && lineItem.formula.includes('[t-1]')
-                  const isDerived = lineItem.is_computed && !needsOpeningBalance
+                  // This should not happen since isMappable already filters, but keep for safety
+                  const isDerived = false  // All items in this list need mapping
 
                   return (
                     <div key={lineItem.code} style={{ marginBottom: '20px' }}>

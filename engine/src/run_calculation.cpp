@@ -787,7 +787,7 @@ int main(int argc, char* argv[]) {
                 // For period 0 (opening balance):
                 // 1. Load base values from staging for leaf entities only
                 // 2. Roll up to parents via summation
-                // 3. Then calculate derived values (is_computed=true) for all entities
+                // 3. Then calculate purely internal derived values for all entities
                 if (period_id == 0) {
                     std::cout << "  Opening period: loading base statements for leaf entities" << std::endl;
 
@@ -961,26 +961,34 @@ int main(int argc, char* argv[]) {
                         }
                     }
 
-                    // Now calculate derived values (is_computed=true) for all entities
-                    // Skip items with [t-1] references in period 0 (no prior period exists)
+                    // Now calculate purely internal derived values for all entities
+                    // Skip items with external dependencies ([t-1], BASE:, driver:)
                     std::cout << "  Calculating derived values" << std::endl;
                     for (const auto& item : line_items) {
-                        if (item.is_computed) {
-                            // Skip items with [t-1] or BASE: in formula during period 0
-                            if (item.formula.has_value() &&
-                               (item.formula->find("[t-1]") != std::string::npos ||
-                                item.formula->find("BASE:") != std::string::npos)) {
-                                continue;
-                            }
+                        // Skip items without formulas (shouldn't happen, but defensive)
+                        if (!item.formula.has_value() || item.formula->empty()) {
+                            continue;
+                        }
 
-                            for (const auto& entity_id : hierarchy->get_all_entities()) {
-                                bool is_populated = false;
-                                double value = engine.calculate_single_line_item(
-                                    entity_id, scenario_id, period_id, item.code, template_code, is_populated
-                                );
-                                if (is_populated) {
-                                    period_results[entity_id][item.code] = {value, true};
-                                }
+                        // Convert formula to uppercase for case-insensitive matching
+                        std::string formula_upper = item.formula.value();
+                        std::transform(formula_upper.begin(), formula_upper.end(),
+                                      formula_upper.begin(), ::toupper);
+
+                        // Skip items with external dependencies in period 0
+                        if (formula_upper.find("[T-1]") != std::string::npos ||
+                            formula_upper.find("BASE:") != std::string::npos ||
+                            formula_upper.find("DRIVER:") != std::string::npos) {
+                            continue;
+                        }
+
+                        for (const auto& entity_id : hierarchy->get_all_entities()) {
+                            bool is_populated = false;
+                            double value = engine.calculate_single_line_item(
+                                entity_id, scenario_id, period_id, item.code, template_code, is_populated
+                            );
+                            if (is_populated) {
+                                period_results[entity_id][item.code] = {value, true};
                             }
                         }
                     }

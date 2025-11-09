@@ -90,7 +90,6 @@ bool StatementTemplate::update_line_item_formula(const std::string& code, const 
         return false;
     }
     line_items_[it->second].formula = new_formula;
-    line_items_[it->second].is_computed = true;  // Mark as computed when formula is set
 
     // Automatically recompute calculation order since dependencies may have changed
     try {
@@ -98,7 +97,6 @@ bool StatementTemplate::update_line_item_formula(const std::string& code, const 
     } catch (const std::exception& e) {
         // If calculation order fails (e.g., circular dependency), rollback the formula change
         line_items_[it->second].formula = std::nullopt;
-        line_items_[it->second].is_computed = false;
         throw;  // Re-throw the exception
     }
 
@@ -184,18 +182,6 @@ void StatementTemplate::parse_json(const std::string& json_content) {
                 item.level = item_json.value("level", 1);
                 item.driver_applicable = item_json.value("driver_applicable", false);
                 item.category = item_json.value("category", "");
-                // Handle is_computed as both integer (0/1) and boolean (true/false)
-                if (item_json.contains("is_computed")) {
-                    if (item_json["is_computed"].is_boolean()) {
-                        item.is_computed = item_json["is_computed"].get<bool>();
-                    } else if (item_json["is_computed"].is_number_integer()) {
-                        item.is_computed = item_json["is_computed"].get<int>() != 0;
-                    } else {
-                        item.is_computed = false;
-                    }
-                } else {
-                    item.is_computed = false;
-                }
 
                 // Optional fields
                 if (item_json.contains("formula") && !item_json["formula"].is_null()) {
@@ -309,7 +295,6 @@ std::string StatementTemplate::to_json() const {
         item_json["level"] = item.level;
         item_json["driver_applicable"] = item.driver_applicable;
         item_json["category"] = item.category;
-        item_json["is_computed"] = item.is_computed;
 
         if (item.formula.has_value()) {
             item_json["formula"] = item.formula.value();

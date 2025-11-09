@@ -9,7 +9,6 @@ interface LineItem {
   code: string
   display_name: string
   section: string
-  is_computed: boolean
   sign_convention?: string
   value: number
 }
@@ -1296,7 +1295,7 @@ export default function ViewResults() {
                               alignItems: 'center',
                               padding: '12px 16px',
                               borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
-                              backgroundColor: item.is_computed ? 'rgba(34, 197, 94, 0.05)' : 'transparent',
+                              backgroundColor: 'transparent',
                               cursor: hasDrivers || !hasBeenChecked ? 'pointer' : 'default'
                             }}
                             onClick={() => hasDrivers || !hasBeenChecked ? toggleLineItem(item.code) : null}
@@ -1324,7 +1323,7 @@ export default function ViewResults() {
                               <span style={{
                                 fontSize: '14px',
                                 color: '#fff',
-                                fontWeight: item.is_computed ? '600' : '400'
+                                fontWeight: '400'
                               }}>
                                 {item.display_name}
                               </span>
@@ -2342,7 +2341,7 @@ export default function ViewResults() {
             ) : (
               (() => {
                 // Group MC results by section similar to multi-year results
-                const mcSectionMap = new Map<string, Array<{code: string, meanValue: number, display_name: string, is_computed: boolean, sign_convention: string}>>()
+                const mcSectionMap = new Map<string, Array<{code: string, meanValue: number, display_name: string, sign_convention: string}>>()
 
                 mcResults.lineItems.forEach(item => {
                   // Find the line item definition to get section and display info
@@ -2356,7 +2355,6 @@ export default function ViewResults() {
                         code: item.code,
                         meanValue: item.meanValue,
                         display_name: lineItem.display_name,
-                        is_computed: lineItem.is_computed,
                         sign_convention: lineItem.sign_convention
                       })
                       break
@@ -2401,7 +2399,7 @@ export default function ViewResults() {
                             borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
                             backgroundColor: selectedMcLineItem === item.code
                               ? 'rgba(168, 85, 247, 0.2)'
-                              : item.is_computed ? 'rgba(168, 85, 247, 0.05)' : 'transparent',
+                              : 'transparent',
                             cursor: 'pointer',
                             transition: 'background-color 0.2s'
                           }}
@@ -2412,7 +2410,7 @@ export default function ViewResults() {
                           }}
                           onMouseLeave={(e) => {
                             if (selectedMcLineItem !== item.code) {
-                              e.currentTarget.style.backgroundColor = item.is_computed ? 'rgba(168, 85, 247, 0.05)' : 'transparent'
+                              e.currentTarget.style.backgroundColor = 'transparent'
                             }
                           }}
                         >
@@ -2428,7 +2426,7 @@ export default function ViewResults() {
                             <span style={{
                               fontSize: '14px',
                               color: '#fff',
-                              fontWeight: item.is_computed ? '600' : '400'
+                              fontWeight: '400'
                             }}>
                               {item.display_name}
                             </span>

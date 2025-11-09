@@ -9,7 +9,6 @@ interface LineItem {
   code: string
   display_name: string
   section: string
-  is_computed: boolean
   formula?: string
 }
 
@@ -141,18 +140,6 @@ const DefineFormulas: React.FC = () => {
 
     setValidationError(null)
 
-    // Check if purely derived rows only use current period rows
-    if (selectedLineItem.is_computed) {
-      if (formula.includes('[t-1]')) {
-        setValidationError('Purely Derived rows cannot reference prior periods')
-        return false
-      }
-      if (formula.includes('driver:')) {
-        setValidationError('Purely Derived rows cannot reference drivers')
-        return false
-      }
-    }
-
     // Basic syntax validation
     const openParens = (formula.match(/\(/g) || []).length
     const closeParens = (formula.match(/\)/g) || []).length
@@ -245,7 +232,6 @@ I need a formula suggestion for the following line item:
 
 Line Item: ${selectedLineItem.code} - ${selectedLineItem.display_name}
 Section: ${selectedLineItem.section}
-Type: ${selectedLineItem.is_computed ? 'Purely Derived (can only use current period rows, no [t-1] or driver: references)' : 'External Data (can use any references)'}
 
 Available line items in this template:
 ${availableLineItems}
@@ -266,8 +252,6 @@ Please suggest an appropriate formula for this line item. ${formula && formula.t
 - Prior period references with [t-1] suffix (e.g., REV_001[t-1])
 - Driver references with driver: prefix (e.g., driver:REVENUE_GROWTH)
 - Standard math operators: +, -, *, /, (, )
-
-${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so you MUST NOT use [t-1] or driver: references.' : ''}
 `
 
       const response = await fetch(apiUrl('/api/ai/suggest-formula'), {
@@ -415,7 +399,6 @@ ${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so yo
                         justifyContent: 'space-between'
                       }}>
                         <span>{item.section}</span>
-                        <span>{item.is_computed ? 'Derived' : 'External'}</span>
                       </div>
                     </button>
                   ))}
@@ -441,26 +424,9 @@ ${selectedLineItem.is_computed ? 'IMPORTANT: This is a Purely Derived row, so yo
                         <div style={{ display: 'flex', gap: '16px', fontSize: '14px', color: '#94a3b8' }}>
                           <span>Code: {selectedLineItem.code}</span>
                           <span>Section: {selectedLineItem.section}</span>
-                          <span>
-                            Type: {selectedLineItem.is_computed ? 'Purely Derived' : 'External Data'}
-                          </span>
                         </div>
                       </div>
                     </div>
-                    {selectedLineItem.is_computed && (
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '12px',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        color: '#60a5fa'
-                      }}>
-                        <AlertCircle className="w-4 h-4" style={{ display: 'inline', marginRight: '8px' }} />
-                        Purely Derived rows can only use current period rows (no [t-1] or driver: references)
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
 

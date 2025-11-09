@@ -148,23 +148,23 @@ UnifiedResult UnifiedEngine::calculate(
         // Skip items that cannot be calculated in period 0:
         // 1. Items with [t-1] references (no prior period exists)
         // 2. Items with BASE: references (base values not loaded in period 0)
-        // 3. Items that need driver data (is_computed=false and no formula with BASE:/[t-1])
+        // 3. Items that need driver data (formula contains driver: reference)
         // 4. Items that depend on any skipped items (cascading)
         bool should_skip = false;
         if (period_id == 0) {
-            // Check if formula contains [t-1] or BASE: references
-            bool has_temporal_ref = false;
+            // Check if formula contains [t-1], BASE:, or driver: references
+            bool has_external_ref = false;
             if (line_item->formula.has_value()) {
-                const std::string& formula = line_item->formula.value();
-                has_temporal_ref = (formula.find("[t-1]") != std::string::npos ||
-                                   formula.find("BASE:") != std::string::npos);
+                std::string formula_upper = line_item->formula.value();
+                std::transform(formula_upper.begin(), formula_upper.end(),
+                             formula_upper.begin(), ::toupper);
+                has_external_ref = (formula_upper.find("[T-1]") != std::string::npos ||
+                                   formula_upper.find("BASE:") != std::string::npos ||
+                                   formula_upper.find("DRIVER:") != std::string::npos);
             }
 
-            if (has_temporal_ref) {
-                // Skip items with [t-1] or BASE: references
-                should_skip = true;
-            } else if (!line_item->is_computed) {
-                // Skip items that need driver data (not computed, no temporal references)
+            if (has_external_ref) {
+                // Skip items with external dependencies
                 should_skip = true;
             } else if (!line_item->dependencies.empty()) {
                 // Skip computed items that depend on any skipped items (cascading)
