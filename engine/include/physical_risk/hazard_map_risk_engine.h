@@ -65,6 +65,10 @@ struct HazardMapDamageResult {
     double ppe_loss_amount;
     double inventory_loss_amount;
     double bi_loss_amount;
+
+    // Dynamic map for any value type (replaces hardcoded fields above)
+    std::map<std::string, double> damage_factors_by_type;
+    std::map<std::string, double> loss_amounts_by_type;
 };
 
 /**

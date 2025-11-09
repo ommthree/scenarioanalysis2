@@ -506,7 +506,11 @@ std::vector<HazardMapDamageResult> HazardMapRiskEngine::calculate_damages(
                         );
                         double loss_amount = loc_value * damage_factor;
 
-                        // Store in appropriate field (for backward compatibility with result writing)
+                        // Store in dynamic map (works for any value type)
+                        result.damage_factors_by_type[value_type] = damage_factor;
+                        result.loss_amounts_by_type[value_type] = loss_amount;
+
+                        // Also store in legacy fields for backward compatibility
                         if (value_type == "PPE") {
                             result.ppe_damage_factor = damage_factor;
                             result.ppe_loss_amount = loss_amount;
@@ -717,18 +721,10 @@ int HazardMapRiskEngine::aggregate_to_drivers(
         for (const auto& [driver_code, peril_value_mappings] : driver_mappings) {
             for (const auto& [peril_type, value_type] : peril_value_mappings) {
                 if (result.peril_type == peril_type) {
-                    double loss_amount = 0.0;
-
-                    if (value_type == "PPE") {
-                        loss_amount = result.ppe_loss_amount;
-                    } else if (value_type == "INVENTORY") {
-                        loss_amount = result.inventory_loss_amount;
-                    } else if (value_type == "BI") {
-                        loss_amount = result.bi_loss_amount;
-                    }
-
-                    if (loss_amount > 0.0) {
-                        aggregated[result.entity_id][driver_code][result.period] += loss_amount;
+                    // Use dynamic map to get loss amount for any value type
+                    auto it = result.loss_amounts_by_type.find(value_type);
+                    if (it != result.loss_amounts_by_type.end() && it->second > 0.0) {
+                        aggregated[result.entity_id][driver_code][result.period] += it->second;
                     }
                 }
             }
