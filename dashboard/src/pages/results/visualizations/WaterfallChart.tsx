@@ -84,6 +84,9 @@ export default function WaterfallChart() {
   // Ref for capture
   const chartRef = useRef<HTMLDivElement>(null)
 
+  // Cross terms toggle
+  const [showCrossTerms, setShowCrossTerms] = useState(false)
+
   // Load initial data
   useEffect(() => {
     loadScenarios()
@@ -292,17 +295,18 @@ export default function WaterfallChart() {
         })
       })
 
-      // Add residual/constant if needed
+      // Add cross terms if needed
       const actualNextValue = data2.lineItemValue || 0
-      const residual = actualNextValue - cumulative
-      if (Math.abs(residual) > 0.01) {
-        cumulative += residual
+      const crossTerms = actualNextValue - cumulative
+      if (Math.abs(crossTerms) > 0.01) {
+        cumulative += crossTerms
         waterfallItems.push({
           type: 'driver',
-          label: 'Constant/Residual',
-          value: residual,
+          label: 'Cross Terms',
+          value: crossTerms,
           cumulative,
-          category: 'Other'
+          category: 'Other',
+          isCrossTerm: true
         })
       }
 
@@ -428,17 +432,18 @@ export default function WaterfallChart() {
         })
       })
 
-      // Add residual/constant if there's a difference between calculated and actual end value
+      // Add cross terms if there's a difference between calculated and actual end value
       const calculatedEnd = cumulative
-      const residual = endValue - calculatedEnd
-      if (Math.abs(residual) > 0.01) {
-        cumulative += residual
+      const crossTerms = endValue - calculatedEnd
+      if (Math.abs(crossTerms) > 0.01) {
+        cumulative += crossTerms
         waterfallItems.push({
           type: 'driver',
-          label: 'Constant/Residual',
-          value: residual,
+          label: 'Cross Terms',
+          value: crossTerms,
           cumulative,
-          category: 'Other'
+          category: 'Other',
+          isCrossTerm: true
         })
       }
 
@@ -668,7 +673,7 @@ export default function WaterfallChart() {
 
       // Extract driver changes
       const driverChanges = waterfallData
-        .filter(item => item.type === 'driver' && item.label !== 'Constant/Residual')
+        .filter(item => item.type === 'driver' && item.label !== 'Cross Terms')
         .map(item => ({
           driver: item.label,
           change: item.value,
@@ -721,13 +726,106 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
     }
   }
 
-  const renderWaterfall = () => {
-    if (waterfallData.length === 0) return null
+  // Process waterfall data based on cross terms toggle
+  const getProcessedWaterfallData = () => {
+    if (showCrossTerms || waterfallData.length === 0) {
+      return waterfallData
+    }
 
-    const maxValue = Math.max(...waterfallData.map(d => Math.abs(d.cumulative)))
+    // Find cross terms items
+    const crossTermsItems = waterfallData.filter(item => item.isCrossTerm)
+    if (crossTermsItems.length === 0) {
+      return waterfallData
+    }
+
+    // Sum all cross terms values
+    const totalCrossTerms = crossTermsItems.reduce((sum, item) => sum + item.value, 0)
+
+    // Deep copy items and filter out cross terms
+    const result = waterfallData
+      .filter(item => !item.isCrossTerm)
+      .map(item => ({ ...item }))
+
+    // Get driver items for distribution
+    const driverItems = result.filter(item => item.type === 'driver')
+    const totalDriverAbsValue = driverItems.reduce((sum, item) => sum + Math.abs(item.value), 0)
+
+    // Distribute cross terms pro-rata among drivers
+    // Option A: Sign-aware distribution (positives to positives, negatives to negatives)
+    if (driverItems.length > 0) {
+      if (totalCrossTerms > 0) {
+        // Distribute positive cross terms to positive drivers
+        const posDrivers = driverItems.filter(item => item.value > 0)
+        const sumPositive = posDrivers.reduce((sum, item) => sum + item.value, 0)
+
+        if (sumPositive > 0) {
+          // Option A: distribute to same-sign bars
+          for (const item of result) {
+            if (item.type === 'driver' && item.value > 0) {
+              const proportion = item.value / sumPositive
+              item.value = item.value + totalCrossTerms * proportion
+            }
+          }
+        } else {
+          // Option B fallback: distribute proportionally to all bars by magnitude
+          for (const item of result) {
+            if (item.type === 'driver') {
+              const proportion = Math.abs(item.value) / totalDriverAbsValue
+              item.value = item.value + totalCrossTerms * proportion
+            }
+          }
+        }
+      } else if (totalCrossTerms < 0) {
+        // Distribute negative cross terms to negative drivers
+        const negDrivers = driverItems.filter(item => item.value < 0)
+        const sumNegativeAbs = negDrivers.reduce((sum, item) => sum + Math.abs(item.value), 0)
+
+        if (sumNegativeAbs > 0) {
+          // Option A: distribute to same-sign bars
+          for (const item of result) {
+            if (item.type === 'driver' && item.value < 0) {
+              const proportion = Math.abs(item.value) / sumNegativeAbs
+              item.value = item.value + totalCrossTerms * proportion
+            }
+          }
+        } else {
+          // Option B fallback: distribute proportionally to all bars by magnitude
+          for (const item of result) {
+            if (item.type === 'driver') {
+              const proportion = Math.abs(item.value) / totalDriverAbsValue
+              item.value = item.value + totalCrossTerms * proportion
+            }
+          }
+        }
+      }
+    }
+
+    // Recalculate cumulative values
+    let cumulative = 0
+    for (let i = 0; i < result.length; i++) {
+      if (result[i].type === 'start') {
+        cumulative = result[i].value
+        result[i].cumulative = result[i].value
+      } else if (result[i].type === 'driver') {
+        cumulative += result[i].value
+        result[i].cumulative = cumulative
+      } else if (result[i].type === 'end' || result[i].type === 'intermediate') {
+        result[i].cumulative = result[i].value
+        cumulative = result[i].value
+      }
+    }
+
+    return result
+  }
+
+  const renderWaterfall = () => {
+    const processedData = getProcessedWaterfallData()
+    if (processedData.length === 0) return null
+
+    const maxValue = Math.max(...processedData.map(d => Math.abs(d.cumulative)))
     const chartHeight = 400
     const chartWidth = 900
-    const barWidth = (chartWidth - 100) / waterfallData.length
+    const barWidth = (chartWidth - 100) / processedData.length
     const margin = { top: 40, right: 40, bottom: 80, left: 100 }
 
     const yScale = (value: number) => {
@@ -764,7 +862,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
           />
 
           {/* Bars */}
-          {waterfallData.map((item, i) => {
+          {processedData.map((item, i) => {
             const x = margin.left + i * barWidth + barWidth * 0.1
             const width = barWidth * 0.8
 
@@ -773,14 +871,14 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
               barY = yScale(item.value)
               barHeight = yScale(0) - yScale(item.value)
             } else {
-              const prevCumulative = i > 0 ? waterfallData[i - 1].cumulative : 0
+              const prevCumulative = i > 0 ? processedData[i - 1].cumulative : 0
               const currentCumulative = item.cumulative
               barY = yScale(Math.max(prevCumulative, currentCumulative))
               barHeight = Math.abs(yScale(currentCumulative) - yScale(prevCumulative))
             }
 
             // Connector line to next bar
-            const showConnector = i < waterfallData.length - 1 && item.type !== 'end'
+            const showConnector = i < processedData.length - 1 && item.type !== 'end'
             const nextX = margin.left + (i + 1) * barWidth + barWidth * 0.1
 
             const isHovered = hoveredBar === i
@@ -1057,6 +1155,58 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
             >
               Action Impact (What-If)
             </button>
+          </div>
+
+          {/* Cross Terms Toggle */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '16px',
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            borderRadius: '8px',
+            marginTop: '16px'
+          }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              fontSize: '14px',
+              color: '#cbd5e1',
+              fontWeight: '500',
+              gap: '12px'
+            }}>
+              <span>Show cross terms separately</span>
+              <div
+                onClick={() => setShowCrossTerms(!showCrossTerms)}
+                style={{
+                  position: 'relative',
+                  width: '44px',
+                  height: '24px',
+                  backgroundColor: showCrossTerms ? '#3b82f6' : '#475569',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s',
+                  border: '2px solid ' + (showCrossTerms ? '#60a5fa' : '#64748b')
+                }}
+              >
+                <div style={{
+                  position: 'absolute',
+                  top: '2px',
+                  left: showCrossTerms ? '22px' : '2px',
+                  width: '16px',
+                  height: '16px',
+                  backgroundColor: '#fff',
+                  borderRadius: '50%',
+                  transition: 'left 0.2s',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }} />
+              </div>
+            </label>
+            <span style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic' }}>
+              (When off, cross terms are distributed pro-rata among drivers)
+            </span>
           </div>
 
           {/* Period to Period Mode */}

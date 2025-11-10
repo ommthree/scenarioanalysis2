@@ -116,7 +116,8 @@ app.post('/api/statements/load', upload.single('file'), async (req, res) => {
         _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         ${columnDefs},
         imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        is_mapped INTEGER DEFAULT 0
+        is_mapped INTEGER DEFAULT 0,
+        entity_id INTEGER
       )`, (err) => {
         if (err) {
           console.error('Create table error:', err)
@@ -413,7 +414,8 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
             _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
             ${columnDefs},
             imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            is_mapped INTEGER DEFAULT 0
+            is_mapped INTEGER DEFAULT 0,
+            entity_id INTEGER
           )`, (err) => {
             if (err) {
               console.error('Create table error:', err)
@@ -1318,21 +1320,13 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
         }
 
         // Extract value from staging table
-        // Balance sheet table: _rowid, line_item, units, value, imported_at, is_mapped
-        // PNL table: _rowid, "Line Item", "Initial Value", imported_at, is_mapped
+        // Try both 'value' and 'Initial Value' columns
         let value = null
 
-        // Try different column names depending on statement type
-        if (statementType === 'balance_sheet' || statementType === 'bs') {
-          // Balance sheet uses lowercase 'value' column
-          if (csvRow['value'] !== undefined && csvRow['value'] !== null) {
-            value = parseFloat(csvRow['value'])
-          }
-        } else {
-          // PNL and others use 'Initial Value' column
-          if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
-            value = parseFloat(csvRow['Initial Value'])
-          }
+        if (csvRow['value'] !== undefined && csvRow['value'] !== null) {
+          value = parseFloat(csvRow['value'])
+        } else if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
+          value = parseFloat(csvRow['Initial Value'])
         }
 
         if (value === null || isNaN(value)) {
@@ -1341,6 +1335,19 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
         }
 
         console.log('Mapping:', line_item_code, '=', value, 'from row', csv_row_index)
+
+        // Update staging table with entity_id first (before any continue statements)
+        const updateStagingSql = `
+          UPDATE ${security.quoteIdentifier(tables.staging)}
+          SET entity_id = ?, is_mapped = 1
+          WHERE _rowid = ?
+        `
+        insertPromises.push(new Promise((resolve, reject) => {
+          db.run(updateStagingSql, [targetEntityId, csvRow._rowid], (err) => {
+            if (err) reject(err)
+            else resolve()
+          })
+        }))
 
         // Insert into appropriate result table
         let insertSql
@@ -1372,7 +1379,7 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           `
           insertParams = [scenarioId, line_item_code, value]
         } else {
-          // For CF - skip for now
+          // For CF - skip result table insert for now
           // TODO: Implement CF storage
           continue
         }

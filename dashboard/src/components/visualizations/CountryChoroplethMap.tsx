@@ -74,16 +74,40 @@ export default function CountryChoroplethMap({
 
   // Create impact lookup map
   const impactMap = new Map(countries.map(c => [c.country.toLowerCase(), c.impact]))
-  const maxImpact = Math.max(...countries.map(c => Math.abs(c.impact)), 1)
+
+  // Calculate min and max for dynamic scaling (fit to data range)
+  const impacts = countries.map(c => c.impact).filter(i => i !== 0)
+  const minImpact = impacts.length > 0 ? Math.min(...impacts) : 0
+  const maxImpact = impacts.length > 0 ? Math.max(...impacts) : 1
+
+  // Separate positive and negative values for independent scaling
+  const positiveImpacts = impacts.filter(i => i > 0)
+  const negativeImpacts = impacts.filter(i => i < 0)
+  const minPositive = positiveImpacts.length > 0 ? Math.min(...positiveImpacts) : 0
+  const maxPositive = positiveImpacts.length > 0 ? Math.max(...positiveImpacts) : 1
+  const minNegative = negativeImpacts.length > 0 ? Math.min(...negativeImpacts) : -1
+  const maxNegative = negativeImpacts.length > 0 ? Math.max(...negativeImpacts) : 0
 
   const getColor = (impact: number) => {
-    const opacity = Math.abs(impact) / maxImpact
-    if (impact < 0) {
-      return `rgba(239, 68, 68, ${Math.max(0.3, opacity)})` // Red for negative
-    } else if (impact > 0) {
-      return `rgba(34, 197, 94, ${Math.max(0.3, opacity)})` // Green for positive
+    if (impact === 0) {
+      return 'rgba(148, 163, 184, 0.3)' // Gray for zero
     }
-    return 'rgba(148, 163, 184, 0.3)' // Gray for zero
+
+    // Dynamic scale: map impact to opacity range [0.3, 0.95] based on data range
+    let normalizedValue
+    if (impact < 0) {
+      // Negative values: scale from minNegative to maxNegative
+      const range = Math.abs(minNegative - maxNegative)
+      normalizedValue = range !== 0 ? (impact - maxNegative) / (minNegative - maxNegative) : 1
+      const opacity = 0.3 + (normalizedValue * 0.65)
+      return `rgba(239, 68, 68, ${opacity})` // Red for negative
+    } else {
+      // Positive values: scale from minPositive to maxPositive
+      const range = maxPositive - minPositive
+      normalizedValue = range !== 0 ? (impact - minPositive) / range : 1
+      const opacity = 0.3 + (normalizedValue * 0.65)
+      return `rgba(34, 197, 94, ${opacity})` // Green for positive
+    }
   }
 
   const style = (feature: any) => {
