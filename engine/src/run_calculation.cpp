@@ -1272,10 +1272,11 @@ int main(int argc, char* argv[]) {
 
                 std::cout << "✓ Period " << period_id << " complete: saved " << saved_count << " values" << std::endl;
 
-                // Save driver decomposition data
+                // Save driver decomposition data (non-zero only for waterfalls)
                 if (!all_driver_contributions.empty()) {
                     std::cout << "Saving driver decomposition..." << std::endl;
                     int driver_saved_count = 0;
+                    int mapping_saved_count = 0;
 
                     for (const auto& [entity_id, line_item_code, driver_code, value] : all_driver_contributions) {
                         ParamMap driver_params;
@@ -1299,9 +1300,26 @@ int main(int argc, char* argv[]) {
                             std::cerr << "Warning: Failed to save driver contribution for " << entity_id
                                      << " / " << line_item_code << " / " << driver_code << ": " << e.what() << std::endl;
                         }
+
+                        // Also save to mappings table (includes ALL values, even zeros, for Sankey visualization)
+                        // Mark as indirect by default (is_direct=0); will be updated to 1 later based on formula analysis
+                        driver_params["is_direct"] = 0;
+                        try {
+                            db->execute_update(
+                                "INSERT OR REPLACE INTO statement_result_by_driver_mappings "
+                                "(entity_id, scenario_id, period_id, line_item_code, driver_code, value, what_if_combination, is_direct) "
+                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :driver_code, :value, :what_if_combination, :is_direct)",
+                                driver_params
+                            );
+                            mapping_saved_count++;
+                        } catch (const std::exception& e) {
+                            std::cerr << "Warning: Failed to save driver mapping for " << entity_id
+                                     << " / " << line_item_code << " / " << driver_code << ": " << e.what() << std::endl;
+                        }
                     }
 
-                    std::cout << "✓ Saved " << driver_saved_count << " driver contributions" << std::endl;
+                    std::cout << "✓ Saved " << driver_saved_count << " driver contributions (waterfalls)" << std::endl;
+                    std::cout << "✓ Saved " << mapping_saved_count << " driver mappings (Sankey)" << std::endl;
                 }
 
                 // Iterative decomposition for derived line items
@@ -1320,7 +1338,7 @@ int main(int argc, char* argv[]) {
                     // Iterative passes until no new decompositions
                     int pass = 2;
                     bool added_new = true;
-                    while (added_new && pass <= 5) {  // Max 5 passes to prevent infinite loops
+                    while (added_new && pass <= 20) {  // Max 20 passes for deep dependency chains
                         added_new = false;
                         std::cout << "  Pass " << pass << "..." << std::endl;
 
@@ -1353,11 +1371,6 @@ int main(int argc, char* argv[]) {
 
                             // For each entity
                             for (const auto& [entity_id, line_item_map] : period_results) {
-                                // Check if this line item already has decomposition for this entity
-                                if (decomposed_items[entity_id].find(line_item.code) != decomposed_items[entity_id].end()) {
-                                    continue;  // Already decomposed
-                                }
-
                                 // Check if ALL dependencies have decompositions
                                 bool all_deps_decomposed = true;
                                 for (const auto& dep_code : line_item_deps) {
@@ -1376,6 +1389,9 @@ int main(int argc, char* argv[]) {
 
                                 std::map<std::string, double> aggregated_drivers;
 
+                                // Get existing drivers for this line item (to check for new ones)
+                                std::set<std::string> existing_drivers = decomposed_items[entity_id][line_item.code];
+
                                 for (const auto& dep_code : line_item_deps) {
                                     // Find all driver contributions for this dependency
                                     for (const auto& [e_id, li_code, dr_code, value] : all_driver_contributions) {
@@ -1387,24 +1403,35 @@ int main(int argc, char* argv[]) {
                                     }
                                 }
 
-                                // Save aggregated decompositions
+                                // Save aggregated decompositions (even if all zeros)
+                                // Only process NEW drivers (not already in existing_drivers)
+                                bool found_new = false;
                                 if (!aggregated_drivers.empty()) {
                                     for (const auto& [driver_code, agg_value] : aggregated_drivers) {
-                                        if (std::abs(agg_value) > 1e-10) {  // Only non-zero
-                                            all_driver_contributions.push_back(
-                                                std::make_tuple(entity_id, line_item.code, driver_code, agg_value)
-                                            );
+                                        // Skip if we already have this driver for this line item
+                                        if (existing_drivers.find(driver_code) != existing_drivers.end()) {
+                                            continue;
+                                        }
 
-                                            // Save to database immediately
-                                            ParamMap driver_params;
-                                            driver_params["entity_id"] = entity_id;
-                                            driver_params["scenario_id"] = scenario_id;
-                                            driver_params["period_id"] = period_id;
-                                            driver_params["line_item_code"] = line_item.code;
-                                            driver_params["driver_code"] = driver_code;
-                                            driver_params["value"] = agg_value;
-                                            driver_params["what_if_combination"] = whatif_combination;
+                                        found_new = true;
 
+                                        // Prepare parameters for both saves
+                                        ParamMap driver_params;
+                                        driver_params["entity_id"] = entity_id;
+                                        driver_params["scenario_id"] = scenario_id;
+                                        driver_params["period_id"] = period_id;
+                                        driver_params["line_item_code"] = line_item.code;
+                                        driver_params["driver_code"] = driver_code;
+                                        driver_params["value"] = agg_value;
+                                        driver_params["what_if_combination"] = whatif_combination;
+
+                                        // Add to all_driver_contributions for propagation in next pass (ALL values, including zeros)
+                                        all_driver_contributions.push_back(
+                                            std::make_tuple(entity_id, line_item.code, driver_code, agg_value)
+                                        );
+
+                                        // Save to waterfall table (non-zero only)
+                                        if (std::abs(agg_value) > 1e-10) {
                                             try {
                                                 db->execute_update(
                                                     "INSERT OR REPLACE INTO statement_result_by_driver "
@@ -1416,13 +1443,29 @@ int main(int argc, char* argv[]) {
                                                 std::cerr << "Warning: Failed to save derived contribution: " << e.what() << std::endl;
                                             }
                                         }
-                                    }
 
-                                    // Mark as decomposed
-                                    for (const auto& [driver_code, _] : aggregated_drivers) {
+                                        // Save to mappings table (all values including zeros)
+                                        // Mark as indirect (is_direct=0) since these come from iterative decomposition
+                                        driver_params["is_direct"] = 0;
+                                        try {
+                                            db->execute_update(
+                                                "INSERT OR REPLACE INTO statement_result_by_driver_mappings "
+                                                "(entity_id, scenario_id, period_id, line_item_code, driver_code, value, what_if_combination, is_direct) "
+                                                "VALUES (:entity_id, :scenario_id, :period_id, :line_item_code, :driver_code, :value, :what_if_combination, :is_direct)",
+                                                driver_params
+                                            );
+                                        } catch (const std::exception& e) {
+                                            std::cerr << "Warning: Failed to save derived mapping: " << e.what() << std::endl;
+                                        }
+
+                                        // Mark this driver as decomposed for this line item
+                                        // (needed for tracking multi-level transitive dependencies)
                                         decomposed_items[entity_id][line_item.code].insert(driver_code);
                                     }
-                                    added_new = true;
+
+                                    if (found_new) {
+                                        added_new = true;
+                                    }
                                 }
                             }
                         }
@@ -1431,6 +1474,60 @@ int main(int argc, char* argv[]) {
                     }
 
                     std::cout << "✓ Derived decompositions complete" << std::endl;
+                }
+
+                // Post-process: Mark direct driver relationships based on formula analysis
+                // A driver is "direct" if it appears in the line item's formula (driver: reference)
+                if (period_id > 0) {
+                    std::cout << "Marking direct driver relationships..." << std::endl;
+
+                    for (const auto& line_item : line_items) {
+                        if (!line_item.formula.has_value() || line_item.formula->empty()) {
+                            continue;
+                        }
+
+                        // Extract formula dependencies
+                        core::FormulaEvaluator evaluator;
+                        auto dependencies = evaluator.extract_dependencies(line_item.formula.value());
+
+                        // Find all driver references in the formula
+                        std::set<std::string> direct_drivers;
+                        for (const auto& dep : dependencies) {
+                            if (dep.length() > 7 && dep.substr(0, 7) == "driver:") {
+                                std::string driver_code = dep.substr(7);
+                                direct_drivers.insert(driver_code);
+                            }
+                        }
+
+                        // Update is_direct=1 for these relationships
+                        if (!direct_drivers.empty()) {
+                            for (const auto& driver_code : direct_drivers) {
+                                ParamMap update_params;
+                                update_params["scenario_id"] = scenario_id;
+                                update_params["period_id"] = period_id;
+                                update_params["line_item_code"] = line_item.code;
+                                update_params["driver_code"] = driver_code;
+                                update_params["what_if_combination"] = whatif_combination;
+
+                                try {
+                                    db->execute_update(
+                                        "UPDATE statement_result_by_driver_mappings "
+                                        "SET is_direct = 1 "
+                                        "WHERE scenario_id = :scenario_id "
+                                        "  AND period_id = :period_id "
+                                        "  AND line_item_code = :line_item_code "
+                                        "  AND driver_code = :driver_code "
+                                        "  AND what_if_combination = :what_if_combination",
+                                        update_params
+                                    );
+                                } catch (const std::exception& e) {
+                                    std::cerr << "Warning: Failed to mark direct relationship: " << e.what() << std::endl;
+                                }
+                            }
+                        }
+                    }
+
+                    std::cout << "✓ Direct relationships marked" << std::endl;
                 }
             }
 

@@ -921,6 +921,7 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       const linkColors = ribbonData.map((m: any) => {
         const isDirect = m.is_direct === 1
         const category = m.driver_category || 'financial'
+        console.log(`Mapping ${m.driver_code} → ${m.line_item_code}: is_direct=${m.is_direct}, isDirect=${isDirect}`)
 
         // Physical drivers: red/orange tones
         // Financial/transition drivers: blue/green tones
@@ -931,9 +932,9 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
           baseColor = '59, 130, 246' // Blue (rgb for 3b82f6)
         }
 
-        // Direct mappings: bright (0.6 opacity)
-        // Indirect mappings: faded (0.2 opacity)
-        const opacity = isDirect ? 0.6 : 0.2
+        // Direct mappings: moderately bold (0.7 opacity)
+        // Indirect mappings: very faded (0.15 opacity)
+        const opacity = isDirect ? 0.7 : 0.15
 
         return `rgba(${baseColor}, ${opacity})`
       })
