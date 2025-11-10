@@ -67,10 +67,10 @@ export default function RibbonChart() {
     if (mode === 'driver-mapping' && scenarios.length > 0 && entities.length > 0 && periods.length > 0) {
       if (!dmScenario) setDmScenario(scenarios[0].scenario_id)
       if (!dmEntity) setDmEntity(entities[0].entity_id)
-      // Skip period 0 if it exists, use period 1
+      // Use period 2 by default to show full indirect mappings
       if (!dmPeriod) {
-        const firstValidPeriod = periods.find(p => p > 0) || periods[0]
-        setDmPeriod(firstValidPeriod)
+        const defaultPeriod = periods.find(p => p === 2) || periods.find(p => p > 0) || periods[0]
+        setDmPeriod(defaultPeriod)
       }
     }
   }, [mode, scenarios, entities, periods])
@@ -594,10 +594,10 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       const stdDev = Math.sqrt(variance)
       const coefficientOfVariation = stdDev / mean  // Normalized measure of variance
 
-      // Dynamic gap: base 8% + additional gap based on variance (exponential growth for high variance)
-      const baseGap = 0.08  // Reduced from 0.15 to make chart more compact
+      // Dynamic gap: base 1% + additional gap based on variance (exponential growth for high variance)
+      const baseGap = 0.01  // Minimal base gap for compact display
       // Use steeper exponential curve: varianceGap stays minimal for low CV, explodes for high CV
-      const varianceGap = Math.min(1.5, Math.pow(coefficientOfVariation, 2.5) * 4.0)  // Reduced cap to 150% additional
+      const varianceGap = Math.min(0.5, Math.pow(coefficientOfVariation, 2.5) * 2.0)  // Reduced cap to 50% additional
       const gapBetweenRibbons = mean * (baseGap + varianceGap)
 
       console.log('=== Ribbon Chart Gap Calculation ===')
@@ -900,6 +900,14 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       // Node labels without prefixes
       const nodeLabels = [...drivers, ...lineItems]
 
+      // Map driver categories for coloring nodes
+      const driverCategories = new Map<string, string>()
+      ribbonData.forEach((m: any) => {
+        if (m.driver_category) {
+          driverCategories.set(m.driver_code, m.driver_category)
+        }
+      })
+
       // Map original codes to node indices (drivers first, then line items)
       const driverIndices = new Map(drivers.map((d, idx) => [d, idx]))
       const lineItemIndices = new Map(lineItems.map((li, idx) => [li, idx + drivers.length]))
@@ -908,6 +916,27 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
       const targets = ribbonData.map((m: any) => lineItemIndices.get(m.line_item_code))
       // Equal width flows
       const values = ribbonData.map(() => 1)
+
+      // Color links based on driver category and directness
+      const linkColors = ribbonData.map((m: any) => {
+        const isDirect = m.is_direct === 1
+        const category = m.driver_category || 'financial'
+
+        // Physical drivers: red/orange tones
+        // Financial/transition drivers: blue/green tones
+        let baseColor: string
+        if (category === 'physical') {
+          baseColor = '239, 68, 68' // Red (rgb for ef4444)
+        } else {
+          baseColor = '59, 130, 246' // Blue (rgb for 3b82f6)
+        }
+
+        // Direct mappings: bright (0.6 opacity)
+        // Indirect mappings: faded (0.2 opacity)
+        const opacity = isDirect ? 0.6 : 0.2
+
+        return `rgba(${baseColor}, ${opacity})`
+      })
 
       console.log('Sankey data - sources:', sources, 'targets:', targets, 'values:', values)
 
@@ -926,15 +955,25 @@ Keep it concise (2-4 sentences) and insightful. Do not use bullet points or list
                     width: 0.5
                   },
                   label: nodeLabels,
-                  color: nodeLabels.map((_, idx) =>
-                    idx < drivers.length ? '#10b981' : '#3b82f6'
-                  )
+                  color: nodeLabels.map((label, idx) => {
+                    // Drivers: color by category
+                    if (idx < drivers.length) {
+                      const category = driverCategories.get(label)
+                      if (category === 'physical') {
+                        return '#ef4444' // Red for physical drivers
+                      } else {
+                        return '#10b981' // Green for financial/transition drivers
+                      }
+                    }
+                    // Line items: blue
+                    return '#3b82f6'
+                  })
                 },
                 link: {
                   source: sources,
                   target: targets,
                   value: values,
-                  color: 'rgba(59, 130, 246, 0.2)'
+                  color: linkColors
                 }
               }
             ]}

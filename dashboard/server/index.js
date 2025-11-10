@@ -7565,14 +7565,22 @@ app.get('/api/results/driver-mappings', (req, res) => {
     }
   })
 
-  // Query distinct driver-to-lineitem mappings from statement_result_by_driver
+  // Query distinct driver-to-lineitem mappings with metadata
+  // Filter to only include P&L line items (not BS or CF)
   const query = `
     SELECT DISTINCT
-      driver_code,
-      line_item_code
-    FROM statement_result_by_driver
-    WHERE scenario_id = ? AND entity_id = ? AND period_id = ?
-    ORDER BY driver_code, line_item_code
+      srd.driver_code,
+      srd.line_item_code,
+      d.category as driver_category,
+      CASE WHEN srd.driver_code = srd.line_item_code THEN 1 ELSE 0 END as is_direct
+    FROM statement_result_by_driver srd
+    LEFT JOIN driver d ON srd.driver_code = d.code
+    WHERE srd.scenario_id = ? AND srd.entity_id = ? AND srd.period_id = ?
+      AND srd.line_item_code IN ('REVENUE', 'EXPENSES', 'NET_INCOME', 'RETAINED_EARNINGS', 'TOTAL_EQUITY',
+                                  'GROSS_PROFIT', 'EBITDA', 'EBIT', 'EBT', 'OPERATING_EXPENSES',
+                                  'COGS', 'DEPRECIATION', 'AMORTIZATION', 'INTEREST_EXPENSE',
+                                  'TAX_EXPENSE', 'OTHER_INCOME', 'OTHER_EXPENSES')
+    ORDER BY srd.driver_code, srd.line_item_code
   `
 
   db.all(query, [scenarioId, entityId, period], (err, rows) => {
