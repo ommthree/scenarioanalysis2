@@ -269,31 +269,19 @@ export default function RunDefinition() {
                   Monte Carlo Start Period: {mcStartPeriod}
                 </label>
                 <input
-                  type="range"
+                  type="number"
                   value={mcStartPeriod}
-                  onChange={(e) => setMcStartPeriod(parseInt(e.target.value))}
-                  min={1}
-                  max={20}
-                  step={1}
+                  onChange={(e) => setMcStartPeriod(parseInt(e.target.value) || 1)}
                   style={{
-                    width: '100%',
-                    height: '6px',
-                    borderRadius: '3px',
-                    backgroundColor: 'rgba(71, 85, 105, 0.5)',
-                    outline: 'none',
-                    cursor: 'pointer'
+                    width: '200px',
+                    padding: '8px 12px',
+                    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+                    border: '1px solid rgba(71, 85, 105, 0.6)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
                   }}
                 />
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: '11px',
-                  color: '#64748b',
-                  marginTop: '6px'
-                }}>
-                  <span>Period 1</span>
-                  <span>Period 20</span>
-                </div>
                 <div style={{
                   fontSize: '12px',
                   color: '#94a3b8',
