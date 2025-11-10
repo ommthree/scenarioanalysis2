@@ -801,8 +801,8 @@ export default function MapStatements() {
     const childEntities = allEntitiesFlat.filter(e => e.parent_entity_id === selectedCompany.entity_id)
 
     try {
-      // Prepare data for Claude
-      const csvSample = mapping.csvData.slice(0, 20).map((row, idx) => ({
+      // Prepare data for Claude - send all rows for complete mapping
+      const csvSample = mapping.csvData.map((row, idx) => ({
         index: idx,
         data: row
       }))
@@ -813,7 +813,7 @@ export default function MapStatements() {
       const prompt = `You are a financial data mapping assistant. Analyze the CSV data and map it to the template line items.
 
 CSV Columns: ${mapping.csvColumns.join(', ')}
-CSV Sample (first 20 rows):
+CSV Data (all ${csvSample.length} rows):
 ${JSON.stringify(csvSample, null, 2)}
 
 Template Line Items to map:
@@ -878,10 +878,15 @@ Instructions:
 }
 
 Rules for column_mappings:
-- Identify ALL columns that contain financial data values vs labels/descriptions
-- column_type should be "data" for value columns, "label" for description columns, "ignore" for irrelevant columns
+- Identify ALL columns that contain financial data values vs labels/descriptions/units
+- column_type should be:
+  * "data" for value columns (numeric financial data)
+  * "label" for line item name/description columns
+  * "currency" for currency/units columns (e.g., "CHF", "USD", "tCO2e", "units")
+  * "ignore" for irrelevant columns
 - Include notes explaining what the column represents
 - Map ALL data columns (years, periods, etc.)
+- Look for currency/units columns named like: "units", "currency", "unit", "curr", etc.
 
 Rules for row_mappings:
 - Only map rows where you have reasonable confidence
@@ -933,6 +938,10 @@ Respond with ONLY the JSON object, no other text`
       // Find label/line item column
       const labelColumn = columnMappings.find((c: ColumnMapping) => c.column_type === 'label')
       const lineItemColumn = labelColumn ? labelColumn.csv_column_name : null
+
+      // Find currency/units column
+      const currencyColumnMapping = columnMappings.find((c: ColumnMapping) => c.column_type === 'currency')
+      const currencyColumn = currencyColumnMapping ? currencyColumnMapping.csv_column_name : null
 
       // Helper to find entity by fuzzy name match (searches only child entities)
       const findEntityByName = (entityName: string): Entity | null => {
@@ -988,7 +997,7 @@ Respond with ONLY the JSON object, no other text`
           columnConfig: {
             lineItemColumn,
             valueColumn,
-            currencyColumn: null
+            currencyColumn
           }
         }
       }))
@@ -1546,8 +1555,13 @@ Respond with ONLY the JSON object, no other text`
               </div>
               <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
                 {lineItems.map(lineItem => {
-                  // This should not happen since isMappable already filters, but keep for safety
-                  const isDerived = false  // All items in this list need mapping
+                  // Check if item is derived: has formula but NO external data requirements
+                  // (no [t-1], BASE:, or driver: references)
+                  const isDerived = lineItem.formula && lineItem.formula.trim() !== '' && (() => {
+                    const formulaUpper = lineItem.formula!.toUpperCase()
+                    return !formulaUpper.includes('[T-1]') && !formulaUpper.includes('BASE:') && !formulaUpper.includes('DRIVER:')
+                  })()
+                  const needsOpeningBalance = statementType === 'bs' && lineItem.code && !lineItem.formula
 
                   return (
                     <div key={lineItem.code} style={{ marginBottom: '20px' }}>

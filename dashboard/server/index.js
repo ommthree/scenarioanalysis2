@@ -8145,6 +8145,36 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
 
     const isAbsoluteMode = !scenarioB
 
+    // Helper function to get all child entity IDs recursively
+    const getEntityTree = async (parentId) => {
+      const allIds = [parentId]
+      const queue = [parentId]
+
+      while (queue.length > 0) {
+        const currentId = queue.shift()
+        const children = await new Promise((resolve, reject) => {
+          db.all(
+            'SELECT entity_id FROM entity WHERE parent_entity_id = ?',
+            [currentId],
+            (err, rows) => {
+              if (err) reject(err)
+              else resolve(rows.map(r => r.entity_id))
+            }
+          )
+        })
+        allIds.push(...children)
+        queue.push(...children)
+      }
+
+      return allIds
+    }
+
+    // If entityId is provided, get all entities in the tree (parent + all descendants)
+    let entityIds = []
+    if (entityId) {
+      entityIds = await getEntityTree(entityId)
+    }
+
     const query = isAbsoluteMode ? `
       -- Absolute mode: just show scenarioA values
       SELECT
@@ -8160,7 +8190,7 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
       WHERE srd.scenario_id = ?
         AND srd.line_item_code = ?
         ${periodId ? 'AND srd.period_id = ?' : ''}
-        ${entityId ? 'AND srd.entity_id = ?' : ''}
+        ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
         ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
         AND d.category IN ('physical', 'financial')
       GROUP BY srd.driver_code, d.name, d.category, e.entity_id, e.json_metadata
@@ -8179,7 +8209,7 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
         WHERE srd.scenario_id IN (?, ?)
           AND srd.line_item_code = ?
           ${periodId ? 'AND srd.period_id = ?' : ''}
-          ${entityId ? 'AND srd.entity_id = ?' : ''}
+          ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
           AND d.category IN ('physical', 'financial')
       ),
       scenario_a AS (
@@ -8192,7 +8222,7 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
         WHERE srd.scenario_id = ?
           AND srd.line_item_code = ?
           ${periodId ? 'AND srd.period_id = ?' : ''}
-          ${entityId ? 'AND srd.entity_id = ?' : ''}
+          ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
           ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
         GROUP BY srd.driver_code, e.entity_id
       ),
@@ -8206,7 +8236,7 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
         WHERE srd.scenario_id = ?
           AND srd.line_item_code = ?
           ${periodId ? 'AND srd.period_id = ?' : ''}
-          ${entityId ? 'AND srd.entity_id = ?' : ''}
+          ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
           ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
         GROUP BY srd.driver_code, e.entity_id
       )
@@ -8233,22 +8263,22 @@ app.post('/api/results/risk-dashboard', async (req, res) => {
       // Absolute mode: just scenarioA params
       params = [scenarioA, lineItemCode]
       if (periodId) params.push(periodId)
-      if (entityId) params.push(entityId)
+      if (entityId) params.push(...entityIds)
       if (whatIfCombination) params.push(whatIfCombination)
     } else {
       // Delta mode: all_drivers + scenario_a + scenario_b params
       const allDriversParams = [scenarioA, scenarioB, lineItemCode]
       if (periodId) allDriversParams.push(periodId)
-      if (entityId) allDriversParams.push(entityId)
+      if (entityId) allDriversParams.push(...entityIds)
 
       const scenarioAParams = [scenarioA, lineItemCode]
       if (periodId) scenarioAParams.push(periodId)
-      if (entityId) scenarioAParams.push(entityId)
+      if (entityId) scenarioAParams.push(...entityIds)
       if (whatIfCombination) scenarioAParams.push(whatIfCombination)
 
       const scenarioBParams = [scenarioB, lineItemCode]
       if (periodId) scenarioBParams.push(periodId)
-      if (entityId) scenarioBParams.push(entityId)
+      if (entityId) scenarioBParams.push(...entityIds)
       if (whatIfCombination) scenarioBParams.push(whatIfCombination)
 
       params = [...allDriversParams, ...scenarioAParams, ...scenarioBParams]
