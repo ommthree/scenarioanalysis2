@@ -52,6 +52,7 @@ interface FlowNodeData {
   iconClass: string
   gradientBg: string
   onClick: () => void
+  disabled?: boolean
 }
 
 function FlowNode({ data }: { data: FlowNodeData }) {
@@ -59,14 +60,19 @@ function FlowNode({ data }: { data: FlowNodeData }) {
 
   return (
     <div
-      className="border-2 border-border rounded-xl p-4 shadow-lg hover:shadow-xl hover:border-primary transition-all cursor-pointer group"
+      className={`border-2 border-border rounded-xl p-4 shadow-lg transition-all ${
+        data.disabled
+          ? 'opacity-30 cursor-not-allowed'
+          : 'hover:shadow-xl hover:border-primary cursor-pointer group'
+      }`}
       style={{
         width: '220px',
         height: '120px',
         background: data.gradientBg || 'var(--card)',
-        backgroundColor: 'rgba(30, 41, 59, 0.9)'
+        backgroundColor: 'rgba(30, 41, 59, 0.9)',
+        pointerEvents: data.disabled ? 'none' : 'auto'
       }}
-      onClick={data.onClick}
+      onClick={data.disabled ? undefined : data.onClick}
     >
       <Handle type="target" position={Position.Left} id="left" style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Top} id="top" style={{ opacity: 0 }} />
@@ -98,12 +104,15 @@ const nodeTypes = {
 interface FlowchartNavProps {
   onNavigate?: () => void
   onMenuClick?: () => void
+  userRole?: 'admin' | 'user' | 'viewer' | 'explorer'
 }
 
-export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavProps = {}) {
+export default function FlowchartNav({ onNavigate, onMenuClick, userRole }: FlowchartNavProps = {}) {
   const navigate = useNavigate()
+  const isExplorer = userRole === 'explorer'
 
-  const handleNodeClick = useCallback((route: string) => {
+  const handleNodeClick = useCallback((route: string, disabled?: boolean) => {
+    if (disabled) return
     navigate(route)
     onNavigate?.()
   }, [navigate, onNavigate])
@@ -128,7 +137,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-blue-500/20',
         iconClass: 'text-blue-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3))',
-        onClick: () => handleNodeClick('/definitions/statements'),
+        onClick: () => handleNodeClick('/definitions/statements', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 3, Column 1 - Entities
@@ -144,7 +154,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-blue-500/20',
         iconClass: 'text-blue-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3))',
-        onClick: () => handleNodeClick('/definitions/entities'),
+        onClick: () => handleNodeClick('/definitions/entities', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 4, Column 1 - Scenarios
@@ -160,7 +171,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-blue-500/20',
         iconClass: 'text-blue-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.3))',
-        onClick: () => handleNodeClick('/definitions/scenarios'),
+        onClick: () => handleNodeClick('/definitions/scenarios', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -177,7 +189,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-cyan-500/20',
         iconClass: 'text-cyan-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
-        onClick: () => handleNodeClick('/definitions/formulas'),
+        onClick: () => handleNodeClick('/definitions/formulas', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 1, Column 2 - Validation
@@ -193,7 +206,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-cyan-500/20',
         iconClass: 'text-cyan-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
-        onClick: () => handleNodeClick('/definitions/validation'),
+        onClick: () => handleNodeClick('/definitions/validation', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 5, Column 2 - Actions
@@ -209,7 +223,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-cyan-500/20',
         iconClass: 'text-cyan-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.3))',
-        onClick: () => handleNodeClick('/definitions/actions'),
+        onClick: () => handleNodeClick('/definitions/actions', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -226,7 +241,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/statements'),
+        onClick: () => handleNodeClick('/inputs/statements', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 4, Column 3 - Load Scenarios
@@ -242,7 +258,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/scenarios'),
+        onClick: () => handleNodeClick('/inputs/scenarios', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 5, Column 3 - Load Correlations
@@ -258,7 +275,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/correlation'),
+        onClick: () => handleNodeClick('/inputs/correlation', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 6, Column 3 - Load Conversions
@@ -274,7 +292,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/conversions'),
+        onClick: () => handleNodeClick('/inputs/conversions', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 7, Column 3 - Load Hazard Maps
@@ -290,7 +309,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/hazard-maps'),
+        onClick: () => handleNodeClick('/inputs/hazard-maps', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 8, Column 3 - Load Locations
@@ -306,7 +326,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/locations'),
+        onClick: () => handleNodeClick('/inputs/locations', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 9, Column 3 - Load Damage Curves
@@ -322,7 +343,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-teal-500/20',
         iconClass: 'text-teal-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(20, 184, 166, 0.2), rgba(13, 148, 136, 0.3))',
-        onClick: () => handleNodeClick('/inputs/damage-curves'),
+        onClick: () => handleNodeClick('/inputs/damage-curves', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -339,7 +361,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-green-500/20',
         iconClass: 'text-green-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
-        onClick: () => handleNodeClick('/inputs/map-statements'),
+        onClick: () => handleNodeClick('/inputs/map-statements', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 4, Column 4 - Map Scenarios
@@ -355,7 +378,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-green-500/20',
         iconClass: 'text-green-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
-        onClick: () => handleNodeClick('/inputs/map-scenarios'),
+        onClick: () => handleNodeClick('/inputs/map-scenarios', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 7, Column 4 - Map Hazard Maps
@@ -371,7 +395,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-green-500/20',
         iconClass: 'text-green-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
-        onClick: () => handleNodeClick('/inputs/map-hazard-maps'),
+        onClick: () => handleNodeClick('/inputs/map-hazard-maps', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 8, Column 4 - Map Locations
@@ -387,7 +412,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-green-500/20',
         iconClass: 'text-green-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
-        onClick: () => handleNodeClick('/inputs/map-locations'),
+        onClick: () => handleNodeClick('/inputs/map-locations', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 9, Column 4 - Map Damage Curves
@@ -403,7 +429,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-green-500/20',
         iconClass: 'text-green-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.3))',
-        onClick: () => handleNodeClick('/inputs/map-damage-curves'),
+        onClick: () => handleNodeClick('/inputs/map-damage-curves', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -420,7 +447,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-emerald-500/20',
         iconClass: 'text-emerald-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3))',
-        onClick: () => handleNodeClick('/data/database'),
+        onClick: () => handleNodeClick('/data/database', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 7, Column 5 - Stored Runs
@@ -436,7 +464,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-emerald-500/20',
         iconClass: 'text-emerald-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3))',
-        onClick: () => handleNodeClick('/data/stored-calcs'),
+        onClick: () => handleNodeClick('/data/stored-calcs', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -453,7 +482,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-amber-500/20',
         iconClass: 'text-amber-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.3))',
-        onClick: () => handleNodeClick('/run/definition'),
+        onClick: () => handleNodeClick('/run/definition', isExplorer),
+        disabled: isExplorer,
       },
     },
     // Row 5, Column 6 - Run Calc
@@ -469,7 +499,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-amber-500/20',
         iconClass: 'text-amber-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.3))',
-        onClick: () => handleNodeClick('/run/execute'),
+        onClick: () => handleNodeClick('/run/execute', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -486,7 +517,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-orange-500/20',
         iconClass: 'text-orange-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(249, 115, 22, 0.2), rgba(234, 88, 12, 0.3))',
-        onClick: () => handleNodeClick('/visualize'),
+        onClick: () => handleNodeClick('/visualize', isExplorer),
+        disabled: isExplorer,
       },
     },
 
@@ -503,7 +535,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-pink-500/20',
         iconClass: 'text-pink-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(236, 72, 153, 0.2), rgba(219, 39, 119, 0.3))',
-        onClick: () => handleNodeClick('/explore'),
+        onClick: () => handleNodeClick('/explore', false),
+        disabled: false,
       },
     },
 
@@ -520,7 +553,8 @@ export default function FlowchartNav({ onNavigate, onMenuClick }: FlowchartNavPr
         ringClass: 'ring-purple-500/20',
         iconClass: 'text-purple-500',
         gradientBg: 'linear-gradient(to bottom right, rgba(168, 85, 247, 0.2), rgba(147, 51, 234, 0.3))',
-        onClick: () => handleNodeClick('/report'),
+        onClick: () => handleNodeClick('/report', isExplorer),
+        disabled: isExplorer,
       },
     },
   ]

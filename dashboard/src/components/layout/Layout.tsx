@@ -20,13 +20,17 @@ import {
   Network,
   Shuffle,
   LineChart,
-  FileText
+  FileText,
+  LogOut,
+  User,
+  Shield
 } from 'lucide-react'
 import { type ReactNode, useState, useEffect, useRef } from 'react'
 import FlowchartNav from './FlowchartNav'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { useAuth } from '@/context/AuthContext'
 
 interface LayoutProps {
   children: ReactNode
@@ -38,6 +42,7 @@ type NavigationMode = 'sidebar' | 'flowchart'
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
+  const { user, logout } = useAuth()
   const [navMode, setNavMode] = useState<NavigationMode>('sidebar')
   const prevPathnameRef = useRef(location.pathname)
 
@@ -143,33 +148,91 @@ export default function Layout({ children }: LayoutProps) {
                 Financial Statement Model
               </h1>
             </Link>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
-              className="h-6 px-3 transition-all flex items-center whitespace-nowrap"
-              style={{
-                backgroundColor: '#2563eb',
-                border: 'none',
-                boxShadow: 'none',
-                cursor: 'pointer',
-                marginLeft: '0.5rem',
-                marginBottom: '0.5rem',
-                gap: '8px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#1d4ed8'
-                e.currentTarget.style.transform = 'scale(1.02)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#2563eb'
-                e.currentTarget.style.transform = 'scale(1)'
-              }}
-              title="Switch to Flowchart"
-            >
-              <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Scenario Analysis Dashboard</span>
-              <GitBranch className="w-3.5 h-3.5" />
-            </Button>
+            {/* Button row with Flowchart View, Logout, and Admin Panel */}
+            <div style={{ display: 'flex', gap: '8px', marginLeft: '0.5rem' }}>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setNavMode(navMode === 'sidebar' ? 'flowchart' : 'sidebar')}
+                className="h-6 px-3 transition-all flex items-center whitespace-nowrap"
+                style={{
+                  backgroundColor: '#2563eb',
+                  border: 'none',
+                  boxShadow: 'none',
+                  cursor: 'pointer',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#1d4ed8'
+                  e.currentTarget.style.transform = 'scale(1.02)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#2563eb'
+                  e.currentTarget.style.transform = 'scale(1)'
+                }}
+                title="Switch to Flowchart View"
+              >
+                <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Flowchart View</span>
+                <GitBranch className="w-3.5 h-3.5" />
+              </Button>
+
+              {user && (
+                <>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => logout()}
+                    className="h-6 px-3 transition-all flex items-center whitespace-nowrap"
+                    style={{
+                      backgroundColor: '#2563eb',
+                      border: 'none',
+                      boxShadow: 'none',
+                      cursor: 'pointer',
+                      gap: '8px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#1d4ed8'
+                      e.currentTarget.style.transform = 'scale(1.02)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#2563eb'
+                      e.currentTarget.style.transform = 'scale(1)'
+                    }}
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Logout</span>
+                  </Button>
+
+                  {user.role === 'admin' && (
+                    <Link to="/admin/users">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="h-6 px-3 transition-all flex items-center whitespace-nowrap"
+                        style={{
+                          backgroundColor: '#2563eb',
+                          border: 'none',
+                          boxShadow: 'none',
+                          cursor: 'pointer',
+                          gap: '8px'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#1d4ed8'
+                          e.currentTarget.style.transform = 'scale(1.02)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2563eb'
+                          e.currentTarget.style.transform = 'scale(1)'
+                        }}
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Admin</span>
+                      </Button>
+                    </Link>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -188,6 +251,25 @@ export default function Layout({ children }: LayoutProps) {
                   {section.items.map((item) => {
                     const Icon = item.icon
                     const isActive = location.pathname === item.path
+                    const isExplorer = user?.role === 'explorer'
+                    const isExploreLink = item.path === '/explore'
+                    const isDisabled = isExplorer && !isExploreLink
+
+                    if (isDisabled) {
+                      return (
+                        <div
+                          key={item.path}
+                          className="group flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm opacity-30 cursor-not-allowed"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          <div className="p-1.5 rounded-md bg-muted">
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <span className="ml-1">{item.label}</span>
+                        </div>
+                      )
+                    }
+
                     return (
                       <Link
                         key={item.path}
@@ -262,7 +344,7 @@ export default function Layout({ children }: LayoutProps) {
             >
               <Menu className="w-4 h-4" />
             </Button>
-            <FlowchartNav onNavigate={() => setNavMode('sidebar')} />
+            <FlowchartNav onNavigate={() => setNavMode('sidebar')} userRole={user?.role} />
           </div>
         ) : (
           children
