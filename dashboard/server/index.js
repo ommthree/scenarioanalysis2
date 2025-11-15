@@ -33,6 +33,7 @@ import adminRoutes from './routes/admin.js'
 import filesRoutes from './routes/files.js'
 import { getMasterDb } from './middleware/database.js'
 import { requireAuth } from './middleware/auth.js'
+import { config } from './config.js'
 
 const SQLiteStore = ConnectSqlite3(session)
 
@@ -40,7 +41,7 @@ const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: config.corsOrigin,
   credentials: true
 }))
 app.use(express.json({ limit: '50mb' }))
@@ -50,15 +51,15 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }))
 app.use(session({
   store: new SQLiteStore({
     db: 'sessions.db',
-    dir: path.join(__dirname, '../../data')
+    dir: config.dataDir
   }),
-  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  secret: config.sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false,
+    secure: config.isProduction,
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000
+    maxAge: config.sessionMaxAge
   }
 }))
 
@@ -9886,9 +9887,8 @@ app.post('/api/reports/generate', (req, res) => {
   }
 })
 
-const PORT = 3001
-app.listen(PORT, () => {
-  console.log(`Dashboard API server running on http://localhost:${PORT}`)
+app.listen(config.port, () => {
+  console.log(`Dashboard API server running on http://localhost:${config.port}`)
 })
 
 /**

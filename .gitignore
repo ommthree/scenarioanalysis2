@@ -166,3 +166,6 @@ $RECYCLE.BIN/
 !data/config/*.yaml
 !data/config/templates/*.json
 !data/migrations/*.sql
+dashboard/dist.tar.gz
+dashboard/public/Daedalus.mp4
+docs/docu/*.html

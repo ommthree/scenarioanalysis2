@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiUrl, getDefaultDbPath } from '@/config'
+import FileBrowser from '@/components/FileBrowser'
 
 interface Backup {
   filename: string
@@ -21,6 +22,7 @@ export default function Database() {
   const [backups, setBackups] = useState<Backup[]>([])
   const [isCreatingBackup, setIsCreatingBackup] = useState(false)
   const [isLoadingBackups, setIsLoadingBackups] = useState(false)
+  const [showFileBrowser, setShowFileBrowser] = useState(false)
 
   const checkDatabaseValidity = async (path: string) => {
     if (!path || path.trim() === '') {
@@ -76,31 +78,13 @@ export default function Database() {
   }, [isValid])
 
   const handleBrowse = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.db,.sqlite,.sqlite3'
-    // @ts-ignore - webkitdirectory is not in TypeScript types
-    input.webkitdirectory = false
+    setShowFileBrowser(true)
+  }
 
-    input.onchange = async (e: Event) => {
-      const target = e.target as HTMLInputElement
-      const file = target.files?.[0]
-      if (file) {
-        // Try to get full path from various sources
-        const fullPath = (file as any).path || (file as any).webkitRelativePath || file.name
-
-        // If we only got the filename, check if it exists in the default location
-        if (!fullPath.includes('/')) {
-          const defaultPath = `/Users/Owen/ScenarioAnalysis2/data/database/${fullPath}`
-          setDbPath(defaultPath)
-        } else {
-          setDbPath(fullPath)
-        }
-        setIsSaved(false)
-      }
-    }
-
-    input.click()
+  const handleFileSelect = (filePath: string) => {
+    setDbPath(filePath)
+    setIsSaved(false)
+    setShowFileBrowser(false)
   }
 
   const handleSave = () => {
@@ -198,6 +182,14 @@ export default function Database() {
 
   return (
     <div className="p-12 max-w-7xl mx-auto">
+      <FileBrowser
+        open={showFileBrowser}
+        onClose={() => setShowFileBrowser(false)}
+        onSelect={handleFileSelect}
+        title="Select Database File"
+        fileFilter={(file) => !file.isDirectory && (file.name.endsWith('.db') || file.name.endsWith('.sqlite') || file.name.endsWith('.sqlite3'))}
+      />
+
       <div className="mb-12" style={{ marginLeft: '1.5rem' }}>
         <h1 className="text-4xl font-bold tracking-tight">Database</h1>
         <p className="text-muted-foreground mt-2">Manage your database location and backups</p>

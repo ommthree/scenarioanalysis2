@@ -1,20 +1,16 @@
 // Database middleware for multi-tenant access
 import Database from 'better-sqlite3';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { config } from '../config.js';
 
 // Master database connection (for user accounts)
-const MASTER_DB_PATH = process.env.MASTER_DB_PATH || path.join(__dirname, '../../../data/users.db');
 let masterDb = null;
 
 export function getMasterDb() {
   if (!masterDb) {
-    masterDb = new Database(MASTER_DB_PATH);
+    masterDb = new Database(config.masterDbPath);
     masterDb.pragma('journal_mode = WAL');
+    console.log('[Database] Master database initialized:', config.masterDbPath);
   }
   return masterDb;
 }
