@@ -21,11 +21,18 @@ import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
 import PDFDocument from 'pdfkit'
+import session from 'express-session'
+import ConnectSqlite3 from 'connect-sqlite3'
 import * as security from './security.js'
 import StagingService from './staging_service.js'
 import ValidationService from './validation_service.js'
 import LoggingService from './logging_service.js'
 import WhatIfService from './whatif_service.js'
+import authRoutes from './routes/auth.js'
+import adminRoutes from './routes/admin.js'
+import filesRoutes from './routes/files.js'
+
+const SQLiteStore = ConnectSqlite3(session)
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
@@ -33,6 +40,27 @@ const upload = multer({ dest: '/tmp/uploads/' })
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
+
+// Session configuration
+app.use(session({
+  store: new SQLiteStore({
+    db: 'sessions.db',
+    dir: path.join(__dirname, '../../data')
+  }),
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000
+  }
+}))
+
+// Mount authentication, admin, and file browsing routes
+app.use('/api/auth', authRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/files', filesRoutes)
 
 /**
  * Load CSV statements into staging table

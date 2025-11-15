@@ -7,29 +7,63 @@ export default function Home() {
       alignItems: 'center',
       justifyContent: 'center',
       padding: '48px',
-      textAlign: 'center'
+      textAlign: 'center',
+      position: 'relative'
     }}>
-      {/* Large Daedalus Logo */}
-      <div style={{ position: 'relative', marginBottom: '48px' }}>
-        <img
-          src="/daedalus.png"
-          alt="Daedalus Logo"
-          style={{
-            width: '400px',
-            height: 'auto',
-            filter: 'drop-shadow(0 10px 30px rgba(59, 130, 246, 0.3))'
-          }}
-        />
-
-        {/* Documentation Link */}
+      {/* Marketing Content - wrapper positioned first */}
+      <div style={{
+        maxWidth: '900px',
+        width: '100%',
+        margin: '0 auto',
+        position: 'relative'
+      }}>
+        {/* Video Button - Left aligned */}
         <a
-          href="/TECH_DOC.md"
+          href="/Daedalus.mp4"
           target="_blank"
           rel="noopener noreferrer"
           style={{
             position: 'absolute',
-            top: '-20px',
-            right: '-80px',
+            top: '0px',
+            left: '0px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 20px',
+            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+            border: '2px solid rgba(59, 130, 246, 0.5)',
+            borderRadius: '12px',
+            color: '#3b82f6',
+            textDecoration: 'none',
+            fontSize: '16px',
+            fontWeight: '600',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
+            e.currentTarget.style.borderColor = '#3b82f6'
+            e.currentTarget.style.transform = 'translateY(-2px)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+            e.currentTarget.style.transform = 'translateY(0)'
+          }}
+        >
+          <span style={{ fontSize: '24px' }}>🎬</span>
+          <span>Video</span>
+        </a>
+
+        {/* Documentation Button - Right aligned */}
+        <a
+          href="/DAEDALUS_USER_GUIDE.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            position: 'absolute',
+            top: '0px',
+            right: '0px',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
@@ -58,17 +92,25 @@ export default function Home() {
           <span style={{ fontSize: '24px' }}>📖</span>
           <span>Documentation</span>
         </a>
-      </div>
 
-      {/* Marketing Content */}
-      <div style={{
-        maxWidth: '900px',
-        margin: '0 auto'
-      }}>
+        {/* Large Daedalus Logo */}
+        <div style={{ marginBottom: '48px' }}>
+          <img
+            src="/daedalus.png"
+            alt="Daedalus Logo"
+            style={{
+              width: '400px',
+              height: 'auto',
+              filter: 'drop-shadow(0 10px 30px rgba(59, 130, 246, 0.3))'
+            }}
+          />
+        </div>
+
         <p style={{
           fontSize: '18px',
           color: '#94a3b8',
           marginBottom: '32px',
+          marginTop: '64px',
           lineHeight: '1.6'
         }}>
           Next-generation financial modeling platform for navigating uncertainty with confidence. Model complex statements, test scenarios, and understand decision impacts.
@@ -190,7 +232,7 @@ export default function Home() {
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              🔄 Conditional Actions
+              🔄 What-if Analysis
             </h3>
             <p style={{
               fontSize: '14px',
@@ -286,14 +328,14 @@ export default function Home() {
               color: '#3b82f6',
               marginBottom: '12px'
             }}>
-              ⏱️ Timed Actions
+              📄 Report Writing
             </h3>
             <p style={{
               fontSize: '14px',
               color: '#cbd5e1',
               lineHeight: '1.6'
             }}>
-              Schedule interventions at specific periods or trigger them based on business rules.
+              Generate comprehensive reports with charts, tables, and narrative summaries of model results.
             </p>
           </div>
         </div>
