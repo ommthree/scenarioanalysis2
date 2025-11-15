@@ -31,13 +31,18 @@ import WhatIfService from './whatif_service.js'
 import authRoutes from './routes/auth.js'
 import adminRoutes from './routes/admin.js'
 import filesRoutes from './routes/files.js'
+import { getMasterDb } from './middleware/database.js'
+import { requireAuth } from './middleware/auth.js'
 
 const SQLiteStore = ConnectSqlite3(session)
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
 
-app.use(cors())
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
 
@@ -8804,8 +8809,14 @@ app.post('/api/montecarlo/prepare', async (req, res) => {
 /**
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
-app.post('/api/calculate', async (req, res) => {
+app.post('/api/calculate', requireAuth, async (req, res) => {
   const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod, mcDrawNumber, choleskyMatrix, choleskyDrivers, choleskyStddevs } = req.body
+
+  console.log('[Calculate] Request session:', {
+    sessionId: req.sessionID,
+    session: req.session,
+    hasUserId: !!req.session?.userId
+  })
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
@@ -9023,6 +9034,23 @@ app.post('/api/calculate', async (req, res) => {
               if (closeErr) {
                 logger.error('Failed to close database', { error: closeErr.message })
               }
+
+              // Update user's calculation counter in master database
+              if (req.session && req.session.userId) {
+                try {
+                  const masterDb = getMasterDb();
+                  masterDb.prepare(`
+                    UPDATE users
+                    SET total_calculations = total_calculations + 1,
+                        last_calculation = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                  `).run(req.session.userId);
+                  logger.verbose('Updated user calculation counter', { userId: req.session.userId })
+                } catch (err) {
+                  logger.error('Failed to update user stats', { error: err.message })
+                }
+              }
+
               res.json({
                 success: true,
                 output: stdout,
@@ -9052,6 +9080,32 @@ app.post('/api/calculate', async (req, res) => {
         // Note: The C++ binary should be writing results directly to the database
         // This is just a fallback/verification step
         db.close()
+
+        // Update user's calculation counter in master database
+        console.log('[Calculation Complete] Checking session:', {
+          hasSession: !!req.session,
+          userId: req.session?.userId,
+          username: req.session?.username
+        })
+        if (req.session && req.session.userId) {
+          try {
+            const masterDb = getMasterDb();
+            console.log('[Calculation Complete] Updating counter for user:', req.session.userId)
+            masterDb.prepare(`
+              UPDATE users
+              SET total_calculations = total_calculations + 1,
+                  last_calculation = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run(req.session.userId);
+            console.log('[Calculation Complete] Counter updated successfully')
+            logger.verbose('Updated user calculation counter', { userId: req.session.userId })
+          } catch (err) {
+            console.error('[Calculation Complete] Failed to update user stats:', err)
+            logger.error('Failed to update user stats', { error: err.message })
+          }
+        } else {
+          console.log('[Calculation Complete] No session or userId - counter not updated')
+        }
 
         res.json({
           success: true,
@@ -9185,6 +9239,22 @@ app.post('/api/runs/save', express.json(), (req, res) => {
                           }
 
                           console.log('[Save Run] Successfully saved run with ID:', this.lastID)
+
+                          // Update user's calculation counter in master database
+                          if (req.session && req.session.userId) {
+                            try {
+                              const masterDb = getMasterDb();
+                              masterDb.prepare(`
+                                UPDATE users
+                                SET total_calculations = total_calculations + 1,
+                                    last_calculation = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                              `).run(req.session.userId);
+                            } catch (err) {
+                              console.error('[Save Run] Failed to update user stats:', err);
+                            }
+                          }
+
                           db.close()
                           res.json({ success: true, runId: this.lastID, message: 'Run saved successfully' })
                         }

@@ -255,7 +255,7 @@ router.get('/users/:id/summary', (req, res) => {
       database_exists: false,
       database_size: 0,
       total_calculations: user.total_calculations || 0,
-      last_calculation: user.last_calculation
+      last_calculation: user.last_calculation || null
     };
 
     // Check if user has a database

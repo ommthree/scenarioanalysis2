@@ -360,6 +360,7 @@ export default function PerformCalculation() {
         const calcResponse = await fetch(apiUrl('/api/calculate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             dbPath,
             mcStartPeriod: mcStartPeriod
@@ -423,6 +424,7 @@ export default function PerformCalculation() {
           const mcCalcResponse = await fetch(apiUrl('/api/calculate'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
               dbPath,
               mcStartPeriod: mcStartPeriod,
@@ -524,6 +526,7 @@ export default function PerformCalculation() {
             const calcResponse = await fetch(apiUrl('/api/calculate'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
               body: JSON.stringify({
                 dbPath,
                 whatIfCombination: combo.combination
@@ -581,6 +584,7 @@ export default function PerformCalculation() {
         const calcResponse = await fetch(apiUrl('/api/calculate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ dbPath })
         })
 
