@@ -9887,9 +9887,14 @@ app.post('/api/reports/generate', (req, res) => {
   }
 })
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`Dashboard API server running on http://localhost:${config.port}`)
 })
+
+// Increase timeout for long-running calculations (10 minutes)
+server.timeout = 600000
+server.keepAliveTimeout = 610000
+server.headersTimeout = 620000
 
 /**
  * ======================
