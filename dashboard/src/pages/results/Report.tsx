@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { FileText, Download, GripVertical, Type, AlignLeft, Trash2, Plus, Heading2, Image } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { apiUrl } from '@/config'
 
 interface ReportComponent {
   id: string
@@ -214,7 +215,7 @@ export default function Report() {
   const handleGenerateReport = async () => {
     setGenerating(true)
     try {
-      const response = await fetch('http://localhost:3001/api/reports/generate', {
+      const response = await fetch(apiUrl('/api/reports/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

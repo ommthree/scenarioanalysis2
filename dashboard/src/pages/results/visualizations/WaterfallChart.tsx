@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles, ChevronRight, ChevronDown, Building2, FileText } from 'lucide-react'
 import domtoimage from 'dom-to-image-more'
-import { getDefaultDbPath } from '@/config'
+import { getDefaultDbPath, apiUrl } from '@/config'
 
 interface Scenario {
   scenario_id: number
@@ -97,7 +97,7 @@ export default function WaterfallChart() {
 
   const loadScenarios = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/scenarios/list')}?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       if (data.success) {
         setScenarios(data.scenarios || [])
@@ -110,7 +110,7 @@ export default function WaterfallChart() {
   const loadLineItems = async () => {
     try {
       // Use the risk-line-items endpoint
-      const response = await fetch(`http://localhost:3001/api/results/risk-line-items?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/results/risk-line-items')}?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       if (data.success && data.lineItems) {
         const items = data.lineItems.map((item: any) => ({
@@ -154,7 +154,7 @@ export default function WaterfallChart() {
 
   const loadEntities = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/entities')}?dbPath=${encodeURIComponent(dbPath)}`)
       const flatEntities = await response.json()
       if (Array.isArray(flatEntities)) {
         const tree = buildEntityTree(flatEntities)
@@ -167,7 +167,7 @@ export default function WaterfallChart() {
 
   const loadPeriods = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/results/periods')}?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       if (data.success && data.periods) {
         setPeriods(data.periods)
@@ -222,7 +222,7 @@ export default function WaterfallChart() {
     // Fetch driver decomposition for all periods in range
     const responses = await Promise.all(
       periodRange.map(period =>
-        fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${period}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
+        fetch(`${apiUrl('/api/results/driver-decomposition')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${period}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
       )
     )
 
@@ -332,8 +332,8 @@ export default function WaterfallChart() {
   const loadScenarioToScenarioData = async () => {
     // Fetch driver decomposition for both scenarios
     const [response1, response2] = await Promise.all([
-      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario1}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`),
-      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario2}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`)
+      fetch(`${apiUrl('/api/results/driver-decomposition')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario1}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`),
+      fetch(`${apiUrl('/api/results/driver-decomposition')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario2}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`)
     ])
 
     const [data1, data2] = await Promise.all([response1.json(), response2.json()])
@@ -460,7 +460,7 @@ export default function WaterfallChart() {
 
   const loadActionImpactData = async () => {
     // Fetch all what-if combinations for this scenario
-    const url = `http://localhost:3001/api/results/what-if-values?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${aiScenario}&entityId=${aiEntity}&period=${aiPeriod}&lineItemCode=${aiLineItem}`
+    const url = `${apiUrl('/api/results/what-if-values')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${aiScenario}&entityId=${aiEntity}&period=${aiPeriod}&lineItemCode=${aiLineItem}`
     console.log('Action Impact API URL:', url)
 
     const response = await fetch(url)
@@ -704,7 +704,7 @@ Provide a narrative summary that:
 
 Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })

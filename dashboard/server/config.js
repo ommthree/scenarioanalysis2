@@ -18,7 +18,9 @@ export const config = {
 
   // Server configuration
   port: parseInt(process.env.PORT || '3001'),
-  corsOrigin: IS_PRODUCTION ? (process.env.FRONTEND_URL || false) : 'http://localhost:5173',
+  // In production with nginx proxy, requests come from same origin - CORS not needed
+  // In development, allow localhost:5173 (Vite dev server)
+  corsOrigin: IS_PRODUCTION ? false : 'http://localhost:5173',
 
   // Session configuration
   sessionSecret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',

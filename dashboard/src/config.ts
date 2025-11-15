@@ -7,7 +7,11 @@
 
 export const config = {
   // API Configuration
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001',
+  // In production, use empty string for relative URLs (goes through nginx proxy)
+  // In development, use localhost:3001 to connect directly to backend
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL !== undefined
+    ? import.meta.env.VITE_API_BASE_URL
+    : (import.meta.env.PROD ? '' : 'http://localhost:3001'),
 
   // Database Configuration
   defaultDbPath: import.meta.env.VITE_DEFAULT_DB_PATH || '/Users/Owen/ScenarioAnalysis2/data/database/finmodel.db',

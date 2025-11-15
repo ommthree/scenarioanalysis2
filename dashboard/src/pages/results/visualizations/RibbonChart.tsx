@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles, ChevronRight, ChevronDown, Building2, FileText } from 'lucide-react'
 import Plot from 'react-plotly.js'
 import domtoimage from 'dom-to-image-more'
-import { getDefaultDbPath } from '@/config'
+import { getDefaultDbPath, apiUrl } from '@/config'
 
 interface Scenario {
   scenario_id: number
@@ -112,7 +112,7 @@ export default function RibbonChart() {
 
   const loadScenarios = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/scenarios/list?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/scenarios/list')}?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       if (data.success) {
         setScenarios(data.scenarios || [])
@@ -124,7 +124,7 @@ export default function RibbonChart() {
 
   const loadLineItems = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/results/risk-line-items?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/results/risk-line-items')}?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       if (data.success && data.lineItems) {
         const items = data.lineItems.map((item: any) => ({
@@ -168,7 +168,7 @@ export default function RibbonChart() {
 
   const loadEntities = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/entities?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/entities')}?dbPath=${encodeURIComponent(dbPath)}`)
       const flatEntities = await response.json()
       if (Array.isArray(flatEntities)) {
         const tree = buildEntityTree(flatEntities)
@@ -181,7 +181,7 @@ export default function RibbonChart() {
 
   const loadPeriods = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/results/periods?dbPath=${encodeURIComponent(dbPath)}`)
+      const response = await fetch(`${apiUrl('/api/results/periods')}?dbPath=${encodeURIComponent(dbPath)}`)
       const data = await response.json()
       if (data.success && data.periods) {
         setPeriods(data.periods)
@@ -236,7 +236,7 @@ export default function RibbonChart() {
     // Fetch driver decomposition for all periods
     const responses = await Promise.all(
       periodRange.map(period =>
-        fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${period}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
+        fetch(`${apiUrl('/api/results/driver-decomposition')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${p2pScenario}&period=${period}&entityId=${p2pEntity}&lineItemCode=${p2pLineItem}`)
       )
     )
 
@@ -291,8 +291,8 @@ export default function RibbonChart() {
   const loadScenarioToScenarioData = async () => {
     // Fetch driver decomposition for both scenarios
     const [response1, response2] = await Promise.all([
-      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario1}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`),
-      fetch(`http://localhost:3001/api/results/driver-decomposition?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario2}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`)
+      fetch(`${apiUrl('/api/results/driver-decomposition')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario1}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`),
+      fetch(`${apiUrl('/api/results/driver-decomposition')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${s2sScenario2}&period=${s2sPeriod}&entityId=${s2sEntity}&lineItemCode=${s2sLineItem}`)
     ])
 
     const [data1, data2] = await Promise.all([response1.json(), response2.json()])
@@ -350,7 +350,7 @@ export default function RibbonChart() {
 
   const loadDriverMappingData = async () => {
     // Query distinct driver-to-lineitem mappings from statement_result_by_driver
-    const url = `http://localhost:3001/api/results/driver-mappings?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${dmScenario}&entityId=${dmEntity}&period=${dmPeriod}`
+    const url = `${apiUrl('/api/results/driver-mappings')}?dbPath=${encodeURIComponent(dbPath)}&scenarioId=${dmScenario}&entityId=${dmEntity}&period=${dmPeriod}`
     console.log('Loading driver mappings from:', url)
     const response = await fetch(url)
     const data = await response.json()
@@ -400,7 +400,7 @@ Provide a narrative summary that:
 
 Keep it concise (2-4 sentences) and insightful. Do not use bullet points or lists in your response - write as a flowing paragraph.`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })

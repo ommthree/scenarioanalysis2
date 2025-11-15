@@ -57,7 +57,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: config.isProduction,
+    secure: false, // Set to true only when using HTTPS
     httpOnly: true,
     maxAge: config.sessionMaxAge
   }

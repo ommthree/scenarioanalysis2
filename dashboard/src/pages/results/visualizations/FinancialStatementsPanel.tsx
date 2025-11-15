@@ -575,7 +575,7 @@ Focus on:
 
 Use business-friendly language and avoid excessive financial jargon. Write as a flowing paragraph, not bullet points.`
 
-      const response = await fetch('http://localhost:3001/api/claude/messages', {
+      const response = await fetch(apiUrl('/api/claude/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
