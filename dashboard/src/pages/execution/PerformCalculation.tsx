@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Play, Square, CheckCircle2, XCircle, AlertCircle, Clock, Copy, Trash2, Save } from 'lucide-react'
 import { apiUrl, getDefaultDbPath } from '@/config'
 import ValidationPanel from '@/components/ValidationPanel'
+import { fetchWithTimeout } from '@/utils/fetchWithTimeout'
 
 interface LogEntry {
   timestamp: string
@@ -357,7 +358,7 @@ export default function PerformCalculation() {
         }
 
         // Call actual C++ calculation engine with MC start period
-        const calcResponse = await fetch(apiUrl('/api/calculate'), {
+        const calcResponse = await fetchWithTimeout(apiUrl('/api/calculate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -421,7 +422,7 @@ export default function PerformCalculation() {
 
           // Call actual C++ calculation engine for this draw
           // Pass Cholesky matrix and driver codes for correlated sampling
-          const mcCalcResponse = await fetch(apiUrl('/api/calculate'), {
+          const mcCalcResponse = await fetchWithTimeout(apiUrl('/api/calculate'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
@@ -523,7 +524,7 @@ export default function PerformCalculation() {
             }
 
             // Call actual C++ calculation engine for this combination
-            const calcResponse = await fetch(apiUrl('/api/calculate'), {
+            const calcResponse = await fetchWithTimeout(apiUrl('/api/calculate'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
@@ -581,7 +582,7 @@ export default function PerformCalculation() {
         }
 
         // Call actual C++ calculation engine
-        const calcResponse = await fetch(apiUrl('/api/calculate'), {
+        const calcResponse = await fetchWithTimeout(apiUrl('/api/calculate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
