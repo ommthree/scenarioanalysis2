@@ -8931,7 +8931,25 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
     logger.info(`Running what-if combination: ${whatIfCombination}`)
   }
 
+  // Set up keep-alive mechanism to prevent browser timeout on long-running calculations
+  // Send a heartbeat every 30 seconds while calculation runs
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+
+  let calculationComplete = false
+  let heartbeatCount = 0
+  const heartbeatInterval = setInterval(() => {
+    if (!calculationComplete && !res.writableEnded) {
+      heartbeatCount++
+      // Send whitespace to keep connection alive (browsers ignore leading whitespace in JSON)
+      res.write(' ')
+      logger.debug(`Heartbeat ${heartbeatCount} sent (${heartbeatCount * 30}s elapsed)`)
+    }
+  }, 30000) // Every 30 seconds
+
   exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    calculationComplete = true
+    clearInterval(heartbeatInterval)
     // Clean up Cholesky temp file
     if (choleskyFilePath && fs.existsSync(choleskyFilePath)) {
       try {
