@@ -1,6 +1,7 @@
 #include "physical_risk/geo_utils.h"
 #include <limits>
 #include <cmath>
+#include <tuple>
 
 namespace physical_risk {
 

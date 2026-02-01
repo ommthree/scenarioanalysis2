@@ -26,6 +26,17 @@ interface ValidationResult {
   info: ValidationMessage[]
 }
 
+// Helper to parse streaming responses with progress messages
+function parseStreamingResponse(responseText: string) {
+  const parts = responseText.split('\n---RESULTS---\n')
+  const progressMessages = parts[0] ? parts[0].split('\n').filter(line => line.trim()) : []
+  const jsonText = (parts[1] || parts[0]).trim()
+  return {
+    progressMessages,
+    result: JSON.parse(jsonText)
+  }
+}
+
 export default function PerformCalculation() {
   const [isRunning, setIsRunning] = useState(false)
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle')
@@ -377,7 +388,16 @@ export default function PerformCalculation() {
           throw new Error(`API request failed: ${calcResponse.status}`)
         }
 
-        const calcResult = await calcResponse.json()
+        // Parse streaming response with progress messages
+        const responseText = await calcResponse.text()
+        const { progressMessages, result: calcResult } = parseStreamingResponse(responseText)
+
+        // Display progress messages
+        progressMessages.forEach(line => {
+          if (verbosity === 'verbose' || verbosity === 'debug') {
+            addLog('info', line)
+          }
+        })
 
         if (!calcResult.success) {
           if (verbosity !== 'quiet') {
@@ -445,7 +465,11 @@ export default function PerformCalculation() {
             throw new Error(`API request failed for draw ${draw}: ${mcCalcResponse.status}`)
           }
 
-          const mcCalcResult = await mcCalcResponse.json()
+          const responseText = await mcCalcResponse.text()
+          const { progressMessages, result: mcCalcResult } = parseStreamingResponse(responseText)
+          progressMessages.forEach(line => {
+            if (verbosity === 'verbose' || verbosity === 'debug') addLog('info', line)
+          })
 
           if (!mcCalcResult.success) {
             if (verbosity !== 'quiet') {
@@ -543,7 +567,11 @@ export default function PerformCalculation() {
               throw new Error(`API request failed: ${calcResponse.status}`)
             }
 
-            const calcResult = await calcResponse.json()
+            const responseText = await calcResponse.text()
+            const { progressMessages, result: calcResult } = parseStreamingResponse(responseText)
+            progressMessages.forEach(line => {
+              if (verbosity === 'verbose' || verbosity === 'debug') addLog('info', line)
+            })
 
             if (!calcResult.success) {
               if (verbosity !== 'quiet') {
@@ -598,7 +626,11 @@ export default function PerformCalculation() {
           throw new Error(`API request failed: ${calcResponse.status}`)
         }
 
-        const calcResult = await calcResponse.json()
+        const responseText = await calcResponse.text()
+        const { progressMessages, result: calcResult } = parseStreamingResponse(responseText)
+        progressMessages.forEach(line => {
+          if (verbosity === 'verbose' || verbosity === 'debug') addLog('info', line)
+        })
 
         if (!calcResult.success) {
           if (verbosity !== 'quiet') {

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <sstream>
 #include <queue>
+#include <functional>
 
 namespace finmodel {
 namespace core {

@@ -169,3 +169,14 @@ $RECYCLE.BIN/
 dashboard/dist.tar.gz
 dashboard/public/Daedalus.mp4
 docs/docu/*.html
+
+# Deployment packages and artifacts
+deployment/Daedalus-Portable.zip
+deployment/Daedalus-Portable/
+deployment/package/
+deployment/*.tar.gz
+*.zip
+dist.tar.gz
+
+# User data files (too large for git)
+data/users/

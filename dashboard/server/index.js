@@ -8931,25 +8931,51 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
     logger.info(`Running what-if combination: ${whatIfCombination}`)
   }
 
-  // Set up keep-alive mechanism to prevent browser timeout on long-running calculations
-  // Send a heartbeat every 30 seconds while calculation runs
-  res.setHeader('Content-Type', 'application/json')
+  // Set up keep-alive mechanism with progress messages
+  // Send progress updates every 15 seconds to keep connection alive and inform user
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8')
   res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Transfer-Encoding', 'chunked')
+  res.setHeader('Cache-Control', 'no-cache')
 
+  // Disable socket timeout
+  if (res.socket) {
+    res.socket.setNoDelay(true)
+    res.socket.setTimeout(0)
+  }
+
+  const startTime = Date.now()
   let calculationComplete = false
-  let heartbeatCount = 0
-  const heartbeatInterval = setInterval(() => {
+  let progressCount = 0
+
+  // Send initial progress message
+  const progressMsg = `[${new Date().toLocaleTimeString()}] Calculation started...\n`
+  res.write(progressMsg)
+  console.log(progressMsg.trim())
+
+  const progressInterval = setInterval(() => {
     if (!calculationComplete && !res.writableEnded) {
-      heartbeatCount++
-      // Send whitespace to keep connection alive (browsers ignore leading whitespace in JSON)
-      res.write(' ')
-      logger.debug(`Heartbeat ${heartbeatCount} sent (${heartbeatCount * 30}s elapsed)`)
+      progressCount++
+      const elapsed = Math.floor((Date.now() - startTime) / 1000)
+      const mins = Math.floor(elapsed / 60)
+      const secs = elapsed % 60
+      const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+      const msg = `[${new Date().toLocaleTimeString()}] Still calculating... (${timeStr} elapsed)\n`
+      res.write(msg)
+      console.log(msg.trim())
     }
-  }, 30000) // Every 30 seconds
+  }, 15000) // Every 15 seconds
 
   exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
     calculationComplete = true
-    clearInterval(heartbeatInterval)
+    clearInterval(progressInterval)
+
+    const totalTime = Math.floor((Date.now() - startTime) / 1000)
+    const mins = Math.floor(totalTime / 60)
+    const secs = totalTime % 60
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+    res.write(`[${new Date().toLocaleTimeString()}] Calculation completed in ${timeStr}\n`)
+    res.write('\n---RESULTS---\n')
     // Clean up Cholesky temp file
     if (choleskyFilePath && fs.existsSync(choleskyFilePath)) {
       try {
@@ -8970,7 +8996,7 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
 
     if (error) {
       logger.error('Calculation engine failed', { error: error.message, exitCode: error.code })
-      return res.json({
+      const errorResponse = JSON.stringify({
         success: false,
         error: error.message,
         stdout: stdout,
@@ -8978,6 +9004,8 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
         logs: logger.getLogs('info'),
         errorSummary: logger.getErrorSummary()
       })
+      res.write(errorResponse)
+      return res.end()
     }
 
     logger.info('Calculation completed successfully')
@@ -9126,13 +9154,15 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
           console.log('[Calculation Complete] No session or userId - counter not updated')
         }
 
-        res.json({
+        const successResponse = JSON.stringify({
           success: true,
           output: stdout,
           errors: stderr,
           logs: logger.getLogs('info'),
           errorSummary: logger.getErrorSummary()
         })
+        res.write(successResponse)
+        res.end()
       })
     }
   })

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <functional>
 #include "ivalue_provider.h"
 #include "context.h"
 
