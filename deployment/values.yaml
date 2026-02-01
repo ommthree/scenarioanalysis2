@@ -1,0 +1,21 @@
+apps:
+  - name: scenarioanalysis2
+    ingress: enabled
+    image:
+      build: true
+      path: default        # corresponds to ./src
+      repository: default
+      tag: default         # will use commit hash
+    port: 3001            # MUST match EXPOSE in Dockerfile
+    resources:
+      requests:
+        cpu: 500m         # 0.5 CPU cores
+        memory: 1Gi       # 1 GB RAM
+      limits:
+        cpu: 2000m        # 2 CPU cores
+        memory: 4Gi       # 4 GB RAM (for C++ engine + SQLite)
+    env:
+      - name: NODE_ENV
+        value: production
+      - name: VITE_API_BASE_URL
+        value: http://localhost:3001

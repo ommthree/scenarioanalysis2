@@ -9,7 +9,7 @@
   "dependencies": {
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.0.0",
-    "connect-sqlite3": "^3.0.0",
+    "connect-sqlite3": "^0.9.16",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.2",
     "dotenv": "^17.2.3",

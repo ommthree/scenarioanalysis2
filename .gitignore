@@ -175,8 +175,14 @@ deployment/Daedalus-Portable.zip
 deployment/Daedalus-Portable/
 deployment/package/
 deployment/*.tar.gz
+dashboard/deployment/
 *.zip
 dist.tar.gz
 
 # User data files (too large for git)
 data/users/
+
+# Large legacy files (too large for GitHub)
+deployment/legacy/**/*.mp4
+deployment/legacy/**/*.sql
+deployment/legacy/**/*.html

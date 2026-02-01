@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(FinModel)
 
-# Find required packages
-find_package(SQLite3 REQUIRED)
-find_package(Eigen3 REQUIRED)
-find_package(Threads REQUIRED)
-find_package(nlohmann_json REQUIRED)
+# Required packages are found in root CMakeLists.txt
+# find_package(SQLite3 REQUIRED)
+# find_package(Eigen3 REQUIRED)
+# find_package(Threads REQUIRED)
+# find_package(nlohmann_json REQUIRED)
 
 # Collect all source files (exclude main.cpp and archived files)
 file(GLOB_RECURSE ENGINE_SOURCES

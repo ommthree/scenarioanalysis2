@@ -1,0 +1,1867 @@
+import { useState, useEffect } from 'react'
+import { ArrowRight, Save, GripVertical, ChevronDown, ChevronRight, Building2, Network, FileText, FileSpreadsheet, Layers, Move, Sparkles } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { parse } from 'csv-parse/sync'
+import { apiUrl, getDefaultDbPath } from '@/config'
+import { logger } from '@/utils/logger'
+
+interface LineItem {
+  code: string
+  display_name: string
+  section: string
+  formula?: string
+}
+
+interface Template {
+  template_code: string
+  template_name: string
+  statement_type: string
+  line_items: LineItem[]
+}
+
+interface CsvRow {
+  [key: string]: any
+}
+
+interface Entity {
+  entity_id: number
+  code: string
+  name: string
+  parent_entity_id: number | null
+  granularity_level: string
+  children?: Entity[]
+}
+
+interface HierarchicalMapping {
+  entity_path: number[]
+  line_item_code: string
+  csv_row_index: number
+}
+
+interface SavedMapping {
+  companyId: number
+  templateCode: string
+  csvFileName: string
+  hierarchicalMappings: HierarchicalMapping[]
+  columnConfig: {
+    lineItemColumn: string | null
+    valueColumn: string | null
+    currencyColumn: string | null
+  }
+}
+
+interface ColumnMapping {
+  column_type: 'label' | 'data' | 'currency'
+  csv_column_name: string
+}
+
+interface StagedFile {
+  file_id: number
+  file_name: string
+  file_type: string
+  row_count: number
+  uploaded_at: string
+}
+
+interface StatementMapping {
+  statementType: 'pnl' | 'bs' | 'carbon' | 'cf'
+  label: string
+  csvData: CsvRow[]
+  csvColumns: string[]
+  csvFileName?: string
+  selectedTemplate: Template | null
+  hierarchicalMappings: HierarchicalMapping[]
+  expandedNodes: Set<string>
+  selectedFileId: number | null
+  columnConfig: {
+    lineItemColumn: string | null
+    valueColumn: string | null
+    currencyColumn: string | null
+  }
+  stagedFiles: StagedFile[]
+}
+
+export default function MapStatements() {
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [selectedCompany, setSelectedCompany] = useState<Entity | null>(null)
+  const [selectedUnifiedTemplate, setSelectedUnifiedTemplate] = useState<Template | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
+  const [draggedRowIndex, setDraggedRowIndex] = useState<number | null>(null)
+  const [aiMappingInProgress, setAiMappingInProgress] = useState<Record<string, boolean>>({})
+  const [aiMappingMessage, setAiMappingMessage] = useState<Record<string, string>>({})
+
+  // State for each statement type
+  const [statementMappings, setStatementMappingsRaw] = useState<Record<string, StatementMapping>>({
+    pnl: {
+      statementType: 'pnl',
+      label: 'Profit & Loss',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set(),
+      selectedFileId: null,
+      columnConfig: {
+        lineItemColumn: null,
+        valueColumn: null,
+        currencyColumn: null
+      },
+      stagedFiles: []
+    },
+    bs: {
+      statementType: 'bs',
+      label: 'Balance Sheet',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set(),
+      selectedFileId: null,
+      columnConfig: {
+        lineItemColumn: null,
+        valueColumn: null,
+        currencyColumn: null
+      },
+      stagedFiles: []
+    },
+    cf: {
+      statementType: 'cf',
+      label: 'Cash Flow',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set(),
+      selectedFileId: null,
+      columnConfig: {
+        lineItemColumn: null,
+        valueColumn: null,
+        currencyColumn: null
+      },
+      stagedFiles: []
+    },
+    carbon: {
+      statementType: 'carbon',
+      label: 'Carbon Statement',
+      csvData: [],
+      csvColumns: [],
+      selectedTemplate: null,
+      hierarchicalMappings: [],
+      expandedNodes: new Set(),
+      selectedFileId: null,
+      columnConfig: {
+        lineItemColumn: null,
+        valueColumn: null,
+        currencyColumn: null
+      },
+      stagedFiles: []
+    }
+  })
+
+  // Wrapper to log all state updates
+  const setStatementMappings = (updater: any) => {
+    const stack = new Error().stack
+    const caller = stack?.split('\n')[2]?.trim() || 'unknown'
+    logger.debug(`📍 setStatementMappings called from:`, caller)
+    setStatementMappingsRaw(updater)
+  }
+
+  useEffect(() => {
+    loadTemplates()
+    loadEntities()
+    loadAllStagedFiles()
+  }, [])
+
+  // Restore saved mappings when component loads and when company changes
+  useEffect(() => {
+    logger.debug(`🔴 useEffect triggered - selectedCompany:`, selectedCompany?.entity_id, `templates:`, templates.length)
+    if (selectedCompany && templates.length > 0) {
+      logger.debug(`🔴 Calling restoreSavedMappings`)
+      restoreSavedMappings()
+    } else {
+      logger.debug(`🔴 NOT calling restoreSavedMappings - missing requirements`)
+    }
+  }, [selectedCompany, templates.length])
+
+  // Debug: Watch for changes to statementMappings
+  useEffect(() => {
+    logger.debug(`🎯 statementMappings changed - pnl hierarchicalMappings:`, statementMappings.pnl.hierarchicalMappings?.length || 0)
+  }, [statementMappings])
+
+  const loadTemplates = async () => {
+    try {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/templates/list'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath })
+      })
+      const result = await response.json()
+      if (result.success) {
+        setTemplates(result.templates || [])
+      }
+    } catch (error) {
+      logger.error('Failed to load templates:', error)
+    }
+  }
+
+  const loadEntities = async () => {
+    try {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl('/api/entities/list'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dbPath })
+      })
+      const result = await response.json()
+      if (result.success) {
+        setEntities(buildEntityTree(result.entities))
+      }
+    } catch (error) {
+      logger.error('Failed to load entities:', error)
+    }
+  }
+
+  const loadAllStagedFiles = async () => {
+    const types: Array<{ key: 'pnl' | 'bs' | 'cf' | 'carbon', apiType: string }> = [
+      { key: 'pnl', apiType: 'pnl' },
+      { key: 'bs', apiType: 'balance_sheet' },
+      { key: 'cf', apiType: 'cash_flow' },
+      { key: 'carbon', apiType: 'carbon' }
+    ]
+    for (const { key, apiType } of types) {
+      await loadStagedFiles(key, apiType)
+    }
+  }
+
+  const loadStagedFiles = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', apiType: string) => {
+    try {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${apiType}?dbPath=${encodeURIComponent(dbPath)}`))
+      const result = await response.json()
+      if (result.success) {
+        setStatementMappings(prev => {
+          logger.debug(`⚠️ loadStagedFiles updating ${statementType}, prev.hierarchicalMappings.length:`, prev[statementType].hierarchicalMappings?.length || 0)
+          return {
+            ...prev,
+            [statementType]: {
+              ...prev[statementType],
+              stagedFiles: result.files || []
+            }
+          }
+        })
+      }
+    } catch (error) {
+      logger.error(`Failed to load staged files for ${statementType}:`, error)
+    }
+  }
+
+  const loadStagingData = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', fileId: number, updateState = true): Promise<{ csvData: CsvRow[], csvColumns: string[], csvFileName: string } | null> => {
+    try {
+      const dbPath = getDefaultDbPath()
+      const response = await fetch(apiUrl(`/api/staged-files/${fileId}/preview?dbPath=${encodeURIComponent(dbPath)}`))
+      const result = await response.json()
+
+      if (result.success && result.csvText) {
+        // Parse CSV text
+        const records = parse(result.csvText, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true
+        }) as CsvRow[]
+
+        const columns = records.length > 0 ? Object.keys(records[0]) : []
+        logger.debug(`✅ Loaded CSV for ${statementType}:`, records.length, 'rows')
+
+        const csvResult = {
+          csvData: records,
+          csvColumns: columns,
+          csvFileName: result.fileName
+        }
+
+        if (updateState) {
+          setStatementMappings(prev => ({
+            ...prev,
+            [statementType]: {
+              ...prev[statementType],
+              ...csvResult
+            }
+          }))
+        }
+
+        return csvResult
+      }
+    } catch (error) {
+      logger.error(`Failed to load staging data for ${statementType}:`, error)
+    }
+    return null
+  }
+
+  const restoreSavedMappings = async (targetStatementType?: 'pnl' | 'bs' | 'cf' | 'carbon') => {
+    logger.debug(`🟢 restoreSavedMappings called for: ${targetStatementType || 'ALL'}`)
+    logger.debug(`🟢 selectedCompany:`, selectedCompany?.entity_id, `templates:`, templates.length)
+    if (!selectedCompany || templates.length === 0) {
+      logger.debug(`🟢 Skipping: no company (${!!selectedCompany}) or no templates (${templates.length})`)
+      return
+    }
+
+    try {
+      const dbPath = getDefaultDbPath()
+      logger.debug(`🟢 Starting restore process for company ${selectedCompany.entity_id}`)
+
+      // Restore mappings for each statement type
+      // Query for mappings with the exact frontend type (pnl, bs, cf, carbon)
+      const types: Array<'pnl' | 'bs' | 'carbon' | 'cf'> = targetStatementType ? [targetStatementType] : ['pnl', 'bs', 'cf', 'carbon']
+
+      // Collect all updates first, then apply in ONE setState call
+      const updates: Record<string, any> = {}
+
+      // If restoring all types (not a specific type), prepare reset values for any types without mappings
+      const shouldResetAll = !targetStatementType
+
+      for (const type of types) {
+        logger.debug(`🟢 Fetching mappings for ${type}`)
+        const response = await fetch(
+          apiUrl(`/api/statements/get-all-mappings?${new URLSearchParams({
+            dbPath,
+            statementType: type
+          })}`)
+        )
+        const result = await response.json()
+        logger.debug(`🟢 ${type} - API response:`, { success: result.success, mappingsCount: result.mappings?.length || 0 })
+
+        if (result.success && result.mappings && result.mappings.length > 0) {
+          // Find mapping for current company
+          const companyMapping = result.mappings.find((m: SavedMapping) => m.companyId === selectedCompany.entity_id)
+          logger.debug(`🟢 ${type} - Found company mapping:`, !!companyMapping)
+
+          if (companyMapping) {
+            // Find the template by code
+            const template = templates.find(t => t.template_code === companyMapping.templateCode)
+
+            if (template) {
+              logger.debug(`📝 ${type} - Restoring mappings:`, {
+                template: template.template_code,
+                csvFileName: companyMapping.csvFileName,
+                hierarchicalMappingsCount: companyMapping.hierarchicalMappings?.length || 0
+              })
+
+              // Find the staged file ID
+              let fileId: number | null = null
+              if (companyMapping.csvFileName) {
+                const stagedFile = statementMappings[type].stagedFiles.find(f => f.file_name === companyMapping.csvFileName)
+                if (stagedFile) {
+                  fileId = stagedFile.file_id
+                }
+              }
+
+              // Load CSV data if needed (don't update state yet)
+              let csvData: CsvRow[] = []
+              let csvColumns: string[] = []
+              if (fileId && !targetStatementType) {
+                const csvResult = await loadStagingData(type, fileId, false) // Don't update state
+                if (csvResult) {
+                  csvData = csvResult.csvData
+                  csvColumns = csvResult.csvColumns
+                  logger.debug(`🟢 ${type} - Loaded CSV data:`, csvData.length, 'rows')
+                }
+              }
+
+              logger.debug(`🟢 ${type} - Preparing update with:`, {
+                hierarchicalMappingsCount: companyMapping.hierarchicalMappings?.length || 0,
+                csvDataCount: csvData.length,
+                fileId
+              })
+
+              // Store the update for this type (don't call setState yet)
+              updates[type] = {
+                selectedTemplate: template,
+                selectedFileId: fileId,
+                hierarchicalMappings: companyMapping.hierarchicalMappings || [],
+                columnConfig: companyMapping.columnConfig || {
+                  lineItemColumn: null,
+                  valueColumn: null,
+                  currencyColumn: null
+                },
+                csvFileName: companyMapping.csvFileName || undefined,
+                // Include CSV data if we loaded it
+                ...(csvData.length > 0 && { csvData, csvColumns })
+              }
+            } else if (shouldResetAll) {
+              // No mapping found for this type, and we're resetting all - prepare reset
+              updates[type] = {
+                selectedTemplate: null,
+                hierarchicalMappings: [],
+                expandedNodes: new Set()
+              }
+            }
+          } else if (shouldResetAll) {
+            // No mappings found at all for this type, and we're resetting all - prepare reset
+            updates[type] = {
+              selectedTemplate: null,
+              hierarchicalMappings: [],
+              expandedNodes: new Set()
+            }
+          }
+        } else if (shouldResetAll) {
+          // No company mapping found for this type, and we're resetting all - prepare reset
+          updates[type] = {
+            selectedTemplate: null,
+            hierarchicalMappings: [],
+            expandedNodes: new Set()
+          }
+        }
+      }
+
+      // Now apply ALL updates in a SINGLE setState call
+      // Always apply if we have updates OR if we're resetting all types
+      if (Object.keys(updates).length > 0 || shouldResetAll) {
+        logger.debug(`🟢 Applying all updates at once for types:`, Object.keys(updates))
+
+        // Set the unified template from the first statement type that has one
+        // (In a unified template system, all types should have the same template)
+        const firstTemplateUpdate = Object.values(updates).find(u => u.selectedTemplate)
+        if (firstTemplateUpdate?.selectedTemplate) {
+          logger.debug(`🟢 Setting unified template to:`, firstTemplateUpdate.selectedTemplate.template_code)
+          setSelectedUnifiedTemplate(firstTemplateUpdate.selectedTemplate)
+        } else if (shouldResetAll) {
+          logger.debug(`🟢 Clearing unified template`)
+          setSelectedUnifiedTemplate(null)
+        }
+
+        setStatementMappings(prev => {
+          const newState = { ...prev }
+
+          // Apply all collected updates
+          for (const [type, update] of Object.entries(updates)) {
+            newState[type] = {
+              ...prev[type],
+              ...update
+            }
+
+            logger.debug(`🟢 ${type} - Applied update:`, {
+              hierarchicalMappingsCount: newState[type].hierarchicalMappings?.length || 0,
+              csvDataCount: newState[type].csvData?.length || 0,
+              selectedFileId: newState[type].selectedFileId
+            })
+          }
+
+          return newState
+        })
+      }
+    } catch (error) {
+      logger.error('Failed to restore saved mappings:', error)
+    }
+  }
+
+  const buildEntityTree = (flatEntities: Entity[]): Entity[] => {
+    const entityMap = new Map<number, Entity>()
+    const roots: Entity[] = []
+
+    flatEntities.forEach((e) => {
+      entityMap.set(e.entity_id, {
+        ...e,
+        children: []
+      })
+    })
+
+    flatEntities.forEach((e) => {
+      const entity = entityMap.get(e.entity_id)!
+      if (e.parent_entity_id === null) {
+        roots.push(entity)
+      } else {
+        const parent = entityMap.get(e.parent_entity_id)
+        if (parent) {
+          parent.children = parent.children || []
+          parent.children.push(entity)
+        }
+      }
+    })
+
+    return roots
+  }
+
+  // Helper to flatten entity tree back to flat list (for AI mapping entity search)
+  const flattenEntities = (entities: Entity[]): Entity[] => {
+    const flat: Entity[] = []
+    const traverse = (entity: Entity) => {
+      flat.push(entity)
+      if (entity.children) {
+        entity.children.forEach(traverse)
+      }
+    }
+    entities.forEach(traverse)
+    return flat
+  }
+
+  const getRootCompanies = (): Entity[] => {
+    return entities.filter(e => e.parent_entity_id === null)
+  }
+
+  const handleTemplateSelect = (templateCode: string) => {
+    const template = templates.find(t => t.template_code === templateCode)
+
+    // If clicking the same template that's already selected, do nothing
+    if (selectedUnifiedTemplate?.template_code === templateCode) {
+      logger.debug(`🔵 Template ${templateCode} already selected, ignoring click`)
+      return
+    }
+
+    logger.debug(`🔵 Changing template from ${selectedUnifiedTemplate?.template_code || 'none'} to ${templateCode}`)
+    setSelectedUnifiedTemplate(template || null)
+
+    // Apply the unified template to ALL statement types
+    // Only clear hierarchicalMappings when actually changing templates
+    setStatementMappings(prev => ({
+      pnl: {
+        ...prev.pnl,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      },
+      bs: {
+        ...prev.bs,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      },
+      cf: {
+        ...prev.cf,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      },
+      carbon: {
+        ...prev.carbon,
+        selectedTemplate: template || null,
+        hierarchicalMappings: [],
+        expandedNodes: new Set()
+      }
+    }))
+  }
+
+  const toggleNode = (statementType: string, nodeId: string) => {
+    setStatementMappings(prev => {
+      const mapping = prev[statementType]
+      const newExpanded = new Set(mapping.expandedNodes)
+      if (newExpanded.has(nodeId)) {
+        newExpanded.delete(nodeId)
+      } else {
+        newExpanded.add(nodeId)
+      }
+      return {
+        ...prev,
+        [statementType]: {
+          ...mapping,
+          expandedNodes: newExpanded
+        }
+      }
+    })
+  }
+
+  const getRowIdentifier = (row: CsvRow, columns: string[]): string => {
+    const nameColumn = columns.find(col =>
+      col.toLowerCase().includes('name') ||
+      col.toLowerCase().includes('description') ||
+      col.toLowerCase().includes('item')
+    )
+    if (nameColumn && row[nameColumn]) {
+      return row[nameColumn]
+    }
+    const firstCol = columns[0]
+    return firstCol ? row[firstCol] : 'Unknown'
+  }
+
+  const handleDragStart = (rowIndex: number) => {
+    setDraggedRowIndex(rowIndex)
+  }
+
+  const handleDrop = (statementType: string, entityPath: number[], lineItemCode: string) => {
+    if (draggedRowIndex === null) return
+
+    setStatementMappings(prev => {
+      const mapping = prev[statementType]
+      let newMappings = [...mapping.hierarchicalMappings]
+
+      // Helper function to check if path1 is an ancestor of path2
+      const isAncestor = (path1: number[], path2: number[]): boolean => {
+        if (path1.length >= path2.length) return false
+        return path1.every((id, i) => id === path2[i])
+      }
+
+      // Helper function to check if path1 is a descendant of path2
+      const isDescendant = (path1: number[], path2: number[]): boolean => {
+        return isAncestor(path2, path1)
+      }
+
+      // Remove conflicting mappings:
+      // 1. Any ancestor entities with the same line item
+      // 2. Any descendant entities with the same line item
+      newMappings = newMappings.filter(m => {
+        if (m.line_item_code !== lineItemCode) return true
+        const isSamePath = JSON.stringify(m.entity_path) === JSON.stringify(entityPath)
+        const isConflict = isAncestor(m.entity_path, entityPath) || isDescendant(m.entity_path, entityPath)
+        return isSamePath || !isConflict
+      })
+
+      const existingIndex = newMappings.findIndex(
+        m => JSON.stringify(m.entity_path) === JSON.stringify(entityPath) && m.line_item_code === lineItemCode
+      )
+
+      if (existingIndex >= 0) {
+        newMappings[existingIndex] = {
+          entity_path: entityPath,
+          line_item_code: lineItemCode,
+          csv_row_index: draggedRowIndex
+        }
+      } else {
+        newMappings.push({
+          entity_path: entityPath,
+          line_item_code: lineItemCode,
+          csv_row_index: draggedRowIndex
+        })
+      }
+
+      return {
+        ...prev,
+        [statementType]: {
+          ...mapping,
+          hierarchicalMappings: newMappings
+        }
+      }
+    })
+
+    setDraggedRowIndex(null)
+  }
+
+  const getMappedRow = (statementType: string, entityPath: number[], lineItemCode: string): CsvRow | null => {
+    const mapping = statementMappings[statementType]
+    const found = mapping.hierarchicalMappings.find(
+      m => JSON.stringify(m.entity_path) === JSON.stringify(entityPath) && m.line_item_code === lineItemCode
+    )
+
+    // Debug: Log ALL calls for pnl/REVENUE to see what entity paths are being checked
+    if (statementType === 'pnl' && lineItemCode === 'REVENUE') {
+      if (!(window as any).__revenueChecks) {
+        (window as any).__revenueChecks = 0
+      }
+      (window as any).__revenueChecks++
+      if ((window as any).__revenueChecks <= 5) {
+        logger.debug(`🔍 ${statementType}/${lineItemCode} check #${(window as any).__revenueChecks}:`, {
+          entityPath,
+          entityPathStr: JSON.stringify(entityPath),
+          found: !!found,
+          totalMappings: mapping.hierarchicalMappings.length,
+          allMappings: mapping.hierarchicalMappings.map(m => ({
+            path: m.entity_path,
+            pathStr: JSON.stringify(m.entity_path),
+            code: m.line_item_code
+          }))
+        })
+      }
+    }
+
+    return found ? mapping.csvData[found.csv_row_index] : null
+  }
+
+  const handleFileSelect = async (statementType: 'pnl' | 'bs' | 'cf' | 'carbon', fileId: string) => {
+    logger.debug(`🔵 handleFileSelect called: ${statementType}, fileId=${fileId}`)
+    const fileIdNum = parseInt(fileId)
+
+    // Check if this file is already selected - if so, do nothing
+    if (fileIdNum && statementMappings[statementType].selectedFileId === fileIdNum) {
+      logger.debug(`🔵 File ${fileIdNum} already selected for ${statementType}, ignoring click`)
+      return
+    }
+
+    if (!fileIdNum) {
+      logger.debug(`🔵 Clearing selection for ${statementType}`)
+      // Clear selection
+      setStatementMappings(prev => ({
+        ...prev,
+        [statementType]: {
+          ...prev[statementType],
+          selectedFileId: null,
+          csvData: [],
+          csvColumns: [],
+          columnConfig: {
+            lineItemColumn: null,
+            valueColumn: null,
+            currencyColumn: null
+          }
+        }
+      }))
+      return
+    }
+
+    logger.debug(`🔵 Setting selectedFileId=${fileIdNum} for ${statementType}`)
+    // Set selected file ID
+    setStatementMappings(prev => ({
+      ...prev,
+      [statementType]: {
+        ...prev[statementType],
+        selectedFileId: fileIdNum
+      }
+    }))
+
+    logger.debug(`🔵 Loading staging data for ${statementType}`)
+    // Load the file data and wait for it to complete
+    await loadStagingData(statementType, fileIdNum)
+
+    logger.debug(`🔵 handleFileSelect complete for ${statementType}`)
+    // Note: We do NOT restore saved mappings here anymore
+    // Saved mappings are only restored on initial page load or company change
+    // When user explicitly selects a file, we show fresh columns for them to map
+  }
+
+  const [draggedRole, setDraggedRole] = useState<'lineItem' | 'value' | 'currency' | null>(null)
+
+  const handleRoleDragStart = (role: 'lineItem' | 'value' | 'currency') => {
+    setDraggedRole(role)
+  }
+
+  const handleRoleDragEnd = () => {
+    setDraggedRole(null)
+  }
+
+  const handleColumnDrop = (statementType: string, columnName: string) => {
+    if (!draggedRole) return
+
+    const roleMap = {
+      lineItem: 'lineItemColumn',
+      value: 'valueColumn',
+      currency: 'currencyColumn'
+    } as const
+
+    setStatementMappings(prev => ({
+      ...prev,
+      [statementType]: {
+        ...prev[statementType],
+        columnConfig: {
+          ...prev[statementType].columnConfig,
+          [roleMap[draggedRole]]: columnName
+        }
+      }
+    }))
+
+    setDraggedRole(null)
+  }
+
+  const handleRemoveColumnAssignment = (statementType: string, role: 'lineItemColumn' | 'valueColumn' | 'currencyColumn') => {
+    setStatementMappings(prev => ({
+      ...prev,
+      [statementType]: {
+        ...prev[statementType],
+        columnConfig: {
+          ...prev[statementType].columnConfig,
+          [role]: null
+        }
+      }
+    }))
+  }
+
+  const handleAIMapping = async (statementType: 'pnl' | 'bs' | 'carbon' | 'cf') => {
+    const mapping = statementMappings[statementType]
+    const template = mapping.selectedTemplate
+
+    if (!selectedCompany || !template || mapping.csvData.length === 0) {
+      setAiMappingMessage(prev => ({ ...prev, [statementType]: 'Please select company, template, and load CSV data first' }))
+      setTimeout(() => setAiMappingMessage(prev => ({ ...prev, [statementType]: '' })), 3000)
+      return
+    }
+
+    // Helper to check if item is mappable: has formula that requires external data
+    // Items without formulas, or with [t-1], BASE:, or driver: references need mapped data
+    const isMappable = (item: LineItem) => {
+      if (!item.formula || item.formula.trim() === '') return true
+      const formulaUpper = item.formula.toUpperCase()
+      if (formulaUpper.includes('[T-1]')) return true
+      if (formulaUpper.includes('BASE:')) return true
+      if (formulaUpper.includes('DRIVER:')) return true
+      return false  // Pure within-period calculation, no mapping needed
+    }
+
+    const lineItems = filteredLineItems(template, statementType).filter(isMappable)
+
+    if (lineItems.length === 0) {
+      setAiMappingMessage(prev => ({ ...prev, [statementType]: 'No mappable line items in template' }))
+      setTimeout(() => setAiMappingMessage(prev => ({ ...prev, [statementType]: '' })), 3000)
+      return
+    }
+
+    setAiMappingInProgress(prev => ({ ...prev, [statementType]: true }))
+    setAiMappingMessage(prev => ({ ...prev, [statementType]: 'Analyzing with AI...' }))
+
+    // Get child entities of selected company for multi-entity hint (before try block so we can use in response handler)
+    // Note: entities is a tree structure, so flatten it first to get all entities including children
+    const allEntitiesFlat = flattenEntities(entities)
+    const childEntities = allEntitiesFlat.filter(e => e.parent_entity_id === selectedCompany.entity_id)
+
+    try {
+      // Prepare data for Claude - send all rows for complete mapping
+      const csvSample = mapping.csvData.map((row, idx) => ({
+        index: idx,
+        data: row
+      }))
+      const entityNamesHint = childEntities.length > 0
+        ? `\n\nAvailable child entities: ${childEntities.map(e => e.name.toUpperCase()).join(', ')}`
+        : ''
+
+      const prompt = `You are a financial data mapping assistant. Analyze the CSV data and map it to the template line items.
+
+CSV Columns: ${mapping.csvColumns.join(', ')}
+CSV Data (all ${csvSample.length} rows):
+${JSON.stringify(csvSample, null, 2)}
+
+Template Line Items to map:
+${lineItems.map(item => `- ${item.code}: ${item.display_name}`).join('\n')}
+
+Company Entity: ${selectedCompany.name}${entityNamesHint}
+
+IMPORTANT - Entity-Prefixed Line Items with Flexible Matching:
+
+CSV line items contain entity prefixes in format: ENTITYNAME_LINEITEMNAME
+
+Entity Matching (FUZZY):
+- Entity prefix may be exact (BETA) or partial match (BETA found in "Beta AG", "Beta Ltd")
+- Available entities: ${childEntities.map(e => `${e.name} (match: ${e.name.toLowerCase().split(/[^a-z0-9]+/)[0]})`).join(', ')}
+- Extract the first word/token before underscore, convert to lowercase
+- Match against entity names using contains/startsWith logic
+
+Line Item Matching (FUZZY):
+- Template codes may differ from CSV names (e.g., "COGS" → "cogs" OR "cost_of_goods_sold")
+- Common variations:
+  * REVENUE → revenue
+  * COGS/COST_OF_GOODS_SOLD → cogs OR cost_of_sales OR cost_of_goods_sold
+  * OPEX/OPERATING_EXPENSES → opex OR operating_expenses
+  * DEPRECIATION → depreciation OR depreciation_amortization
+  * INTEREST_EXPENSE → interest_expense OR interest
+  * CAPEX/CAPITAL_EXPENDITURE → capex OR capital_expenditure
+  * SCOPE1_EMISSIONS → scope1_emissions OR scope_1_emissions
+
+Mapping Process:
+1. Split CSV line_item at first underscore: "BETA_REVENUE" → ["BETA", "REVENUE"]
+2. Entity: match "BETA" (case-insensitive) against available entity names
+3. Line item: match "REVENUE" against template codes (try exact lowercase first, then fuzzy match common variations)
+4. Return: entity_name (lowercase, best match), line_item_code (exact template code)
+
+Instructions:
+1. Analyze the CSV column headers and identify which columns contain the financial data values
+2. Analyze ALL CSV data rows and map as many as possible to template line items
+3. For entity-prefixed line items, extract the base line item name after the underscore
+4. Return ONLY a JSON object with two arrays in this exact format:
+{
+  "column_mappings": [
+    {
+      "csv_column_name": "2023",
+      "column_type": "data",
+      "notes": "Year 2023 values"
+    }
+  ],
+  "row_mappings": [
+    {
+      "csv_row_index": 0,
+      "entity_name": "beta",
+      "line_item_code": "revenue",
+      "confidence": "high"
+    },
+    {
+      "csv_row_index": 1,
+      "entity_name": "beta",
+      "line_item_code": "cogs",
+      "confidence": "high"
+    }
+  ]
+}
+
+Rules for column_mappings:
+- Identify ALL columns that contain financial data values vs labels/descriptions/units
+- column_type should be:
+  * "data" for value columns (numeric financial data)
+  * "label" for line item name/description columns
+  * "currency" for currency/units columns (e.g., "CHF", "USD", "tCO2e", "units")
+  * "ignore" for irrelevant columns
+- Include notes explaining what the column represents
+- Map ALL data columns (years, periods, etc.)
+- Look for currency/units columns named like: "units", "currency", "unit", "curr", etc.
+
+Rules for row_mappings:
+- Only map rows where you have reasonable confidence
+- csv_row_index must match the index from the CSV sample above
+- entity_name: Extract from CSV line_item prefix (BETA_ → "beta", GAMMA_ → "gamma", DELTA_ → "delta") - MUST be lowercase
+- line_item_code must match one of the codes from the template (without entity prefix)
+- confidence can be "high", "medium", or "low"
+- If a row matches multiple line items, choose the best match
+- Look for common financial statement items like revenue, expenses, assets, liabilities, etc.
+- Strip entity prefixes when mapping (e.g., "DELTA_CAPEX" → entity_name: "delta", line_item_code: "capex")
+
+Respond with ONLY the JSON object, no other text`
+
+      // Use backend proxy to avoid CORS issues
+      const response = await fetch(apiUrl('/api/claude/messages'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ prompt })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'AI mapping failed')
+      }
+
+      const result = await response.json()
+      const content = result.content[0].text
+
+      // Extract JSON from response (match object with row_mappings and column_mappings)
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('Invalid response format from AI')
+      }
+
+      const aiResponse = JSON.parse(jsonMatch[0])
+      const rowMappings = aiResponse.row_mappings || []
+      const columnMappings = aiResponse.column_mappings || []
+
+      // Debug logging
+      console.log('AI Response row mappings:', rowMappings.slice(0, 3))
+      console.log('Available child entities for matching:', childEntities.map(e => ({ id: e.entity_id, name: e.name, parent: e.parent_entity_id })))
+
+      // Find the first data column for value mapping
+      const dataColumns = columnMappings.filter((c: ColumnMapping) => c.column_type === 'data')
+      const valueColumn = dataColumns.length > 0 ? dataColumns[0].csv_column_name : null
+
+      // Find label/line item column
+      const labelColumn = columnMappings.find((c: ColumnMapping) => c.column_type === 'label')
+      const lineItemColumn = labelColumn ? labelColumn.csv_column_name : null
+
+      // Find currency/units column
+      const currencyColumnMapping = columnMappings.find((c: ColumnMapping) => c.column_type === 'currency')
+      const currencyColumn = currencyColumnMapping ? currencyColumnMapping.csv_column_name : null
+
+      // Helper to find entity by fuzzy name match (searches only child entities)
+      const findEntityByName = (entityName: string): Entity | null => {
+        if (!entityName) return null
+        const searchLower = entityName.toLowerCase().trim()
+
+        // Try exact match first
+        let match = childEntities.find(e => e.name.toLowerCase() === searchLower)
+        if (match) return match
+
+        // Try starts-with match
+        match = childEntities.find(e => e.name.toLowerCase().startsWith(searchLower))
+        if (match) return match
+
+        // Try contains match
+        match = childEntities.find(e => e.name.toLowerCase().includes(searchLower))
+        if (match) return match
+
+        // Try matching first token
+        const firstToken = searchLower.split(/[^a-z0-9]+/)[0]
+        match = childEntities.find(e => {
+          const entityFirstToken = e.name.toLowerCase().split(/[^a-z0-9]+/)[0]
+          return entityFirstToken === firstToken
+        })
+
+        return match || null
+      }
+
+      // Apply the AI-suggested row mappings and column config
+      setStatementMappings(prev => ({
+        ...prev,
+        [statementType]: {
+          ...prev[statementType],
+          hierarchicalMappings: rowMappings.map((m: any) => {
+            const entityName = m.entity_name || ''
+            const matchedEntity = findEntityByName(entityName)
+
+            // Debug logging for entity matching
+            console.log(`Mapping row ${m.csv_row_index}: entity_name="${entityName}" → matched:`,
+              matchedEntity ? `${matchedEntity.name} (ID ${matchedEntity.entity_id})` : 'NOT FOUND')
+
+            // Build entity_path: [parent, child] if entity found, otherwise just parent
+            const entity_path = matchedEntity
+              ? [selectedCompany.entity_id, matchedEntity.entity_id]
+              : [selectedCompany.entity_id]
+
+            return {
+              entity_path,
+              line_item_code: m.line_item_code,
+              csv_row_index: m.csv_row_index
+            }
+          }),
+          columnConfig: {
+            lineItemColumn,
+            valueColumn,
+            currencyColumn
+          }
+        }
+      }))
+
+      // Display column mappings in the message
+      setAiMappingMessage(prev => ({
+        ...prev,
+        [statementType]: 'AI mapping completed!'
+      }))
+      setTimeout(() => setAiMappingMessage(prev => ({ ...prev, [statementType]: '' })), 5000)
+
+    } catch (error) {
+      logger.error('AI mapping error:', error)
+      setAiMappingMessage(prev => ({
+        ...prev,
+        [statementType]: `Error: ${error instanceof Error ? error.message : 'AI mapping failed'}`
+      }))
+      setTimeout(() => setAiMappingMessage(prev => ({ ...prev, [statementType]: '' })), 5000)
+    } finally {
+      setAiMappingInProgress(prev => ({ ...prev, [statementType]: false }))
+    }
+  }
+
+  const filteredLineItems = (template: Template | null, statementType: string) => {
+    if (!template) return []
+
+    // Map statement type to section name
+    const sectionMap: Record<string, string> = {
+      'pnl': 'profit_and_loss',
+      'pl': 'profit_and_loss',
+      'bs': 'balance_sheet',
+      'cf': 'cash_flow',
+      'carbon': 'carbon_statement'
+    }
+
+    const targetSection = sectionMap[statementType]
+
+    // Check if template has sections defined (any line item has a section)
+    const hasSections = template.line_items.some(item => item.section !== undefined)
+
+    logger.debug('Filtering line items:', {
+      statementType,
+      targetSection,
+      templateType: template.statement_type,
+      templateCode: template.template_code,
+      totalItems: template.line_items.length,
+      hasSections,
+      sections: [...new Set(template.line_items.map(i => i.section))]
+    })
+
+    // For unified templates OR templates with sections, filter by section
+    // Show ALL items (both computed and non-computed), but computed items will be visually distinct and non-droppable
+    if (hasSections && targetSection) {
+      const filtered = template.line_items.filter(item =>
+        item.section === targetSection
+      )
+      logger.debug('Filtered by section (including computed):', filtered.length, 'items')
+      return filtered
+    }
+
+    // For templates without sections (specific statement type templates), show all items
+    const filtered = template.line_items
+    logger.debug('Showing all items (including computed):', filtered.length)
+    return filtered
+  }
+
+  const renderEntityLineItemTree = (
+    statementType: string,
+    entity: Entity,
+    entityPath: number[],
+    lineItemCode: string,
+    depth: number
+  ) => {
+    const mapping = statementMappings[statementType]
+    const nodeId = `${entityPath.join('-')}-${lineItemCode}`
+    const isExpanded = mapping.expandedNodes.has(nodeId)
+    const mappedRow = getMappedRow(statementType, entityPath, lineItemCode)
+    const hasChildren = entity.children && entity.children.length > 0
+
+    return (
+      <div key={nodeId} style={{ marginLeft: depth * 16 }}>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'
+            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+          }}
+          onDragLeave={(e) => {
+            e.currentTarget.style.backgroundColor = mappedRow ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.5)'
+            e.currentTarget.style.borderColor = mappedRow ? 'rgba(34, 197, 94, 0.3)' : 'rgba(71, 85, 105, 0.3)'
+          }}
+          onDrop={(e) => {
+            handleDrop(statementType, entityPath, lineItemCode)
+            e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)'
+            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.3)'
+          }}
+          onMouseEnter={(e) => {
+            if (!mappedRow) {
+              e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.5)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!mappedRow) {
+              e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+            }
+          }}
+          style={{
+            padding: '10px 12px',
+            marginBottom: '6px',
+            backgroundColor: mappedRow ? 'rgba(34, 197, 94, 0.1)' : 'rgba(30, 41, 59, 0.5)',
+            border: mappedRow ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(71, 85, 105, 0.3)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          {hasChildren && (
+            <button
+              onClick={() => toggleNode(statementType, nodeId)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+          )}
+          <Building2 className="w-3 h-3" style={{ color: '#64748b', flexShrink: 0 }} />
+          <span style={{ color: '#94a3b8', fontSize: '14px', flex: 1 }}>
+            {entity.name}
+          </span>
+          {mappedRow && (
+            <>
+              <ArrowRight className="w-4 h-4 text-green-500" />
+              <span style={{ color: '#22c55e', fontSize: '14px' }}>
+                {getRowIdentifier(mappedRow, mapping.csvColumns)}
+              </span>
+            </>
+          )}
+        </div>
+
+        {hasChildren && isExpanded && entity.children?.map(childEntity =>
+          renderEntityLineItemTree(statementType, childEntity, [...entityPath, childEntity.entity_id], lineItemCode, depth + 1)
+        )}
+      </div>
+    )
+  }
+
+  const renderMappingPanel = (statementType: 'pnl' | 'bs' | 'carbon' | 'cf') => {
+    const mapping = statementMappings[statementType]
+    if (!mapping.selectedTemplate || !selectedCompany) {
+      return null
+    }
+
+    const template = mapping.selectedTemplate
+    const lineItems = filteredLineItems(template, statementType)
+
+    return (
+      <Card key={statementType} className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)', marginBottom: '32px' }}>
+        <CardContent style={{ padding: '32px' }}>
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Network className="w-8 h-8 text-green-500" />
+                <div>
+                  <h3 className="font-semibold text-lg">{mapping.label} Mapping</h3>
+                </div>
+              </div>
+              {mapping.csvData.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                  <Button
+                    onClick={() => handleAIMapping(statementType)}
+                    disabled={aiMappingInProgress[statementType]}
+                    style={{
+                      backgroundColor: aiMappingInProgress[statementType] ? '#64748b' : '#8b5cf6',
+                      padding: '10px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      border: 'none',
+                      boxShadow: 'none'
+                    }}
+                  >
+                    {aiMappingInProgress[statementType] ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        AI Mapping...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        AI Mapping
+                      </>
+                    )}
+                  </Button>
+                  {aiMappingMessage[statementType] && (
+                    <div style={{
+                      padding: '6px 12px',
+                      backgroundColor: aiMappingMessage[statementType].includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                      border: `1px solid ${aiMappingMessage[statementType].includes('Error') ? 'rgba(239, 68, 68, 0.3)' : 'rgba(139, 92, 246, 0.3)'}`,
+                      borderRadius: '4px',
+                      color: aiMappingMessage[statementType].includes('Error') ? '#ef4444' : '#8b5cf6',
+                      fontSize: '12px',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {aiMappingMessage[statementType]}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* File Selector - Chips */}
+          <div style={{ marginBottom: '24px', paddingLeft: '48px', paddingRight: '48px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
+              <h4 className="text-sm font-semibold text-muted-foreground">Select Staged File</h4>
+            </div>
+            {mapping.stagedFiles.length === 0 ? (
+              <div style={{
+                padding: '12px 16px',
+                backgroundColor: 'rgba(100, 116, 139, 0.1)',
+                border: '1px solid rgba(100, 116, 139, 0.3)',
+                borderRadius: '6px',
+                color: '#94a3b8',
+                fontSize: '14px',
+                textAlign: 'center'
+              }}>
+                No staged files available. Please upload a {mapping.label} file first.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                {mapping.stagedFiles.map(file => {
+                  const isSelected = mapping.selectedFileId === file.file_id
+                  return (
+                    <button
+                      key={file.file_id}
+                      onClick={() => handleFileSelect(statementType, String(file.file_id))}
+                      style={{
+                        padding: '10px 16px',
+                        backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                        border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        gap: '4px',
+                        minWidth: '200px'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                          e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                          e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                        }
+                      }}
+                    >
+                      <span style={{
+                        color: isSelected ? '#10b981' : '#e2e8f0',
+                        fontSize: '14px',
+                        fontWeight: isSelected ? 600 : 500
+                      }}>
+                        {file.file_name}
+                      </span>
+                      <span style={{
+                        color: isSelected ? '#6ee7b7' : '#94a3b8',
+                        fontSize: '12px'
+                      }}>
+                        {file.row_count} rows · {new Date(file.uploaded_at).toLocaleDateString()}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Column Configuration UI with Drag-and-Drop */}
+          {mapping.selectedFileId && mapping.csvData.length > 0 && (
+            <div style={{ marginBottom: '32px', paddingLeft: '48px', paddingRight: '48px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <Move className="w-4 h-4 text-muted-foreground" />
+                <h4 className="text-sm font-semibold text-muted-foreground">Configure Column Mapping</h4>
+              </div>
+
+              {/* Draggable Role Tiles */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <div
+                  draggable
+                  onDragStart={() => handleRoleDragStart('lineItem')}
+                  onDragEnd={handleRoleDragEnd}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    border: '2px solid rgba(59, 130, 246, 0.5)',
+                    borderRadius: '8px',
+                    cursor: 'grab',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#60a5fa',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  Line Item Name
+                </div>
+
+                <div
+                  draggable
+                  onDragStart={() => handleRoleDragStart('value')}
+                  onDragEnd={handleRoleDragEnd}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                    border: '2px solid rgba(34, 197, 94, 0.5)',
+                    borderRadius: '8px',
+                    cursor: 'grab',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#22c55e',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.2)'}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  Value/Amount
+                </div>
+
+                <div
+                  draggable
+                  onDragStart={() => handleRoleDragStart('currency')}
+                  onDragEnd={handleRoleDragEnd}
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                    border: '2px solid rgba(168, 85, 247, 0.5)',
+                    borderRadius: '8px',
+                    cursor: 'grab',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#a855f7',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.2)'}
+                >
+                  <GripVertical className="w-4 h-4" />
+                  Currency
+                </div>
+              </div>
+
+              {/* CSV Preview Table with Droppable Column Headers */}
+              <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto', border: '1px solid rgba(71, 85, 105, 0.3)', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead style={{ position: 'sticky', top: 0, backgroundColor: 'rgba(15, 23, 42, 0.95)', zIndex: 10 }}>
+                    <tr>
+                      {mapping.csvColumns.map((col) => {
+                        const isLineItemCol = mapping.columnConfig.lineItemColumn === col
+                        const isValueCol = mapping.columnConfig.valueColumn === col
+                        const isCurrencyCol = mapping.columnConfig.currencyColumn === col
+                        const hasAssignment = isLineItemCol || isValueCol || isCurrencyCol
+
+                        let bgColor = 'rgba(30, 41, 59, 0.9)'
+                        let borderColor = 'rgba(71, 85, 105, 0.3)'
+                        let textColor = '#94a3b8'
+                        let badgeContent = null
+
+                        if (isLineItemCol) {
+                          bgColor = 'rgba(59, 130, 246, 0.15)'
+                          borderColor = 'rgba(59, 130, 246, 0.5)'
+                          textColor = '#60a5fa'
+                          badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(59, 130, 246, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Line Item</span>
+                        } else if (isValueCol) {
+                          bgColor = 'rgba(34, 197, 94, 0.15)'
+                          borderColor = 'rgba(34, 197, 94, 0.5)'
+                          textColor = '#22c55e'
+                          badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(34, 197, 94, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Value</span>
+                        } else if (isCurrencyCol) {
+                          bgColor = 'rgba(168, 85, 247, 0.15)'
+                          borderColor = 'rgba(168, 85, 247, 0.5)'
+                          textColor = '#a855f7'
+                          badgeContent = <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: 'rgba(168, 85, 247, 0.3)', borderRadius: '4px', marginLeft: '8px' }}>Currency</span>
+                        }
+
+                        return (
+                          <th
+                            key={col}
+                            onDragOver={(e) => {
+                              e.preventDefault()
+                              if (!hasAssignment) {
+                                e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.25)'
+                                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.6)'
+                              }
+                            }}
+                            onDragLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = bgColor
+                              e.currentTarget.style.borderColor = borderColor
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              handleColumnDrop(statementType, col)
+                              e.currentTarget.style.backgroundColor = bgColor
+                              e.currentTarget.style.borderColor = borderColor
+                            }}
+                            onClick={() => {
+                              if (isLineItemCol) handleRemoveColumnAssignment(statementType, 'lineItemColumn')
+                              else if (isValueCol) handleRemoveColumnAssignment(statementType, 'valueColumn')
+                              else if (isCurrencyCol) handleRemoveColumnAssignment(statementType, 'currencyColumn')
+                            }}
+                            style={{
+                              padding: '12px 16px',
+                              textAlign: 'left',
+                              fontWeight: 600,
+                              backgroundColor: bgColor,
+                              border: `2px solid ${borderColor}`,
+                              color: textColor,
+                              cursor: hasAssignment ? 'pointer' : 'default',
+                              transition: 'all 0.2s ease',
+                              position: 'relative'
+                            }}
+                            title={hasAssignment ? 'Click to remove assignment' : 'Drop role tile here'}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span>{col}</span>
+                              {badgeContent}
+                            </div>
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mapping.csvData.slice(0, 10).map((row, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(71, 85, 105, 0.2)' }}>
+                        {mapping.csvColumns.map((col) => (
+                          <td
+                            key={col}
+                            style={{
+                              padding: '10px 16px',
+                              color: '#cbd5e1',
+                              backgroundColor: idx % 2 === 0 ? 'rgba(30, 41, 59, 0.4)' : 'rgba(15, 23, 42, 0.4)'
+                            }}
+                          >
+                            {row[col]}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {mapping.csvData.length > 10 && (
+                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
+                  Showing first 10 of {mapping.csvData.length} rows
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Only show mapping interface if file is selected and has data */}
+          {mapping.csvData.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '48px', color: '#64748b' }}>
+              <FileSpreadsheet className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>Select a staged file above to begin mapping</p>
+            </div>
+          )}
+
+          {/* Hierarchical Mapping Interface - only show if we have CSV data */}
+          {mapping.csvData.length > 0 && (
+            <>
+              {/* Configure row mapping header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingLeft: '32px' }}>
+                <Network className="w-4 h-4 text-muted-foreground" />
+                <h4 className="text-sm font-semibold text-muted-foreground">Configure row mapping</h4>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', paddingLeft: '32px', paddingRight: '32px' }}>
+              {/* CSV Data */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <FileSpreadsheet className="w-4 h-4 text-muted-foreground" />
+                  <h4 className="text-sm font-semibold text-muted-foreground">CSV Rows</h4>
+                </div>
+              <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                {mapping.csvData.map((row, index) => (
+                  <div
+                    key={index}
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
+                      e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)'
+                      e.currentTarget.style.transform = 'translateX(4px)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                      e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                      e.currentTarget.style.transform = 'translateX(0)'
+                    }}
+                    style={{
+                      padding: '6px 10px',
+                      marginBottom: '4px',
+                      backgroundColor: 'rgba(51, 65, 85, 0.5)',
+                      border: '1px solid rgba(71, 85, 105, 0.3)',
+                      borderRadius: '4px',
+                      cursor: 'grab',
+                      fontSize: '12px',
+                      color: '#e2e8f0',
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <GripVertical className="w-3 h-3" style={{ color: '#64748b', flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{getRowIdentifier(row, mapping.csvColumns)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Hierarchical Tree */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Network className="w-4 h-4 text-muted-foreground" />
+                <h4 className="text-sm font-semibold text-muted-foreground">Template Line Items</h4>
+              </div>
+              <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                {lineItems.map(lineItem => {
+                  // Check if item is derived: has formula but NO external data requirements
+                  // (no [t-1], BASE:, or driver: references)
+                  const isDerived = lineItem.formula && lineItem.formula.trim() !== '' && (() => {
+                    const formulaUpper = lineItem.formula!.toUpperCase()
+                    return !formulaUpper.includes('[T-1]') && !formulaUpper.includes('BASE:') && !formulaUpper.includes('DRIVER:')
+                  })()
+                  const needsOpeningBalance = statementType === 'bs' && lineItem.code && !lineItem.formula
+
+                  return (
+                    <div key={lineItem.code} style={{ marginBottom: '20px' }}>
+                      <div style={{
+                        padding: '12px 16px',
+                        backgroundColor: isDerived ? 'rgba(100, 116, 139, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                        border: isDerived ? '2px solid rgba(100, 116, 139, 0.3)' : '2px solid rgba(59, 130, 246, 0.4)',
+                        borderRadius: '8px',
+                        marginBottom: '12px',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        color: isDerived ? '#94a3b8' : '#60a5fa',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                        opacity: isDerived ? 0.6 : 1
+                      }}>
+                        <Layers className="w-4 h-4" />
+                        {lineItem.display_name}
+                        {isDerived && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: 'auto' }}>(Calculated)</span>}
+                        {needsOpeningBalance && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: 'auto', color: '#a78bfa' }}>(Needs Opening Balance)</span>}
+                      </div>
+                      {!isDerived && renderEntityLineItemTree(statementType, selectedCompany, [selectedCompany.entity_id], lineItem.code, 0)}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const handleSave = async () => {
+    if (!selectedCompany) return
+
+    setIsSaving(true)
+    setSaveMessage('')
+
+    try {
+      const dbPath = getDefaultDbPath()
+
+      // Save each statement type's mappings
+      for (const [statementType, mapping] of Object.entries(statementMappings)) {
+        if (mapping.selectedTemplate && mapping.hierarchicalMappings.length > 0) {
+          // Get the most recent staged file name for this statement type
+          let csvFileName: string | undefined = undefined
+          try {
+            const fileTypeMap: Record<string, string> = {
+              'pnl': 'pnl',
+              'bs': 'balance_sheet',
+              'carbon': 'carbon',
+              'cf': 'cash_flow'
+            }
+            const fileType = fileTypeMap[statementType] || statementType
+            const filesResponse = await fetch(apiUrl(`/api/staged-files/${fileType}?dbPath=${encodeURIComponent(dbPath)}`))
+            const filesResult = await filesResponse.json()
+            if (filesResult.success && filesResult.files && filesResult.files.length > 0) {
+              csvFileName = filesResult.files[0].file_name
+            }
+          } catch (err) {
+            logger.error(`Failed to fetch staged file for ${statementType}:`, err)
+          }
+
+          const response = await fetch(apiUrl('/api/statements/save-hierarchical-mapping'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dbPath,
+              templateCode: mapping.selectedTemplate.template_code,
+              statementType: statementType, // Use frontend statement type, not template's
+              companyId: selectedCompany.entity_id,
+              hierarchicalMappings: mapping.hierarchicalMappings,
+              columnConfig: mapping.columnConfig,
+              csvFileName
+            })
+          })
+
+          const result = await response.json()
+          if (!response.ok || !result.success) {
+            throw new Error(`Failed to save ${statementType} mapping: ${result.error}`)
+          }
+
+          // Also save the mapped data to result tables
+          // Using default scenario_id=1 and period_id=1 for now
+          try {
+            const dataResponse = await fetch(apiUrl('/api/statements/save-mapped-data'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                dbPath,
+                templateCode: mapping.selectedTemplate.template_code,
+                statementType: statementType, // Use frontend statement type, not template's
+                companyId: selectedCompany.entity_id,
+                hierarchicalMappings: mapping.hierarchicalMappings,
+                scenarioId: 1,  // TODO: Make this selectable by user
+                periodId: 1     // TODO: Make this selectable by user
+              })
+            })
+
+            const dataResult = await dataResponse.json()
+            if (!dataResponse.ok || !dataResult.success) {
+              logger.warn(`Failed to save ${statementType} data: ${dataResult.error}`)
+            }
+          } catch (dataErr) {
+            logger.error(`Failed to save ${statementType} data:`, dataErr)
+          }
+        }
+      }
+
+      setSaveMessage('All mappings and data saved successfully!')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      logger.error('Save error:', error)
+      setSaveMessage(`Error: ${error instanceof Error ? error.message : 'Cannot connect to API server'}`)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const hasAnyMappings = Object.values(statementMappings).some(m => m.hierarchicalMappings.length > 0)
+
+  return (
+    <div className="p-12">
+      <div style={{ marginBottom: '32px', paddingLeft: '48px' }}>
+        <h2 className="text-2xl font-bold mb-2">Map Statements</h2>
+        <p className="text-muted-foreground">
+          Map uploaded CSV data to statement templates for each statement type
+        </p>
+      </div>
+
+      <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
+        {/* Consolidated Company & Template Selection */}
+        <Card className="border-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderColor: 'rgba(16, 185, 129, 0.4)', marginBottom: '32px' }}>
+          <CardContent style={{ padding: '32px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
+              {/* Company Selection */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <Building2 className="w-5 h-5 text-blue-500" />
+                  <h3 className="font-semibold">Select Company</h3>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                  {getRootCompanies().map(company => {
+                    const isSelected = selectedCompany?.entity_id === company.entity_id
+                    return (
+                      <button
+                        key={company.entity_id}
+                        onClick={() => setSelectedCompany(company)}
+                        style={{
+                          padding: '12px 20px',
+                          backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                          border: isSelected ? '2px solid rgba(59, 130, 246, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          minWidth: '200px'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                          }
+                        }}
+                      >
+                        <Building2 className="w-5 h-5" style={{ color: isSelected ? '#3b82f6' : '#94a3b8' }} />
+                        <span style={{
+                          color: isSelected ? '#3b82f6' : '#e2e8f0',
+                          fontSize: '14px',
+                          fontWeight: isSelected ? 600 : 500
+                        }}>
+                          {company.name}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Template Selection */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <FileText className="w-5 h-5 text-green-500" />
+                  <h3 className="font-semibold">Unified Statement Template</h3>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                  {templates.map(template => {
+                    const isSelected = selectedUnifiedTemplate?.template_code === template.template_code
+                    return (
+                      <button
+                        key={template.template_code}
+                        onClick={() => handleTemplateSelect(template.template_code)}
+                        style={{
+                          padding: '12px 20px',
+                          backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                          border: isSelected ? '2px solid rgba(16, 185, 129, 0.6)' : '1px solid rgba(71, 85, 105, 0.3)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          minWidth: '200px'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(71, 85, 105, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) {
+                            e.currentTarget.style.backgroundColor = 'rgba(51, 65, 85, 0.5)'
+                            e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)'
+                          }
+                        }}
+                      >
+                        <FileSpreadsheet className="w-5 h-5" style={{ color: isSelected ? '#10b981' : '#94a3b8' }} />
+                        <span style={{
+                          color: isSelected ? '#10b981' : '#e2e8f0',
+                          fontSize: '14px',
+                          fontWeight: isSelected ? 600 : 500
+                        }}>
+                          {template.template_name}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Mapping Panels - only show when both company and template are selected */}
+      {selectedCompany && selectedUnifiedTemplate && (
+        <div style={{ paddingLeft: '48px', paddingRight: '48px' }}>
+          {renderMappingPanel('pnl')}
+          {renderMappingPanel('bs')}
+          {renderMappingPanel('cf')}
+          {renderMappingPanel('carbon')}
+        </div>
+      )}
+
+      {/* Save Button */}
+      {hasAnyMappings && (
+        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 50 }}>
+          <Button
+            onClick={handleSave}
+            disabled={isSaving || !selectedCompany}
+            style={{
+              backgroundColor: isSaving ? '#64748b' : '#22c55e',
+              padding: '12px 24px',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            {isSaving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5" />
+                Save All Mappings
+              </>
+            )}
+          </Button>
+          {saveMessage && (
+            <div style={{
+              marginTop: '8px',
+              padding: '8px 16px',
+              backgroundColor: saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+              border: `1px solid ${saveMessage.includes('Error') ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+              borderRadius: '6px',
+              color: saveMessage.includes('Error') ? '#ef4444' : '#22c55e',
+              fontSize: '14px'
+            }}>
+              {saveMessage}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

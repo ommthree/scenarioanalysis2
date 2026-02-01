@@ -1,0 +1,60 @@
+{
+  "validation_rule_set": "UNIFIED_STANDARD",
+  "version": "1.0.0",
+  "description": "Standard validation rules for unified financial statements",
+  "rules": [
+    {
+      "rule_id": "BS_BALANCE_CHECK",
+      "rule_type": "balance_sheet_equation",
+      "description": "Assets = Liabilities + Equity",
+      "required_line_items": ["TOTAL_ASSETS", "TOTAL_LIABILITIES", "TOTAL_EQUITY"],
+      "formula": "TOTAL_ASSETS - TOTAL_LIABILITIES - TOTAL_EQUITY",
+      "tolerance": 0.01,
+      "severity": "error",
+      "enabled": true
+    },
+    {
+      "rule_id": "CASH_RECONCILIATION",
+      "rule_type": "cash_flow_reconciliation",
+      "description": "Cash flow reconciles with balance sheet cash",
+      "required_line_items": ["CASH", "CASH_FLOW_NET"],
+      "formula": "CASH - CASH[t-1] - CASH_FLOW_NET",
+      "tolerance": 0.01,
+      "severity": "error",
+      "enabled": false,
+      "note": "Disabled for Level 1-2, enable when CF statement added"
+    },
+    {
+      "rule_id": "NON_NEGATIVE_CASH",
+      "rule_type": "boundary_check",
+      "description": "Cash cannot be negative",
+      "required_line_items": ["CASH"],
+      "condition": "CASH >= 0",
+      "severity": "warning",
+      "enabled": true
+    },
+    {
+      "rule_id": "POSITIVE_REVENUE",
+      "rule_type": "boundary_check",
+      "description": "Revenue should be positive",
+      "required_line_items": ["REVENUE"],
+      "condition": "REVENUE >= 0",
+      "severity": "warning",
+      "enabled": true
+    }
+  ],
+  "rule_sets_by_level": {
+    "level1": {
+      "description": "Minimal validation for isolated statements",
+      "enabled_rules": []
+    },
+    "level2": {
+      "description": "Add balance sheet validation",
+      "enabled_rules": ["BS_BALANCE_CHECK", "NON_NEGATIVE_CASH", "POSITIVE_REVENUE"]
+    },
+    "level3": {
+      "description": "Add cash flow reconciliation",
+      "enabled_rules": ["BS_BALANCE_CHECK", "CASH_RECONCILIATION", "NON_NEGATIVE_CASH", "POSITIVE_REVENUE"]
+    }
+  }
+}

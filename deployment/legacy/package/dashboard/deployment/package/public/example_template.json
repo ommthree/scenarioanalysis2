@@ -1,0 +1,120 @@
+{
+  "code": "EXAMPLE_UNIFIED",
+  "name": "Example Unified Financial Statement",
+  "statement_type": "unified",
+  "version": "1.0.0",
+  "line_items": [
+    {
+      "code": "REVENUE",
+      "display_name": "Revenue",
+      "section": "pl",
+      "formula": null,
+      "base_value_source": "driver:REVENUE",
+      "unit": "CHF"
+    },
+    {
+      "code": "COST_OF_GOODS_SOLD",
+      "display_name": "Cost of Goods Sold",
+      "section": "pl",
+      "formula": null,
+      "base_value_source": "driver:COST_OF_GOODS_SOLD",
+      "unit": "CHF"
+    },
+    {
+      "code": "GROSS_PROFIT",
+      "display_name": "Gross Profit",
+      "section": "pl",
+      "formula": "REVENUE - COST_OF_GOODS_SOLD",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "OPERATING_EXPENSES",
+      "display_name": "Operating Expenses",
+      "section": "pl",
+      "formula": null,
+      "base_value_source": "driver:OPERATING_EXPENSES",
+      "unit": "CHF"
+    },
+    {
+      "code": "EBIT",
+      "display_name": "Earnings Before Interest and Tax",
+      "section": "pl",
+      "formula": "GROSS_PROFIT - OPERATING_EXPENSES",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "NET_INCOME",
+      "display_name": "Net Income",
+      "section": "pl",
+      "formula": "EBIT",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "CASH",
+      "display_name": "Cash and Cash Equivalents",
+      "section": "bs",
+      "formula": "CASH[t-1] + CF_NET",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "TOTAL_ASSETS",
+      "display_name": "Total Assets",
+      "section": "bs",
+      "formula": null,
+      "base_value_source": "driver:TOTAL_ASSETS",
+      "unit": "CHF"
+    },
+    {
+      "code": "TOTAL_EQUITY",
+      "display_name": "Total Equity",
+      "section": "bs",
+      "formula": "TOTAL_EQUITY[t-1] + NET_INCOME",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "CF_OPERATING",
+      "display_name": "Cash Flow from Operations",
+      "section": "cf",
+      "formula": "NET_INCOME",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "CF_NET",
+      "display_name": "Net Cash Flow",
+      "section": "cf",
+      "formula": "CF_OPERATING",
+      "base_value_source": null,
+      "unit": "CHF"
+    },
+    {
+      "code": "SCOPE1_EMISSIONS",
+      "display_name": "Scope 1 Emissions",
+      "section": "carbon",
+      "formula": null,
+      "base_value_source": "driver:SCOPE1_EMISSIONS",
+      "unit": "tCO2e"
+    },
+    {
+      "code": "SCOPE2_EMISSIONS",
+      "display_name": "Scope 2 Emissions",
+      "section": "carbon",
+      "formula": null,
+      "base_value_source": "driver:SCOPE2_EMISSIONS",
+      "unit": "tCO2e"
+    },
+    {
+      "code": "TOTAL_EMISSIONS",
+      "display_name": "Total Emissions",
+      "section": "carbon",
+      "formula": "SCOPE1_EMISSIONS + SCOPE2_EMISSIONS",
+      "base_value_source": null,
+      "unit": "tCO2e"
+    }
+  ]
+}

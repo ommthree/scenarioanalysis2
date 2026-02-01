@@ -9935,6 +9935,14 @@ app.post('/api/reports/generate', (req, res) => {
   }
 })
 
+// Serve static files from the React app build (for production)
+app.use(express.static(path.join(__dirname, '../dist')))
+
+// All other routes serve the React app (catch-all for client-side routing)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'))
+})
+
 const server = app.listen(config.port, () => {
   console.log(`Dashboard API server running on http://localhost:${config.port}`)
 })

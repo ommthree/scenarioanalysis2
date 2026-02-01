@@ -1,0 +1,50 @@
+{
+  "physical_drivers": [
+    {
+      "code": "FLOOD",
+      "name": "Flood Risk",
+      "description": "Flood hazard intensity",
+      "category": "physical"
+    },
+    {
+      "code": "STORM",
+      "name": "Storm Risk",
+      "description": "Storm/hurricane hazard intensity",
+      "category": "physical"
+    }
+  ],
+  "financial_drivers": [
+    {
+      "code": "REVENUE",
+      "name": "Revenue",
+      "description": "Total revenue for the period",
+      "category": "financial"
+    },
+    {
+      "code": "EXPENSES",
+      "name": "Expenses",
+      "description": "Operating expenses for the period",
+      "category": "financial"
+    }
+  ],
+  "fx_drivers": [
+    {
+      "code": "USD",
+      "name": "US Dollar",
+      "description": "USD exchange rate relative to base currency",
+      "category": "fx"
+    },
+    {
+      "code": "EUR",
+      "name": "Euro",
+      "description": "EUR exchange rate relative to base currency",
+      "category": "fx"
+    },
+    {
+      "code": "GBP",
+      "name": "British Pound",
+      "description": "GBP exchange rate relative to base currency",
+      "category": "fx"
+    }
+  ]
+}

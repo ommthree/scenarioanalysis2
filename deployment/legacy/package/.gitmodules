@@ -1,0 +1,15 @@
+[submodule "external/crow"]
+	path = external/crow
+	url = https://github.com/CrowCpp/Crow.git
+[submodule "external/eigen"]
+	path = external/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "external/nlohmann_json"]
+	path = external/nlohmann_json
+	url = https://github.com/nlohmann/json.git
+[submodule "external/spdlog"]
+	path = external/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "external/catch2"]
+	path = external/catch2
+	url = https://github.com/catchorg/Catch2.git

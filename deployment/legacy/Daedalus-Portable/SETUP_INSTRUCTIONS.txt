@@ -1,0 +1,45 @@
+Daedalus Setup Instructions for Windows
+========================================
+
+STEP 1: Download Portable Node.js
+----------------------------------
+1. Visit: https://nodejs.org/dist/v18.17.0/node-v18.17.0-win-x64.zip
+2. Download the ZIP file
+3. Extract the contents to the "node/" folder in this package
+   After extraction, you should have:
+   - Daedalus-Portable/node/node.exe
+   - Daedalus-Portable/node/npm
+   - Daedalus-Portable/node/npm.cmd
+
+STEP 2: Install Dependencies
+-----------------------------
+1. Open Command Prompt
+2. Navigate to this folder:
+   cd C:\Path\To\Daedalus-Portable
+3. Run:
+   node\node.exe node\npm\bin\npm-cli.js install --prefix dashboard\server
+
+STEP 3: First Run
+-----------------
+1. Double-click start.bat
+2. Wait for "Daedalus is running!" message
+3. Open browser to http://localhost:3001
+4. Login with:
+   Username: admin
+   Password: admin123
+5. IMMEDIATELY change the password!
+
+STEP 4: Daily Use
+-----------------
+- Start: Double-click start.bat
+- Stop: Press Ctrl+C in the window, or double-click stop.bat
+- Access: http://localhost:3001
+
+NOTES:
+- No installation required
+- No admin rights needed
+- Can run from USB drive
+- Data stored in data/ folder
+- Portable - copy entire folder to move to another machine
+
+If you encounter issues, see docs/WINDOWS_DEPLOYMENT.md
