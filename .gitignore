@@ -183,6 +183,6 @@ dist.tar.gz
 data/users/
 
 # Large legacy files (too large for GitHub)
-deployment/legacy/**/*.mp4
-deployment/legacy/**/*.sql
-deployment/legacy/**/*.html
+legacydeployment/**/*.mp4
+legacydeployment/**/*.sql
+legacydeployment/**/*.html
