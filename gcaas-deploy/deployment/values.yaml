@@ -41,5 +41,5 @@ apiBaseUrl: https://scenarioanalysis2.gcaas.pwc.com
 # Build configuration (GCaaS-specific)
 build:
   enabled: true
-  context: .
-  dockerfile: ./run/Dockerfile
+  context: ./src
+  dockerfile: ../run/Dockerfile
