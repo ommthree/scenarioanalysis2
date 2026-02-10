@@ -1,3 +1,10 @@
+# Large transfer packages and temporary files
+*.zip
+zis1pfTT
+ScenarioAnalysis2-GCaaS-Transfer.zip
+TRANSFER_README.md
+prepare-gcaas-deployment.sh
+
 # C++ Build artifacts
 build/
 bin/
@@ -171,12 +178,7 @@ dashboard/public/Daedalus.mp4
 docs/docu/*.html
 
 # Deployment packages and artifacts
-deployment/Daedalus-Portable.zip
-deployment/Daedalus-Portable/
-deployment/package/
-deployment/*.tar.gz
-dashboard/deployment/
-*.zip
+dashboard/deployment/package/
 dist.tar.gz
 
 # User data files (too large for git)
