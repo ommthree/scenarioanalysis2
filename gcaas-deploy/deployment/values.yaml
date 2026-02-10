@@ -1,10 +1,10 @@
 apps:
-  - name: scenarioanalysis2
+  - name: backend
     ingress: enabled
     image:
       build: true
-      name: scenarioanalysis2
-      path: ./src
+      name: scenario-analysis
+      path: default
       port: 3001
       repository: default
       tag: default
