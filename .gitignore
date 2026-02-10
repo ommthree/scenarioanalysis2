@@ -188,3 +188,4 @@ data/users/
 legacydeployment/**/*.mp4
 legacydeployment/**/*.sql
 legacydeployment/**/*.html
+gcaas-deploy.tar.gz

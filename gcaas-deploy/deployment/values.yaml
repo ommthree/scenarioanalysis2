@@ -37,9 +37,3 @@ resources:
     memory: 4Gi       # 4 GB RAM (for C++ engine + SQLite)
 
 apiBaseUrl: https://scenarioanalysis2.gcaas.pwc.com
-
-# Build configuration (GCaaS-specific)
-build:
-  enabled: true
-  context: ./src
-  dockerfile: run/Dockerfile
