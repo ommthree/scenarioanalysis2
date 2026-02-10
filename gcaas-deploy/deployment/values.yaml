@@ -1,21 +1,45 @@
-apps:
-  - name: scenarioanalysis2
-    ingress: enabled
-    image:
-      build: true
-      path: default        # corresponds to ./src
-      repository: default
-      tag: default         # will use commit hash
-    port: 3001            # MUST match EXPOSE in Dockerfile
-    resources:
-      requests:
-        cpu: 500m         # 0.5 CPU cores
-        memory: 1Gi       # 1 GB RAM
-      limits:
-        cpu: 2000m        # 2 CPU cores
-        memory: 4Gi       # 4 GB RAM (for C++ engine + SQLite)
-    env:
-      - name: NODE_ENV
-        value: production
-      - name: VITE_API_BASE_URL
-        value: http://localhost:3001
+# Helm values for ScenarioAnalysis2 deployment
+
+name: scenarioanalysis2
+
+replicaCount: 1
+
+image:
+  repository: scenarioanalysis2  # Will be built by GCaaS
+  tag: latest
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 3001
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: scenarioanalysis2.gcaas.pwc.com  # Update with actual hostname
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: scenarioanalysis2-tls
+      hosts:
+        - scenarioanalysis2.gcaas.pwc.com
+
+resources:
+  requests:
+    cpu: 500m         # 0.5 CPU cores
+    memory: 1Gi       # 1 GB RAM
+  limits:
+    cpu: 2000m        # 2 CPU cores
+    memory: 4Gi       # 4 GB RAM (for C++ engine + SQLite)
+
+apiBaseUrl: https://scenarioanalysis2.gcaas.pwc.com
+
+# Build configuration (GCaaS-specific)
+build:
+  enabled: true
+  context: ./src
+  dockerfile: ../run/Dockerfile
