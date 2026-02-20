@@ -45,9 +45,23 @@ function App() {
     return <div style={{padding: '20px', color: 'white'}}>Database Selector Placeholder</div>
   }
 
+  // Detect basename from current path (e.g., /engagement-id/app-name)
+  // Format: /UUID/release-name-app-name/
+  // We need to extract this and pass it to React Router
+  const detectBasename = () => {
+    const path = window.location.pathname
+    // Match pattern: /UUID/string/
+    const match = path.match(/^(\/[^/]+\/[^/]+)/)
+    return match ? match[1] : ''
+  }
+
+  const basename = detectBasename()
+  console.log('[App] Detected basename:', basename)
+  console.log('[App] Current pathname:', window.location.pathname)
+
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={basename}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/video" element={

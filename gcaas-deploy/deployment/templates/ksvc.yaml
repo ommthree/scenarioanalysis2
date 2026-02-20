@@ -1,0 +1,104 @@
+{{- range .Values.apps }}
+{{ if not .stateful }}
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ .name }}
+spec:
+  template:
+    metadata:
+      {{- if and (hasKey $.Values "persistentLogging") (hasKey $.Values.persistentLogging "enabled") $.Values.persistentLogging.enabled }}
+      labels:
+        gcaas_datadog_enabled: "true"
+      {{- end }}
+      annotations:
+        autoscaling.knative.dev/target: "10"
+        autoscaling.knative.dev/scale-to-zero-pod-retention-period: "3m"
+        autoscaling.knative.dev/max-scale: "3"
+      name: {{ $.Release.Name }}-{{ .name }}-{{ $.Values.metadata.commitHash }}
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: {{ $.Release.Name }}-config
+        image: {{ .image.repository }}/{{ .image.name }}:{{ .image.tag }}
+        imagePullPolicy: Always
+        resources: {{- toYaml .resources | nindent 12 }}
+        ports:
+          - containerPort: {{ .port }}
+        securityContext:
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          seccompProfile:
+            type: RuntimeDefault
+        {{- if .volumes }}
+        volumeMounts:
+        {{- range .volumesList }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath }}
+        {{- end }}
+        - name: app-secret
+          mountPath: /var/secrets
+          readOnly: true
+        {{- else }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: app-secret
+          mountPath: /var/secrets
+          readOnly: true
+        {{- end }}
+      {{- if .volumes }}
+      volumes:
+      {{- range .volumesList }}
+      - name: {{ .name }}
+        emptyDir:
+          sizeLimit: {{ .size }}
+      {{- end }}
+      - name: app-secret
+        secret:
+          secretName: {{ $.Release.Name }}-secret
+      {{- else }}
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 500Mi
+      - name: app-secret
+        secret:
+          secretName: {{ $.Release.Name }}-secret
+      {{- end }}
+{{ if .ingress }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ $.Release.Name }}-{{ .name }}-vs
+spec:
+  gateways:
+  - knative-serving/knative-ingress-gateway
+  - knative-serving/knative-local-gateway
+  hosts:
+  - {{ $.Values.metadata.hostName }}
+  http:
+  - match:
+    - uri:
+        prefix: '/{{ $.Values.metadata.engagementId }}/{{ $.Release.Name }}-{{ .name }}/'
+    {{- if .rewrite }}
+    rewrite:
+        uri: {{ .rewrite.uri }}
+    {{- end }}
+    route:
+      - destination:
+          host: {{ $.Release.Name }}-{{ .name }}-{{ $.Values.metadata.commitHash }}.{{ $.Release.Namespace }}.svc.cluster.local
+          port:
+            number: 80
+        headers:
+          request:
+            set:
+              Knative-Serving-Namespace: {{ $.Release.Namespace }}
+              Knative-Serving-Revision: {{ $.Release.Name }}-{{ .name }}-{{ $.Values.metadata.commitHash }}
+---
+{{- end -}}
+{{- end -}}
+{{- end }}
