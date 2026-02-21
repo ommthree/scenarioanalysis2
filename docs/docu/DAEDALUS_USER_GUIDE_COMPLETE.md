@@ -73,6 +73,141 @@ Daedalus combines performance and usability through a modern technology architec
 
 **Open Architecture**: CSV-based data import/export and a well-documented database schema make it straightforward to integrate Daedalus into existing workflows and toolchains.
 
+**Deployment Flexibility**: Daedalus supports two deployment modes:
+- **Local Development**: Run the C++ engine and React dashboard locally for development and testing
+- **Containerized Deployment**: Docker container with multi-stage builds packages the C++ engine, Node.js backend, and React frontend into a single deployable unit, optimized for cloud platforms like PwC's GCaaS (Global Cloud as a Service) Kubernetes environment
+
+### 1.5 Architecture & Project Structure
+
+Daedalus is organized into distinct components that work together to deliver a complete financial modeling platform. Understanding this structure helps both users and developers navigate the system effectively.
+
+**Repository Structure**
+
+```
+daedalus/
+├── engine/                  # C++ Calculation Engine
+│   ├── src/                # Engine source code
+│   ├── include/            # Header files
+│   ├── tests/              # Unit tests
+│   └── CMakeLists.txt      # Build configuration
+│
+├── dashboard/              # Local Development Version
+│   ├── src/               # React/TypeScript frontend
+│   │   ├── components/    # UI components
+│   │   ├── pages/         # Application pages
+│   │   └── context/       # State management
+│   ├── server/            # Node.js backend API
+│   ├── public/            # Static assets (logos, docs)
+│   ├── vite.config.ts     # Vite build configuration
+│   └── package.json       # Dependencies
+│
+├── gcaas-deploy/          # Container Deployment Version
+│   ├── src/
+│   │   ├── engine/        # C++ engine (same as above)
+│   │   ├── dashboard/     # React frontend (with subpath config)
+│   │   └── Dockerfile     # Multi-stage container build
+│   └── deployment/
+│       ├── Chart.yaml     # Helm chart metadata
+│       ├── values.yaml    # GCaaS configuration
+│       └── templates/     # Kubernetes resources
+│           ├── ksvc.yaml      # Knative Service
+│           ├── configmap.yaml # Environment config
+│           └── secrets.yaml   # Credentials
+│
+├── data/                  # SQLite database location
+│   └── scenario_analysis.db
+│
+├── docs/                  # Documentation
+│   └── docu/
+│       └── DAEDALUS_USER_GUIDE.pdf
+│
+└── external/              # Third-party libraries
+    ├── nlohmann_json/     # JSON parsing
+    ├── catch2/            # Testing framework
+    └── crow/              # HTTP server
+```
+
+**Key Differences: Local vs. Container Versions**
+
+| Aspect | Local (`dashboard/`) | Container (`gcaas-deploy/src/`) |
+|--------|---------------------|--------------------------------|
+| **Asset Paths** | Absolute (`/logo.png`) | Relative (`./logo.png`) |
+| **Base URL** | Root (`/`) | Configured via Vite `base: './'` |
+| **React Router** | No basename | Runtime basename detection |
+| **Backend** | Separate Node process | Integrated in container |
+| **Database** | Mounted from `../data/` | Volume-mounted `/app/data` |
+| **Build** | `npm run dev` | Multi-stage Docker build |
+| **Deployment** | Local ports 3001/5173 | Kubernetes/Knative service |
+
+**Component Communication Flow**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    User Browser                          │
+│            (http://localhost:5173 or GCaaS URL)         │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────────────────┐
+│              React Frontend (TypeScript)                 │
+│  - Model configuration UI                                │
+│  - Data management                                       │
+│  - Visualization components                              │
+└──────────────────┬──────────────────────────────────────┘
+                   │ HTTP API (port 3001)
+                   ▼
+┌─────────────────────────────────────────────────────────┐
+│          Node.js Backend (Express)                       │
+│  - REST API endpoints                                    │
+│  - SQLite database access                                │
+│  - C++ engine invocation                                 │
+│  - Authentication & authorization                        │
+└──────────────────┬──────────────────────────────────────┘
+                   │ exec() or stdin/stdout
+                   ▼
+┌─────────────────────────────────────────────────────────┐
+│            C++ Calculation Engine                        │
+│  - Formula parsing & evaluation                          │
+│  - Dependency resolution                                 │
+│  - Multi-period calculations                             │
+│  - Monte Carlo simulation                                │
+│  - Physical risk computation                             │
+└──────────────────┬──────────────────────────────────────┘
+                   │ Read/Write
+                   ▼
+┌─────────────────────────────────────────────────────────┐
+│              SQLite Database                             │
+│  - Model configuration                                   │
+│  - Input data                                            │
+│  - Calculation results                                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Container Deployment Architecture**
+
+For production deployments on GCaaS (Kubernetes), Daedalus uses a containerized architecture:
+
+1. **Multi-Stage Docker Build**:
+   - Stage 1: Compile C++ engine with dependencies
+   - Stage 2: Build React frontend with Vite (configured for subpath deployment)
+   - Stage 3: Production image with Node.js, compiled engine, and built frontend
+
+2. **Knative Service**: Auto-scaling serverless deployment that handles:
+   - HTTP request routing with Istio VirtualService
+   - URL rewriting (strips engagement prefix for backend)
+   - SSL termination and authentication
+   - Resource limits (CPU/memory)
+
+3. **Volume Mounts**:
+   - `/tmp`: Temporary files (emptyDir, 500Mi)
+   - `/app/data`: SQLite database storage (emptyDir, 1Gi)
+
+4. **Environment Configuration**:
+   - ConfigMap: NODE_ENV=production, PORT=3001
+   - Secrets: Database credentials, API keys (if needed)
+
+For detailed deployment instructions, see Appendix A.
+
 ---
 
 ## 2. Core Capabilities
@@ -3670,16 +3805,22 @@ Visual:
 
 ## Appendix A: Installation & Setup
 
-### A.1 System Requirements
+Daedalus supports two deployment modes: **Local Development** for development and testing, and **Container Deployment** for production environments (especially PwC's GCaaS platform). Choose the approach that best fits your needs.
 
-**Minimum Requirements**
+### A.1 Local Development Setup
+
+This setup is recommended for development, customization, and local testing.
+
+**System Requirements**
+
+*Minimum Requirements*
 - Operating System: macOS 10.15+, Windows 10+, or Linux (Ubuntu 20.04+)
 - CPU: 2 cores, 2.0 GHz
 - RAM: 4 GB
 - Storage: 2 GB free space
 - Display: 1280×720 resolution
 
-**Recommended Requirements**
+*Recommended Requirements*
 - Operating System: macOS 12+, Windows 11, or Linux (Ubuntu 22.04+)
 - CPU: 4+ cores, 2.5+ GHz (for faster Monte Carlo simulation)
 - RAM: 8+ GB (16 GB for large models)
@@ -3690,26 +3831,26 @@ Visual:
 - C++ compiler with C++17 support (GCC 9+, Clang 10+, MSVC 2019+)
 - CMake 3.15 or higher
 - SQLite 3.35 or higher
-- Node.js 16+ and npm (for dashboard)
+- Node.js 18+ and npm (for dashboard)
 - Python 3.8+ (optional, for data processing scripts)
 
-### A.2 Installation Steps
+**Installation Steps**
 
-**1. Download Daedalus**
+1. **Download Daedalus**
 
-Clone the repository or download the release package:
+Clone the repository:
 ```bash
 git clone https://github.com/your-org/daedalus.git
 cd daedalus
 ```
 
-**2. Build the Calculation Engine**
+2. **Build the Calculation Engine**
 
 On macOS/Linux:
 ```bash
 mkdir build
 cd build
-cmake ..
+cmake ../engine
 make -j4
 ```
 
@@ -3717,30 +3858,30 @@ On Windows (using Visual Studio):
 ```bash
 mkdir build
 cd build
-cmake -G "Visual Studio 16 2019" ..
+cmake -G "Visual Studio 17 2022" ../engine
 cmake --build . --config Release
 ```
 
-**3. Install Dashboard Dependencies**
+3. **Install Dashboard Dependencies**
 
 ```bash
 cd dashboard
 npm install
 ```
 
-**4. Initialize Database**
+4. **Initialize Database**
 
 ```bash
 cd data
-sqlite3 scenario_analysis.db < schema.sql
+sqlite3 scenario_analysis.db < ../engine/schema.sql
 ```
 
-**5. Start the Application**
+5. **Start the Application**
 
 Terminal 1 - Start backend server:
 ```bash
-cd dashboard/server
-node index.js
+cd dashboard
+node server/index.js
 ```
 
 Terminal 2 - Start frontend:
@@ -3749,9 +3890,169 @@ cd dashboard
 npm run dev
 ```
 
-**6. Access Dashboard**
+6. **Access the Application**
 
-Open browser and navigate to: `http://localhost:3000`
+Open your browser to: `http://localhost:5173`
+
+The backend API runs on port 3001, and the Vite dev server runs on port 5173.
+
+### A.2 Container Deployment (GCaaS / Kubernetes)
+
+For production deployment on PwC's GCaaS platform or any Kubernetes environment, use the containerized version in `gcaas-deploy/`.
+
+**Prerequisites**
+- Access to PwC's GCaaS platform (or any Kubernetes cluster)
+- `kubectl` configured for your cluster
+- Docker installed (if building locally)
+- Engagement ID and deployment credentials
+
+**Deployment Structure**
+
+The `gcaas-deploy/` directory contains:
+- `src/`: Application source (engine, dashboard with relative asset paths)
+- `src/Dockerfile`: Multi-stage build (C++ compilation → React build → production image)
+- `deployment/Chart.yaml`: Helm chart metadata
+- `deployment/values.yaml`: GCaaS configuration (resources, volumes, ingress)
+- `deployment/templates/`: Kubernetes resource templates
+
+**Key Configuration: values.yaml**
+
+```yaml
+apps:
+  - name: scenarioanalysis2
+    ingress: enabled
+    port: 3001
+    image:
+      build: true
+      name: scenarioanalysis2
+      path: ./src
+      repository: default
+      tag: default
+      experimentalBuild: true
+      compressedCache: true
+      useNewRun: true
+      snapshotMode: redo
+    volumes: true
+    volumesList:
+      - name: tmp
+        size: 500Mi
+        type: emptyDir
+        mountPath: "/tmp"
+      - name: data
+        size: 1Gi
+        type: emptyDir
+        mountPath: "/app/data"
+    rewrite:
+      uri: /
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+```
+
+**Deployment Steps**
+
+1. **Package the Application**
+
+```bash
+tar -czf gcaas-deploy.tar.gz --exclude='.git' --exclude='node_modules' gcaas-deploy/
+```
+
+2. **Upload to GCaaS**
+
+Upload `gcaas-deploy.tar.gz` to your GCaaS engagement storage (typically S3 or Azure Blob).
+
+3. **Deploy via GCaaS CLI**
+
+```bash
+# Set your engagement context
+gcaas engagement set <engagement-id>
+
+# Deploy the application
+gcaas app deploy scenarioanalysis2 --source gcaas-deploy.tar.gz
+```
+
+4. **Monitor Deployment**
+
+```bash
+# Check build progress
+gcaas app logs scenarioanalysis2 --build
+
+# Check application status
+gcaas app status scenarioanalysis2
+
+# View runtime logs
+gcaas app logs scenarioanalysis2
+```
+
+5. **Access the Application**
+
+The application URL will be:
+```
+https://<hostname>/<engagement-id>/scenarioanalysis2/
+```
+
+**Container Architecture**
+
+The Dockerfile uses a multi-stage build:
+
+1. **Stage 1 (Builder)**: Compiles C++ engine
+   - Base: `gcc:11`
+   - Installs CMake, SQLite, dependencies
+   - Compiles engine to `/build/scenario_analysis`
+
+2. **Stage 2 (Frontend Builder)**: Builds React app
+   - Base: `node:18`
+   - Runs `npm install` and `npm run build`
+   - Produces optimized static files with relative paths
+
+3. **Stage 3 (Production)**: Final runtime image
+   - Base: `node:18-slim`
+   - Copies compiled engine and built frontend
+   - Installs runtime dependencies (SQLite only)
+   - Runs Node.js backend on port 3001
+   - Serves frontend and proxies to engine
+
+**Environment Variables**
+
+Set in `deployment/templates/configmap.yaml`:
+- `NODE_ENV=production`
+- `PORT=3001`
+- `DATABASE_PATH=/app/data/scenario_analysis.db`
+
+**Volume Mounts**
+
+- `/tmp`: Temporary files (500Mi emptyDir)
+- `/app/data`: SQLite database persistence (1Gi emptyDir)
+
+**Resource Limits**
+
+- CPU: 500m request, 2000m limit
+- Memory: 1Gi request, 4Gi limit
+
+Adjust these in `values.yaml` based on your model complexity and expected load.
+
+**Troubleshooting**
+
+*Build Failures*
+- Check build logs: `gcaas app logs scenarioanalysis2 --build`
+- Verify Dockerfile syntax and paths
+- Ensure all dependencies are available
+
+*Runtime Errors*
+- Check application logs: `gcaas app logs scenarioanalysis2`
+- Verify database initialization
+- Check volume mounts and permissions
+
+*Asset Loading Issues (404s)*
+- Ensure all asset paths in React components use relative paths (`./logo.png`)
+- Verify Vite config has `base: './'`
+- Check React Router basename detection
+
+For detailed GCaaS documentation, refer to: https://gcaas-docs.pwc.com
 
 ### A.3 Configuration Files
 
