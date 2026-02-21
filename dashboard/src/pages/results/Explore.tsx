@@ -136,7 +136,7 @@ export default function Explore() {
             ) : (
               <ChevronDown style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
             )}
-            <img src="/daedalus2.png" alt="Logo" style={{ height: '90px', width: 'auto', transform: 'translateY(7px)' }} />
+            <img src="./daedalus2.png" alt="Logo" style={{ height: '90px', width: 'auto', transform: 'translateY(7px)' }} />
           </div>
         </button>
 

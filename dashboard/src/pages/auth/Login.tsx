@@ -40,7 +40,7 @@ export default function Login() {
       {/* Logo */}
       <div style={{ marginBottom: '32px', textAlign: 'center' }}>
         <img
-          src="/daedalus.png"
+          src="./daedalus.png"
           alt="Daedalus Logo"
           style={{
             width: '200px',

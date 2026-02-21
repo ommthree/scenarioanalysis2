@@ -19,7 +19,7 @@ export default function Home() {
       }}>
         {/* Video Button - Left aligned */}
         <a
-          href="/Daedalus.mp4"
+          href="./Daedalus.mp4"
           target="_blank"
           rel="noopener noreferrer"
           style={{
@@ -57,7 +57,7 @@ export default function Home() {
 
         {/* Documentation Button - Right aligned */}
         <a
-          href="/DAEDALUS_USER_GUIDE.pdf"
+          href="./DAEDALUS_USER_GUIDE.pdf"
           target="_blank"
           rel="noopener noreferrer"
           style={{
@@ -96,7 +96,7 @@ export default function Home() {
         {/* Large Daedalus Logo */}
         <div style={{ marginBottom: '48px' }}>
           <img
-            src="/daedalus.png"
+            src="./daedalus.png"
             alt="Daedalus Logo"
             style={{
               width: '400px',

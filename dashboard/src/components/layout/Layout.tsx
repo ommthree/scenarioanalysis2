@@ -313,7 +313,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Logo - shown on all screens except home and explore */}
         {location.pathname !== '/' && location.pathname !== '/results/explore' && (
           <img
-            src="/daedalus2.png"
+            src="./daedalus2.png"
             alt="Logo"
             className="absolute z-50"
             style={{

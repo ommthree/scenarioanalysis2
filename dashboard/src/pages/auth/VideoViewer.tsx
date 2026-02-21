@@ -41,7 +41,7 @@ export default function VideoViewer() {
             backgroundColor: '#000'
           }}
         >
-          <source src="/Daedalus.mp4" type="video/mp4" />
+          <source src="./Daedalus.mp4" type="video/mp4" />
           Your browser does not support the video tag.
         </video>
 
