@@ -1,6 +1,0 @@
-apiVersion: v2
-name: scenario-analysis
-description: ScenarioAnalysis2 - Financial & Carbon Modeling Engine
-type: application
-version: 1.0.0
-appVersion: "1.0.0"

@@ -14,59 +14,41 @@ console.log('API key loaded:', apiKey ? `Yes (${apiKey.substring(0, 10)}...)` : 
 
 import express from 'express'
 import cors from 'cors'
+import session from 'express-session'
 import multer from 'multer'
 import sqlite3 from 'sqlite3'
 import { parse } from 'csv-parse/sync'
 import fs from 'fs'
 import path from 'path'
-import { exec } from 'child_process'
-import PDFDocument from 'pdfkit'
-import session from 'express-session'
-import ConnectSqlite3 from 'connect-sqlite3'
+import { exec, spawn } from 'child_process'
+import { promisify } from 'util'
 import * as security from './security.js'
 import StagingService from './staging_service.js'
 import ValidationService from './validation_service.js'
 import LoggingService from './logging_service.js'
 import WhatIfService from './whatif_service.js'
-import authRoutes from './routes/auth.js'
-import adminRoutes from './routes/admin.js'
-import filesRoutes from './routes/files.js'
-import { getMasterDb } from './middleware/database.js'
-import { requireAuth } from './middleware/auth.js'
-import { config } from './config.js'
-
-const SQLiteStore = ConnectSqlite3(session)
+import authRouter from './routes/auth.js'
 
 const app = express()
 const upload = multer({ dest: '/tmp/uploads/' })
 
-app.use(cors({
-  origin: config.corsOrigin,
-  credentials: true
-}))
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ limit: '50mb', extended: true }))
+app.use(cors())
+app.use(express.json())
 
-// Session configuration
+// Session middleware
 app.use(session({
-  store: new SQLiteStore({
-    db: 'sessions.db',
-    dir: config.dataDir
-  }),
-  secret: config.sessionSecret,
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to true only when using HTTPS
     httpOnly: true,
-    maxAge: config.sessionMaxAge
+    secure: false, // Set to true if using HTTPS
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }))
 
-// Mount authentication, admin, and file browsing routes
-app.use('/api/auth', authRoutes)
-app.use('/api/admin', adminRoutes)
-app.use('/api/files', filesRoutes)
+// Mount auth routes
+app.use('/api/auth', authRouter)
 
 /**
  * Load CSV statements into staging table
@@ -150,8 +132,7 @@ app.post('/api/statements/load', upload.single('file'), async (req, res) => {
         _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         ${columnDefs},
         imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        is_mapped INTEGER DEFAULT 0,
-        entity_id INTEGER
+        is_mapped INTEGER DEFAULT 0
       )`, (err) => {
         if (err) {
           console.error('Create table error:', err)
@@ -448,8 +429,7 @@ app.post('/api/scenarios/load-batch', upload.array('files'), async (req, res) =>
             _rowid INTEGER PRIMARY KEY AUTOINCREMENT,
             ${columnDefs},
             imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            is_mapped INTEGER DEFAULT 0,
-            entity_id INTEGER
+            is_mapped INTEGER DEFAULT 0
           )`, (err) => {
             if (err) {
               console.error('Create table error:', err)
@@ -959,9 +939,8 @@ app.post('/api/statements/staging', express.json(), (req, res) => {
       'pnl': 'staging_statement_pnl',
       'bs': 'staging_statement_balance_sheet',
       'balance_sheet': 'staging_statement_balance_sheet',
-      'cf': 'staging_statement_cash_flow',
-      'cashflow': 'staging_statement_cash_flow',
-      'cash_flow': 'staging_statement_cash_flow',
+      'cf': 'staging_statement_cashflow',
+      'cashflow': 'staging_statement_cashflow',
       'carbon': 'staging_statement_carbon'
     }
 
@@ -1301,9 +1280,8 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           'bs': { staging: 'staging_statement_balance_sheet', result: 'bs_result' },
           'balance_sheet': { staging: 'staging_statement_balance_sheet', result: 'bs_result' },
           'carbon': { staging: 'staging_statement_carbon', result: 'carbon_result' },
-          'cf': { staging: 'staging_statement_cash_flow', result: 'cf_result' },
-          'cashflow': { staging: 'staging_statement_cash_flow', result: 'cf_result' },
-          'cash_flow': { staging: 'staging_statement_cash_flow', result: 'cf_result' }
+          'cf': { staging: 'staging_statement_cashflow', result: 'cf_result' },
+          'cashflow': { staging: 'staging_statement_cashflow', result: 'cf_result' }
         }
 
         const tables = tableMap[statementType]
@@ -1354,13 +1332,21 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
         }
 
         // Extract value from staging table
-        // Try both 'value' and 'Initial Value' columns
+        // Balance sheet table: _rowid, line_item, units, value, imported_at, is_mapped
+        // PNL table: _rowid, "Line Item", "Initial Value", imported_at, is_mapped
         let value = null
 
-        if (csvRow['value'] !== undefined && csvRow['value'] !== null) {
-          value = parseFloat(csvRow['value'])
-        } else if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
-          value = parseFloat(csvRow['Initial Value'])
+        // Try different column names depending on statement type
+        if (statementType === 'balance_sheet' || statementType === 'bs') {
+          // Balance sheet uses lowercase 'value' column
+          if (csvRow['value'] !== undefined && csvRow['value'] !== null) {
+            value = parseFloat(csvRow['value'])
+          }
+        } else {
+          // PNL and others use 'Initial Value' column
+          if (csvRow['Initial Value'] !== undefined && csvRow['Initial Value'] !== null) {
+            value = parseFloat(csvRow['Initial Value'])
+          }
         }
 
         if (value === null || isNaN(value)) {
@@ -1369,19 +1355,6 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
         }
 
         console.log('Mapping:', line_item_code, '=', value, 'from row', csv_row_index)
-
-        // Update staging table with entity_id first (before any continue statements)
-        const updateStagingSql = `
-          UPDATE ${security.quoteIdentifier(tables.staging)}
-          SET entity_id = ?, is_mapped = 1
-          WHERE _rowid = ?
-        `
-        insertPromises.push(new Promise((resolve, reject) => {
-          db.run(updateStagingSql, [targetEntityId, csvRow._rowid], (err) => {
-            if (err) reject(err)
-            else resolve()
-          })
-        }))
 
         // Insert into appropriate result table
         let insertSql
@@ -1413,7 +1386,7 @@ app.post('/api/statements/save-mapped-data', express.json(), (req, res) => {
           `
           insertParams = [scenarioId, line_item_code, value]
         } else {
-          // For CF - skip result table insert for now
+          // For CF - skip for now
           // TODO: Implement CF storage
           continue
         }
@@ -1679,19 +1652,6 @@ app.post('/api/statement-templates', (req, res) => {
 
   if (!dbPath || !template) {
     return res.status(400).json({ error: 'Database path and template required' })
-  }
-
-  // Log what we're receiving (for debugging)
-  console.log(`Saving template ${template.code} with ${lineItems?.length || 0} line items`)
-  if (lineItems && lineItems.length > 0) {
-    const taggedItems = lineItems.filter(item =>
-      item.is_mac_numerator || item.is_mac_denominator ||
-      item.is_roi_numerator || item.is_roi_denominator
-    )
-    console.log(`  Tagged items: ${taggedItems.length}`)
-    taggedItems.forEach(item => {
-      console.log(`    ${item.code}: MAC num=${!!item.is_mac_numerator} den=${!!item.is_mac_denominator} ROI num=${!!item.is_roi_numerator} den=${!!item.is_roi_denominator}`)
-    })
   }
 
   const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
@@ -2357,7 +2317,7 @@ app.get('/api/scenarios/staging-columns', (req, res) => {
  */
 app.get('/api/scenarios/staging-preview', (req, res) => {
   try {
-    const { dbPath, tableName, limit } = req.query
+    const { dbPath, tableName, limit = '5' } = req.query
 
     if (!dbPath || !fs.existsSync(dbPath)) {
       return res.status(400).json({ error: 'Invalid database path' })
@@ -2380,11 +2340,9 @@ app.get('/api/scenarios/staging-preview', (req, res) => {
       }
     })
 
-    // If limit is provided, use it; otherwise fetch all rows
-    const query = limit ? `SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?` : `SELECT * FROM ${security.quoteIdentifier(tableName)}`
-    const params = limit ? [parseInt(limit)] : []
+    const limitNum = parseInt(limit) || 5
 
-    db.all(query, params, (err, rows) => {
+    db.all(`SELECT * FROM ${security.quoteIdentifier(tableName)} LIMIT ?`, [limitNum], (err, rows) => {
       db.close()
 
       if (err) {
@@ -3189,55 +3147,6 @@ app.post('/api/locations/save-mapping', async (req, res) => {
 })
 
 /**
- * Get locations by entity IDs
- * GET /api/locations
- * Query params: dbPath, entityIds (comma-separated)
- */
-app.get('/api/locations', (req, res) => {
-  const { dbPath, entityIds } = req.query
-
-  if (!dbPath || !fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Invalid database path' })
-  }
-
-  if (!entityIds) {
-    return res.status(400).json({ error: 'entityIds parameter is required' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-    }
-  })
-
-  const entityIdArray = entityIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
-  const placeholders = entityIdArray.map(() => '?').join(',')
-
-  const query = `
-    SELECT
-      location_id,
-      location_code,
-      location_name,
-      latitude,
-      longitude,
-      entity_id,
-      archetype
-    FROM location
-    WHERE entity_id IN (${placeholders})
-      AND is_active = 1
-    ORDER BY entity_id, location_code
-  `
-
-  db.all(query, entityIdArray, (err, rows) => {
-    db.close()
-    if (err) {
-      return res.status(500).json({ error: 'Failed to fetch locations: ' + err.message })
-    }
-    res.json(rows)
-  })
-})
-
-/**
  * Get full location staging data (all rows)
  * GET /api/locations/staging-full
  * Query params: dbPath, tableName
@@ -3741,431 +3650,6 @@ app.get('/api/locations/get-location-mapping', (req, res) => {
     )
   } catch (error) {
     console.error('Get location mapping error:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
-
-/**
- * Get Monte Carlo simulation results with statistics
- * GET /api/mc-results
- * Query params: dbPath, scenarioId, entityId
- * Returns: scenarioId, entityId, mcPeriod, numDraws, lineItems with statistics
- */
-app.get('/api/mc-results', (req, res) => {
-  try {
-    const { dbPath, scenarioId, entityId } = req.query
-
-    if (!dbPath || !scenarioId || !entityId) {
-      return res.status(400).json({ error: 'Missing required parameters: dbPath, scenarioId, entityId' })
-    }
-
-    if (!fs.existsSync(dbPath)) {
-      return res.status(400).json({ error: 'Database not found' })
-    }
-
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-      }
-    })
-
-    // First, check if MC data exists for this scenario/entity
-    db.get(
-      `SELECT COUNT(*) as count,
-              MAX(period_id) as max_period,
-              MAX(draw_number) as max_draw
-       FROM mc_statement_result
-       WHERE scenario_id = ? AND entity_id = ?`,
-      [scenarioId, entityId],
-      (err, summary) => {
-        if (err) {
-          db.close()
-          return res.status(500).json({ error: 'Failed to query MC data: ' + err.message })
-        }
-
-        if (!summary || summary.count === 0) {
-          db.close()
-          return res.json({
-            scenarioId: parseInt(scenarioId),
-            entityId: parseInt(entityId),
-            mcPeriod: null,
-            numDraws: 0,
-            lineItems: []
-          })
-        }
-
-        const mcPeriod = summary.max_period
-        const numDraws = summary.max_draw // draw_number is 1-indexed
-
-        // Get the statement template for this scenario to fetch line item display names
-        db.get(
-          `SELECT st.json_structure
-           FROM scenario s
-           JOIN statement_template st ON s.statement_template_id = st.template_id
-           WHERE s.scenario_id = ?`,
-          [scenarioId],
-          (err, templateRow) => {
-            if (err) {
-              db.close()
-              return res.status(500).json({ error: 'Failed to query template: ' + err.message })
-            }
-
-            // Parse the template JSON to build a map of code -> display_name and code -> section
-            let lineItemNames = {}
-            let lineItemSections = {}
-            if (templateRow && templateRow.json_structure) {
-              try {
-                const template = JSON.parse(templateRow.json_structure)
-                if (template.line_items && Array.isArray(template.line_items)) {
-                  template.line_items.forEach(item => {
-                    if (item.code && item.display_name) {
-                      lineItemNames[item.code] = item.display_name
-                      lineItemSections[item.code] = item.section || 'Other'
-                    }
-                  })
-                }
-              } catch (e) {
-                console.error('Failed to parse template JSON:', e)
-              }
-            }
-
-            // Get line item codes from MC results
-            db.all(
-              `SELECT DISTINCT msr.line_item_code
-               FROM mc_statement_result msr
-               WHERE msr.scenario_id = ? AND msr.entity_id = ? AND msr.period_id = ?
-               ORDER BY msr.line_item_code`,
-              [scenarioId, entityId, mcPeriod],
-              (err, lineItemRows) => {
-                if (err) {
-                  db.close()
-                  return res.status(500).json({ error: 'Failed to query line items: ' + err.message })
-                }
-
-                // For each line item, calculate statistics across all draws
-                const lineItemPromises = lineItemRows.map((item) => {
-              return new Promise((resolve, reject) => {
-                db.all(
-                  `SELECT value
-                   FROM mc_statement_result
-                   WHERE scenario_id = ?
-                     AND entity_id = ?
-                     AND period_id = ?
-                     AND line_item_code = ?
-                   ORDER BY draw_number`,
-                  [scenarioId, entityId, mcPeriod, item.line_item_code],
-                  (err, values) => {
-                    if (err) {
-                      reject(err)
-                      return
-                    }
-
-                    // Calculate statistics
-                    const sortedValues = values.map(v => v.value).sort((a, b) => a - b)
-                    const n = sortedValues.length
-
-                    if (n === 0) {
-                      resolve(null)
-                      return
-                    }
-
-                    // Calculate percentiles
-                    const getPercentile = (p) => {
-                      const index = Math.ceil((p / 100) * n) - 1
-                      return sortedValues[Math.max(0, Math.min(index, n - 1))]
-                    }
-
-                    const mean = sortedValues.reduce((sum, val) => sum + val, 0) / n
-                    const variance = sortedValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n
-                    const stdDev = Math.sqrt(variance)
-
-                    resolve({
-                      code: item.line_item_code,
-                      name: lineItemNames[item.line_item_code] || item.line_item_code,
-                      section: lineItemSections[item.line_item_code] || 'Other',
-                      mean: mean,
-                      stdDev: stdDev,
-                      p5: getPercentile(5),
-                      p25: getPercentile(25),
-                      p50: getPercentile(50),
-                      p75: getPercentile(75),
-                      p95: getPercentile(95)
-                    })
-                  }
-                )
-              })
-            })
-
-            Promise.all(lineItemPromises)
-              .then((lineItems) => {
-                db.close()
-                res.json({
-                  success: true,
-                  scenarioId: parseInt(scenarioId),
-                  entityId: parseInt(entityId),
-                  mcPeriod: mcPeriod,
-                  numDraws: numDraws,
-                  lineItems: lineItems.filter(item => item !== null)
-                })
-              })
-              .catch((err) => {
-                db.close()
-                res.status(500).json({ error: 'Failed to calculate statistics: ' + err.message })
-              })
-          })
-        })
-      }
-    )
-  } catch (error) {
-    console.error('MC results error:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
-
-/**
- * Get Monte Carlo timeseries for a specific line item (for Fan Chart)
- * GET /api/mc-timeseries
- * Query params: dbPath, scenarioId, entityId, lineItemCode
- * Returns: periods, deterministic values, and percentile bands across time
- */
-app.get('/api/mc-timeseries', (req, res) => {
-  try {
-    const { dbPath, scenarioId, entityId, lineItemCode } = req.query
-
-    if (!dbPath || !scenarioId || !entityId || !lineItemCode) {
-      return res.status(400).json({ error: 'Missing required parameters' })
-    }
-
-    if (!fs.existsSync(dbPath)) {
-      return res.status(400).json({ error: 'Database not found' })
-    }
-
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-      }
-    })
-
-    // Get all periods with MC data
-    db.all(
-      `SELECT DISTINCT period_id FROM mc_statement_result
-       WHERE scenario_id = ? AND entity_id = ? AND line_item_code = ?
-       ORDER BY period_id`,
-      [scenarioId, entityId, lineItemCode],
-      (err, periodRows) => {
-        if (err) {
-          db.close()
-          return res.status(500).json({ error: 'Failed to query periods: ' + err.message })
-        }
-
-        if (periodRows.length === 0) {
-          db.close()
-          return res.json({ success: false, error: 'No MC timeseries data found' })
-        }
-
-        const periods = periodRows.map(row => row.period_id)
-
-        // Get deterministic values (from statement_result)
-        db.all(
-          `SELECT period_id, value FROM statement_result
-           WHERE scenario_id = ? AND entity_id = ? AND line_item_code = ? AND what_if_combination = ''
-           ORDER BY period_id`,
-          [scenarioId, entityId, lineItemCode],
-          (err, deterministicRows) => {
-            if (err) {
-              db.close()
-              return res.status(500).json({ error: 'Failed to query deterministic: ' + err.message })
-            }
-
-            const deterministicMap = {}
-            deterministicRows.forEach(row => {
-              deterministicMap[row.period_id] = row.value
-            })
-
-            // For each period, get MC draws and calculate percentiles
-            const periodPromises = periods.map((period) => {
-              return new Promise((resolve, reject) => {
-                db.all(
-                  `SELECT value FROM mc_statement_result
-                   WHERE scenario_id = ? AND entity_id = ? AND line_item_code = ? AND period_id = ?
-                   ORDER BY draw_number`,
-                  [scenarioId, entityId, lineItemCode, period],
-                  (err, values) => {
-                    if (err) {
-                      reject(err)
-                      return
-                    }
-
-                    const sortedValues = values.map(v => v.value).sort((a, b) => a - b)
-                    const n = sortedValues.length
-
-                    if (n === 0) {
-                      resolve(null)
-                      return
-                    }
-
-                    const getPercentile = (p) => {
-                      const index = Math.ceil((p / 100) * n) - 1
-                      return sortedValues[Math.max(0, Math.min(index, n - 1))]
-                    }
-
-                    resolve({
-                      period: period,
-                      p1: getPercentile(1),
-                      p5: getPercentile(5),
-                      p25: getPercentile(25),
-                      p50: getPercentile(50),
-                      p75: getPercentile(75),
-                      p95: getPercentile(95),
-                      p99: getPercentile(99)
-                    })
-                  }
-                )
-              })
-            })
-
-            Promise.all(periodPromises)
-              .then((periodStats) => {
-                db.close()
-
-                const validStats = periodStats.filter(s => s !== null)
-
-                // Build arrays in period order
-                const p1 = validStats.map(s => s.p1)
-                const p5 = validStats.map(s => s.p5)
-                const p25 = validStats.map(s => s.p25)
-                const p50 = validStats.map(s => s.p50)
-                const p75 = validStats.map(s => s.p75)
-                const p95 = validStats.map(s => s.p95)
-                const p99 = validStats.map(s => s.p99)
-                const deterministic = periods.map(p => deterministicMap[p] || 0)
-
-                res.json({
-                  success: true,
-                  timeseries: {
-                    periods: periods,
-                    deterministic: deterministic,
-                    statistics: {
-                      p1: p1,
-                      p5: p5,
-                      p25: p25,
-                      p50: p50,
-                      p75: p75,
-                      p95: p95,
-                      p99: p99
-                    }
-                  }
-                })
-              })
-              .catch((err) => {
-                db.close()
-                res.status(500).json({ error: 'Failed to calculate timeseries: ' + err.message })
-              })
-          }
-        )
-      }
-    )
-  } catch (error) {
-    console.error('MC timeseries error:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
-
-/**
- * Get Monte Carlo draw distribution for exploration/analysis
- * GET /api/monte-carlo/distribution
- * Query params: dbPath, scenarioId, periodId, entityId, lineItemCode
- * Returns: nested structure with distribution object containing values and statistics
- * Used by: Explore -> Monte Carlo page
- */
-app.get('/api/monte-carlo/distribution', (req, res) => {
-  try {
-    const { dbPath, scenarioId, periodId, entityId, lineItemCode } = req.query
-
-    if (!dbPath || !scenarioId || !periodId || !entityId || !lineItemCode) {
-      return res.status(400).json({ error: 'Missing required parameters' })
-    }
-
-    if (!fs.existsSync(dbPath)) {
-      return res.status(400).json({ error: 'Database not found' })
-    }
-
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-      }
-    })
-
-    // Get all draw values for this specific line item and period
-    db.all(
-      `SELECT draw_number, value FROM mc_statement_result
-       WHERE scenario_id = ? AND period_id = ? AND entity_id = ? AND line_item_code = ?
-       ORDER BY draw_number`,
-      [scenarioId, periodId, entityId, lineItemCode],
-      (err, rows) => {
-        db.close()
-
-        if (err) {
-          return res.status(500).json({ error: 'Failed to query distribution: ' + err.message })
-        }
-
-        if (rows.length === 0) {
-          return res.json({ success: false, error: 'No distribution data found' })
-        }
-
-        const values = rows.map(r => r.value)
-        const sortedValues = [...values].sort((a, b) => a - b)
-        const n = sortedValues.length
-
-        // Calculate statistics
-        const mean = values.reduce((sum, val) => sum + val, 0) / n
-        const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n
-        const std = Math.sqrt(variance)
-
-        const getPercentile = (p) => {
-          const index = Math.ceil((p / 100) * n) - 1
-          return sortedValues[Math.max(0, Math.min(index, n - 1))]
-        }
-
-        const median = getPercentile(50)
-        const min = sortedValues[0]
-        const max = sortedValues[n - 1]
-
-        // Calculate skewness and kurtosis
-        const m3 = values.reduce((sum, val) => sum + Math.pow((val - mean) / std, 3), 0) / n
-        const m4 = values.reduce((sum, val) => sum + Math.pow((val - mean) / std, 4), 0) / n
-        const skew = m3
-        const kurtosis = m4 - 3 // Excess kurtosis
-
-        res.json({
-          success: true,
-          distribution: {
-            numDraws: n,
-            values: values,
-            statistics: {
-              mean: mean,
-              median: median,
-              std: std,
-              min: min,
-              max: max,
-              skew: skew,
-              kurtosis: kurtosis
-            },
-            percentiles: {
-              p5: getPercentile(5),
-              p10: getPercentile(10),
-              p25: getPercentile(25),
-              p50: median,
-              p75: getPercentile(75),
-              p90: getPercentile(90),
-              p95: getPercentile(95)
-            }
-          }
-        })
-      }
-    )
-  } catch (error) {
-    console.error('MC distribution error:', error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -5430,181 +4914,65 @@ app.get('/api/scenarios/list', (req, res) => {
     }
   })
 
-  // Get scenarios with num_periods and extract file_id from code (format: SCENARIO_X_FILEY)
-  db.all('SELECT scenario_id, code, name, description, statement_template_id FROM scenario ORDER BY name', [], (err, rows) => {
+  // Get scenarios and extract file_id from code (format: SCENARIO_X_FILEY)
+  db.all('SELECT scenario_id, code, name, description FROM scenario ORDER BY name', [], (err, rows) => {
     if (err) {
       db.close()
       return res.status(500).json({ error: 'Failed to fetch scenarios: ' + err.message })
     }
 
-    // Get period counts for all scenarios
+    // Parse codes to extract file IDs and fetch file names
+    const fileIds = new Set()
+    rows.forEach(row => {
+      const match = row.code.match(/FILE(\d+)/i)
+      if (match) {
+        fileIds.add(parseInt(match[1]))
+      }
+    })
+
+    if (fileIds.size === 0) {
+      db.close()
+      return res.json({ success: true, scenarios: rows })
+    }
+
+    // Fetch file names for the extracted file IDs
+    const placeholders = Array.from(fileIds).map(() => '?').join(',')
     db.all(
-      `SELECT scenario_id, COUNT(DISTINCT period_id) as num_periods
-       FROM statement_result
-       GROUP BY scenario_id`,
-      [],
-      (err, periodCounts) => {
+      `SELECT file_id, file_name FROM staged_file WHERE file_id IN (${placeholders})`,
+      Array.from(fileIds),
+      (err, files) => {
+        db.close()
         if (err) {
-          db.close()
-          return res.status(500).json({ error: 'Failed to fetch period counts: ' + err.message })
+          console.error('Error fetching file names:', err)
+          return res.json({ success: true, scenarios: rows })
         }
 
-        // Create period count map
-        const periodMap = {}
-        periodCounts.forEach(p => {
-          periodMap[p.scenario_id] = p.num_periods
+        // Create a map of file_id -> file_name
+        const fileMap = {}
+        files.forEach(f => {
+          fileMap[f.file_id] = f.file_name
         })
 
-        // Parse codes to extract file IDs and fetch file names
-        const fileIds = new Set()
-        rows.forEach(row => {
-          const match = row.code.match(/FILE(\d+)/i)
+        // Add file info to scenarios
+        const enrichedScenarios = rows.map(row => {
+          const match = row.code.match(/SCENARIO_(\d+)_FILE(\d+)/i)
           if (match) {
-            fileIds.add(parseInt(match[1]))
+            const scenarioNum = match[1]
+            const fileId = parseInt(match[2])
+            return {
+              ...row,
+              scenario_number: scenarioNum,
+              source_file_id: fileId,
+              source_file_name: fileMap[fileId] || 'unknown'
+            }
           }
+          return row
         })
 
-        if (fileIds.size === 0) {
-          // Add num_periods to scenarios even if no files
-          const scenariosWithPeriods = rows.map(row => ({
-            ...row,
-            num_periods: periodMap[row.scenario_id] || 0
-          }))
-          db.close()
-          return res.json({ success: true, scenarios: scenariosWithPeriods })
-        }
-
-        // Fetch file names for the extracted file IDs
-        const placeholders = Array.from(fileIds).map(() => '?').join(',')
-        db.all(
-          `SELECT file_id, file_name FROM staged_file WHERE file_id IN (${placeholders})`,
-          Array.from(fileIds),
-          (err, files) => {
-            db.close()
-            if (err) {
-              console.error('Error fetching file names:', err)
-              const scenariosWithPeriods = rows.map(row => ({
-                ...row,
-                num_periods: periodMap[row.scenario_id] || 0
-              }))
-              return res.json({ success: true, scenarios: scenariosWithPeriods })
-            }
-
-            // Create a map of file_id -> file_name
-            const fileMap = {}
-            files.forEach(f => {
-              fileMap[f.file_id] = f.file_name
-            })
-
-            // Add file info and num_periods to scenarios
-            const enrichedScenarios = rows.map(row => {
-              const match = row.code.match(/SCENARIO_(\d+)_FILE(\d+)/i)
-              if (match) {
-                const scenarioNum = match[1]
-                const fileId = parseInt(match[2])
-                return {
-                  ...row,
-                  scenario_number: scenarioNum,
-                  source_file_id: fileId,
-                  source_file_name: fileMap[fileId] || 'unknown',
-                  num_periods: periodMap[row.scenario_id] || 0
-                }
-              }
-              return {
-                ...row,
-                num_periods: periodMap[row.scenario_id] || 0
-              }
-            })
-
-            res.json({ success: true, scenarios: enrichedScenarios })
-          }
-        )
+        res.json({ success: true, scenarios: enrichedScenarios })
       }
     )
   })
-})
-
-/**
- * Get scenario drivers with their values across all periods
- * GET /api/scenarios/:scenarioId/drivers
- */
-app.get('/api/scenarios/:scenarioId/drivers', (req, res) => {
-  const { scenarioId } = req.params
-  const { dbPath } = req.query
-
-  if (!dbPath) {
-    return res.status(400).json({ error: 'dbPath is required' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-    }
-  })
-
-  // Get all scenario_drivers with driver names
-  db.all(
-    `SELECT
-      sd.scenario_driver_id,
-      sd.scenario_id,
-      sd.period_id,
-      sd.driver_code,
-      sd.value,
-      sd.unit_code,
-      d.name as driver_name
-    FROM scenario_drivers sd
-    LEFT JOIN driver d ON sd.driver_code = d.code
-    WHERE sd.scenario_id = ?
-    ORDER BY sd.driver_code, sd.period_id`,
-    [scenarioId],
-    (err, rows) => {
-      db.close()
-      if (err) {
-        return res.status(500).json({ error: 'Failed to fetch scenario drivers: ' + err.message })
-      }
-      res.json({ success: true, drivers: rows })
-    }
-  )
-})
-
-/**
- * Get statement results for a scenario
- * GET /api/scenarios/:scenarioId/results
- */
-app.get('/api/scenarios/:scenarioId/results', (req, res) => {
-  const { scenarioId } = req.params
-  const { dbPath } = req.query
-
-  if (!dbPath) {
-    return res.status(400).json({ error: 'dbPath is required' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-    }
-  })
-
-  // Get all statement results for this scenario
-  db.all(
-    `SELECT
-      sr.scenario_id,
-      sr.period_id,
-      sr.line_item_code as item_code,
-      sr.line_item_code as item_name,
-      sr.value
-    FROM statement_result sr
-    WHERE sr.scenario_id = ?
-    ORDER BY sr.line_item_code, sr.period_id`,
-    [scenarioId],
-    (err, rows) => {
-      db.close()
-      if (err) {
-        return res.status(500).json({ error: 'Failed to fetch scenario results: ' + err.message })
-      }
-      res.json({ success: true, results: rows })
-    }
-  )
 })
 
 /**
@@ -6144,11 +5512,10 @@ app.get('/api/action-transformations', (req, res) => {
   })
 
   db.all(
-    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, period, created_at,
-            COALESCE(is_carbon_transformation, 0) as is_carbon_transformation
+    `SELECT transformation_id, action_code, line_item, type, new_formula, comment, created_at
      FROM action_transformation
      WHERE action_code = ?
-     ORDER BY period NULLS LAST, transformation_id`,
+     ORDER BY transformation_id`,
     [action_code],
     (err, rows) => {
       db.close()
@@ -6188,12 +5555,12 @@ app.post('/api/action-transformations/save', (req, res) => {
       // Insert new transformations
       if (transformations && transformations.length > 0) {
         const stmt = db.prepare(`
-          INSERT INTO action_transformation (action_code, line_item, type, new_formula, comment, period)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO action_transformation (action_code, line_item, type, new_formula, comment)
+          VALUES (?, ?, ?, ?, ?)
         `)
 
         for (const t of transformations) {
-          stmt.run([action_code, t.line_item, t.type, t.new_formula, t.comment || null, t.period || null])
+          stmt.run([action_code, t.line_item, t.type, t.new_formula, t.comment || null])
         }
 
         stmt.finalize((err) => {
@@ -6662,8 +6029,7 @@ app.post('/api/ingest/statements', async (req, res) => {
                   break
                 case 'cashflow':
                 case 'cf':
-                case 'cash_flow':
-                  stagingTable = 'staging_statement_cash_flow'
+                  stagingTable = 'staging_statement_cashflow'
                   break
                 case 'carbon':
                   stagingTable = 'staging_statement_carbon'
@@ -6690,26 +6056,18 @@ app.post('/api/ingest/statements', async (req, res) => {
                 }
 
                 const value = parseFloat(csvRow.Value || csvRow.value || 0)
-                const units = csvRow.units || csvRow.Units || csvRow.currency || csvRow.Currency || null
-                // Extract entity_id from entity_path (last element is the leaf entity)
-                const entityId = hm.entity_path && hm.entity_path.length > 0
-                  ? hm.entity_path[hm.entity_path.length - 1]
-                  : null
 
                 logDebug(`Inserting into ${stagingTable}:`, {
                   source_csv_row: hm.csv_row_index,
                   source_csv_value: csvRow.Value || csvRow.value,
                   parsed_value: value,
-                  units: units,
-                  line_item_code: hm.line_item_code,
-                  entity_id: entityId,
-                  entity_path: hm.entity_path
+                  line_item_code: hm.line_item_code
                 })
 
                 await new Promise((res, rej) => {
                   db.run(
-                    `INSERT INTO ${stagingTable} (line_item, units, value, entity_id) VALUES (?, ?, ?, ?)`,
-                    [hm.line_item_code, units, value.toString(), entityId],
+                    `INSERT INTO ${stagingTable} (line_item, value) VALUES (?, ?)`,
+                    [hm.line_item_code, value.toString()],
                     (err) => (err ? rej(err) : (totalInserted++, res()))
                   )
                 })
@@ -6838,13 +6196,8 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               let scenariosCreated = 0
               let driversInserted = 0
               const errors = []
-              let firstMappingId = null
 
               for (const mapping of mappings) {
-                // Capture the first mapping_id to return to the frontend
-                if (firstMappingId === null) {
-                  firstMappingId = mapping.mapping_id
-                }
             try {
               logVerbose(`Processing CSV file: ${mapping.file_name}`)
               logDebug('Mapping record from scenario_mapping table:', {
@@ -6946,29 +6299,10 @@ app.post('/api/ingest/scenarios', async (req, res) => {
                       if (err) {
                         logDebug(`[TEMPLATE_LOOKUP] ERROR: ${err.message}`)
                         rej(err)
-                      } else if (row?.template_id) {
-                        logDebug(`[TEMPLATE_LOOKUP] Query result: ${JSON.stringify(row)}, resolved templateId = ${row.template_id}`)
-                        res(row.template_id)
                       } else {
-                        // Fallback: query for active template instead of hardcoding template_id = 1
-                        logDebug(`[TEMPLATE_LOOKUP] No template found for code '${mapping.template_code}', querying for active template`)
-                        db.get(
-                          'SELECT template_id FROM statement_template WHERE is_active = 1 LIMIT 1',
-                          [],
-                          (err2, row2) => {
-                            if (err2) {
-                              logDebug(`[TEMPLATE_LOOKUP] ERROR querying active template: ${err2.message}`)
-                              rej(err2)
-                            } else if (row2?.template_id) {
-                              logDebug(`[TEMPLATE_LOOKUP] Using active template: ${row2.template_id}`)
-                              res(row2.template_id)
-                            } else {
-                              const error = new Error(`No template found for code '${mapping.template_code}' and no active template exists`)
-                              logDebug(`[TEMPLATE_LOOKUP] FATAL: ${error.message}`)
-                              rej(error)
-                            }
-                          }
-                        )
+                        const id = row?.template_id || 1
+                        logDebug(`[TEMPLATE_LOOKUP] Query result: ${JSON.stringify(row)}, resolved templateId = ${id}`)
+                        res(id)
                       }
                     }
                   )
@@ -7166,7 +6500,7 @@ app.post('/api/ingest/scenarios', async (req, res) => {
               if (errors.length > 0) {
                 reject(new Error(errors.join('; ')))
               } else {
-                resolve({ scenarios: scenariosCreated, drivers: driversInserted, mappingId: firstMappingId })
+                resolve({ scenarios: scenariosCreated, drivers: driversInserted })
               }
             }
           )
@@ -7320,37 +6654,49 @@ app.get('/api/results/statement', (req, res) => {
       // Now query statement_result for calculated values
       // If entityId is provided, filter by that entity; otherwise get latest entity
       let query, params
-      const whatIfFilter = whatIfCombination ? ' AND what_if_combination = ?' : ''
+
+      // Build WHERE clause with what-if combination filter
+      const whatIfFilter = whatIfCombination
+        ? `AND what_if_combination = ?`
+        : `AND what_if_combination IS NULL`
 
       if (scenarioId) {
         // Use specific scenario
         if (entityId) {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ? AND entity_id = ? AND scenario_id = ?${whatIfFilter}
+                   WHERE period_id = ? AND entity_id = ? AND scenario_id = ? ${whatIfFilter}
                    LIMIT 100`
-          params = whatIfCombination ? [period, entityId, scenarioId, whatIfCombination] : [period, entityId, scenarioId]
+          params = whatIfCombination
+            ? [period, entityId, scenarioId, whatIfCombination]
+            : [period, entityId, scenarioId]
         } else {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ? AND scenario_id = ?${whatIfFilter}
-                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ? AND scenario_id = ?${whatIfFilter})
+                   WHERE period_id = ? AND scenario_id = ? ${whatIfFilter}
+                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ? AND scenario_id = ? ${whatIfFilter})
                    LIMIT 100`
-          params = whatIfCombination ? [period, scenarioId, whatIfCombination, period, scenarioId, whatIfCombination] : [period, scenarioId, period, scenarioId]
+          params = whatIfCombination
+            ? [period, scenarioId, whatIfCombination, period, scenarioId, whatIfFilter]
+            : [period, scenarioId, period, scenarioId]
         }
       } else {
         // Default to latest scenario
         if (entityId) {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ? AND entity_id = ?${whatIfFilter}
+                   WHERE period_id = ? AND entity_id = ? ${whatIfFilter}
                    AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
                    LIMIT 100`
-          params = whatIfCombination ? [period, entityId, whatIfCombination] : [period, entityId]
+          params = whatIfCombination
+            ? [period, entityId, whatIfCombination]
+            : [period, entityId]
         } else {
           query = `SELECT line_item_code, value FROM statement_result
-                   WHERE period_id = ?${whatIfFilter}
+                   WHERE period_id = ? ${whatIfFilter}
                    AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result)
-                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ?${whatIfFilter})
+                   AND entity_id = (SELECT MAX(entity_id) FROM statement_result WHERE period_id = ? ${whatIfFilter})
                    LIMIT 100`
-          params = whatIfCombination ? [period, whatIfCombination, period, whatIfCombination] : [period, period]
+          params = whatIfCombination
+            ? [period, whatIfCombination, period, whatIfFilter]
+            : [period, period]
         }
       }
 
@@ -7386,8 +6732,8 @@ app.get('/api/results/statement', (req, res) => {
           })
 
           // Debug: Log line items with sign convention
-          console.log('[Statement Results] Line items with sign_convention:',
-            lineItems.map(li => ({ code: li.code, sign_convention: li.sign_convention })))
+//           console.log('[Statement Results] Line items with sign_convention:',
+//             lineItems.map(li => ({ code: li.code, sign_convention: li.sign_convention })))
 
           // Sort by section and display_order
           lineItems.sort((a, b) => {
@@ -7458,90 +6804,40 @@ app.get('/api/results/driver-decomposition', (req, res) => {
     }
   })
 
-  let query, params
-  const whatIfFilter = whatIfCombination ? ' AND what_if_combination = ?' : ''
+  // Build WHERE clause with what-if combination filter
+  const whatIfFilter = whatIfCombination
+    ? `AND what_if_combination = ?`
+    : `AND what_if_combination IS NULL`
 
+  let query, params
   if (scenarioId) {
-    query = `SELECT
-               srbd.driver_code,
-               srbd.value,
-               d.name as driver_name,
-               d.category
-             FROM statement_result_by_driver srbd
-             LEFT JOIN driver d ON srbd.driver_code = d.code
-             WHERE srbd.period_id = ? AND srbd.entity_id = ? AND srbd.line_item_code = ? AND srbd.scenario_id = ?${whatIfFilter}
-             ORDER BY srbd.driver_code`
-    params = whatIfCombination ? [period, entityId, lineItemCode, scenarioId, whatIfCombination] : [period, entityId, lineItemCode, scenarioId]
+    query = `SELECT driver_code, value
+             FROM statement_result_by_driver
+             WHERE period_id = ? AND entity_id = ? AND line_item_code = ? AND scenario_id = ? ${whatIfFilter}
+             ORDER BY driver_code`
+    params = whatIfCombination
+      ? [period, entityId, lineItemCode, scenarioId, whatIfCombination]
+      : [period, entityId, lineItemCode, scenarioId]
   } else {
     // Default to latest scenario for backward compatibility
-    query = `SELECT
-               srbd.driver_code,
-               srbd.value,
-               d.name as driver_name,
-               d.category
-             FROM statement_result_by_driver srbd
-             LEFT JOIN driver d ON srbd.driver_code = d.code
-             WHERE srbd.period_id = ? AND srbd.entity_id = ? AND srbd.line_item_code = ?${whatIfFilter}
-             AND srbd.scenario_id = (SELECT MAX(scenario_id) FROM statement_result_by_driver)
-             ORDER BY srbd.driver_code`
-    params = whatIfCombination ? [period, entityId, lineItemCode, whatIfCombination] : [period, entityId, lineItemCode]
+    query = `SELECT driver_code, value
+             FROM statement_result_by_driver
+             WHERE period_id = ? AND entity_id = ? AND line_item_code = ? ${whatIfFilter}
+             AND scenario_id = (SELECT MAX(scenario_id) FROM statement_result_by_driver)
+             ORDER BY driver_code`
+    params = whatIfCombination
+      ? [period, entityId, lineItemCode, whatIfCombination]
+      : [period, entityId, lineItemCode]
   }
 
   db.all(query, params, (err, rows) => {
+    db.close()
+
     if (err) {
-      db.close()
       return res.status(500).json({ error: err.message })
     }
 
-    // Get line item total value and sign convention
-    const lineItemQuery = `
-      SELECT AVG(value) as value
-      FROM statement_result
-      WHERE scenario_id = ? AND period_id = ? AND entity_id = ? AND line_item_code = ?
-    `
-
-    // Get sign convention from template
-    const templateQuery = `
-      SELECT st.json_structure
-      FROM statement_template st
-      JOIN scenario s ON s.statement_template_id = st.template_id
-      WHERE s.scenario_id = ?
-    `
-
-    db.get(lineItemQuery, [scenarioId, period, entityId, lineItemCode], (err2, lineItemRow) => {
-      if (err2) {
-        db.close()
-        return res.status(500).json({ error: err2.message })
-      }
-
-      db.get(templateQuery, [scenarioId], (err3, templateRow) => {
-        db.close()
-
-        if (err3) {
-          return res.status(500).json({ error: err3.message })
-        }
-
-        let signConvention = 'positive'
-        if (templateRow && templateRow.json_structure) {
-          try {
-            const template = JSON.parse(templateRow.json_structure)
-            const lineItem = template.line_items?.find(li => li.code === lineItemCode)
-            if (lineItem) {
-              signConvention = lineItem.sign_convention || 'positive'
-            }
-          } catch (e) {
-            console.error('Failed to parse template JSON:', e)
-          }
-        }
-
-        res.json({
-          success: true,
-          drivers: rows || [],
-          lineItemValue: lineItemRow?.value || 0,
-          signConvention: signConvention
-        })
-      })
-    })
+    res.json({ success: true, drivers: rows || [] })
   })
 })
 
@@ -7582,64 +6878,15 @@ app.post('/api/validate-scenario', (req, res) => {
 })
 
 /**
- * Get driver-to-lineitem mappings for Sankey diagram
- * GET /api/results/driver-mappings
- * Query params: dbPath, scenarioId, entityId, period
+ * POST /api/whatif/combinations
+ * Body: { dbPath, scenarioId }
+ * Returns: { success, combinations: [{combination, action_codes, label, index}] }
  */
-app.get('/api/results/driver-mappings', (req, res) => {
-  const { dbPath, scenarioId, entityId, period } = req.query
+app.post('/api/whatif/combinations', (req, res) => {
+  const { dbPath, scenarioId } = req.body
 
-  if (!dbPath || !scenarioId || !entityId || !period) {
-    return res.status(400).json({ error: 'Database path, scenarioId, entityId, and period are required' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database' })
-    }
-  })
-
-  // Query distinct driver-to-lineitem mappings with metadata
-  // Filter to only include P&L line items (not BS or CF)
-  const query = `
-    SELECT DISTINCT
-      srd.driver_code,
-      srd.line_item_code,
-      d.category as driver_category,
-      CASE WHEN srd.driver_code = srd.line_item_code THEN 1 ELSE 0 END as is_direct
-    FROM statement_result_by_driver srd
-    LEFT JOIN driver d ON srd.driver_code = d.code
-    WHERE srd.scenario_id = ? AND srd.entity_id = ? AND srd.period_id = ?
-      AND srd.line_item_code IN ('REVENUE', 'EXPENSES', 'NET_INCOME', 'RETAINED_EARNINGS', 'TOTAL_EQUITY',
-                                  'GROSS_PROFIT', 'EBITDA', 'EBIT', 'EBT', 'OPERATING_EXPENSES',
-                                  'COGS', 'DEPRECIATION', 'AMORTIZATION', 'INTEREST_EXPENSE',
-                                  'TAX_EXPENSE', 'OTHER_INCOME', 'OTHER_EXPENSES')
-    ORDER BY srd.driver_code, srd.line_item_code
-  `
-
-  db.all(query, [scenarioId, entityId, period], (err, rows) => {
-    if (err) {
-      db.close()
-      return res.status(500).json({ error: err.message })
-    }
-
-    db.close()
-    res.json({ success: true, mappings: rows })
-  })
-})
-
-/**
- * Calculate MAC curve for what-if scenario
- * GET /api/results/mac-curve
- * Query params: dbPath, scenarioId, entityId, startPeriod, endPeriod
- *
- * UPDATED: Now uses tagged line items from statement template instead of hardcoded values
- */
-app.get('/api/results/mac-curve', (req, res) => {
-  const { dbPath, scenarioId, entityId, startPeriod, endPeriod } = req.query
-
-  if (!dbPath || !scenarioId || !entityId || !startPeriod || !endPeriod) {
-    return res.status(400).json({ error: 'Missing required parameters' })
+  if (!dbPath || !scenarioId) {
+    return res.status(400).json({ error: 'dbPath and scenarioId are required' })
   }
 
   if (!fs.existsSync(dbPath)) {
@@ -7652,181 +6899,29 @@ app.get('/api/results/mac-curve', (req, res) => {
     }
   })
 
-  // Step 1: Get template_id for this scenario
-  const templateQuery = `
-    SELECT st.template_id, st.json_structure
-    FROM scenario s
-    JOIN statement_template st ON s.statement_template_id = st.template_id
-    WHERE s.scenario_id = ?
-  `
+  const whatIfService = new WhatIfService(db)
 
-  db.get(templateQuery, [scenarioId], (err, template) => {
-    if (err || !template) {
+  whatIfService.generateCombinations(scenarioId)
+    .then(combinations => {
       db.close()
-      return res.status(500).json({ error: 'Failed to query template: ' + (err?.message || 'Template not found') })
-    }
-
-    // Step 2: Parse json_structure to find MAC-tagged line items
-    let lineItems
-    try {
-      const parsed = JSON.parse(template.json_structure)
-      // Support both line_items (stored format) and lineItems (legacy format)
-      lineItems = parsed.line_items || parsed.lineItems || []
-    } catch (e) {
-      db.close()
-      return res.status(500).json({ error: 'Failed to parse template structure' })
-    }
-
-    const macNumeratorCodes = lineItems.filter(item => item.is_mac_numerator).map(item => item.code)
-    const macDenominatorCodes = lineItems.filter(item => item.is_mac_denominator).map(item => item.code)
-
-    if (macNumeratorCodes.length === 0 || macDenominatorCodes.length === 0) {
-      db.close()
-      return res.status(400).json({ error: 'No MAC numerator or denominator tagged in template. Please tag line items in Define Statements.' })
-    }
-
-    // Step 3: Get the list of MAC-relevant action codes
-    const macActionsQuery = `
-      SELECT action_code
-      FROM management_action
-      WHERE is_mac_relevant = 1
-    `
-
-    db.all(macActionsQuery, [], (err, macActions) => {
-      if (err) {
-        db.close()
-        return res.status(500).json({ error: 'Failed to query MAC-relevant actions: ' + err.message })
-      }
-
-      const macActionCodes = new Set(macActions.map(a => a.action_code))
-
-      // Step 4: Build dynamic SQL with tagged line item codes
-      const allMacCodes = [...macNumeratorCodes, ...macDenominatorCodes]
-      const placeholders = allMacCodes.map(() => '?').join(',')
-
-      const sql = `
-        SELECT
-          sr.what_if_combination,
-          sr.period_id,
-          sr.line_item_code,
-          sr.value
-        FROM statement_result sr
-        WHERE sr.scenario_id = ?
-          AND sr.entity_id = ?
-          AND sr.period_id BETWEEN ? AND ?
-          AND sr.line_item_code IN (${placeholders})
-        ORDER BY sr.what_if_combination, sr.period_id, sr.line_item_code
-      `
-
-      const params = [scenarioId, entityId, startPeriod, endPeriod, ...allMacCodes]
-
-      db.all(sql, params, (err, rows) => {
-        if (err) {
-          db.close()
-          return res.status(500).json({ error: 'Database query failed: ' + err.message })
-        }
-
-        console.log(`\n=== MAC Calculation Debug ===`)
-        console.log(`Query returned ${rows.length} rows`)
-        console.log(`MAC Numerator codes: ${JSON.stringify(macNumeratorCodes)}`)
-        console.log(`MAC Denominator codes: ${JSON.stringify(macDenominatorCodes)}`)
-        console.log(`First 5 rows:`, rows.slice(0, 5))
-
-        // Step 5: Group by combination and accumulate numerator/denominator values
-        const combinationData = {}
-        rows.forEach(row => {
-          const combo = row.what_if_combination || ''
-          if (!combinationData[combo]) {
-            combinationData[combo] = {
-              numerator: 0,      // Cost (e.g. lost net income)
-              denominator: 0      // Carbon (e.g. total emissions)
-            }
-          }
-
-          // Sum up values across periods
-          if (macNumeratorCodes.includes(row.line_item_code)) {
-            combinationData[combo].numerator += row.value
-          } else if (macDenominatorCodes.includes(row.line_item_code)) {
-            combinationData[combo].denominator += row.value
-          }
-        })
-
-        console.log(`\nCombination data keys: ${JSON.stringify(Object.keys(combinationData))}`)
-        console.log(`Combination data:`, combinationData)
-
-        // Step 6: Find base case (no actions = empty combination)
-        const baseCase = combinationData[''] || combinationData['BASE'] || combinationData['NONE'] || null
-        if (!baseCase) {
-          db.close()
-          return res.status(400).json({ error: 'Base case (no actions) not found in results' })
-        }
-
-        const baseNumerator = baseCase.numerator
-        const baseDenominator = baseCase.denominator
-
-        // Step 7: Calculate MAC for each single-action combination
-        const macResults = []
-        Object.keys(combinationData).forEach(combo => {
-          if (!combo || combo === '' || combo === 'BASE' || combo === 'NONE') return // Skip base case
-
-          // Check if this is a single-action combination (no + signs)
-          if (combo.includes('+')) return // Skip multi-action combinations
-
-          // Check if this action is MAC-relevant
-          if (!macActionCodes.has(combo)) return // Skip non-MAC-relevant actions
-
-          const data = combinationData[combo]
-          const numerator = data.numerator
-          const denominator = data.denominator
-
-          // Calculate deltas (positive = reduction/cost)
-          const denominatorAbatement = baseDenominator - denominator  // Positive = denominator reduced (e.g., carbon reduced)
-          const cost = baseNumerator - numerator  // Positive = numerator reduced (e.g., income loss = cost)
-
-          // Skip actions with zero denominator impact (can't calculate meaningful MAC)
-          if (denominatorAbatement === 0) return
-
-          // Calculate MAC (cost per unit of denominator abatement)
-          const mac = cost / denominatorAbatement
-
-          macResults.push({
-            action: combo,
-            carbonAbatement: denominatorAbatement,  // Keep name for backwards compatibility
-            cost,
-            mac
-          })
-        })
-
-        // Sort by MAC (ascending - lowest cost per unit first)
-        macResults.sort((a, b) => a.mac - b.mac)
-
-        db.close()
-        res.json({
-          success: true,
-          baseCase: {
-            totalCarbon: baseDenominator,  // Keep name for backwards compatibility
-            netIncome: baseNumerator
-          },
-          macCurve: macResults
-        })
-      })
+      res.json({ success: true, combinations })
     })
-  })
+    .catch(error => {
+      db.close()
+      res.status(500).json({ success: false, error: error.message })
+    })
 })
 
 /**
- * Calculate ROI curve for what-if scenario
- * GET /api/results/roi-curve
- * Query params: dbPath, scenarioId, entityId, startPeriod, endPeriod
- *
- * Uses tagged line items from statement template (is_roi_numerator and is_roi_denominator)
- * Calculates ROI = benefit / investment for each single-action combination
+ * GET /api/whatif/existing-combinations
+ * Query: dbPath, scenarioId
+ * Returns: { success, combinations: [string] }
  */
-app.get('/api/results/roi-curve', (req, res) => {
-  const { dbPath, scenarioId, entityId, startPeriod, endPeriod } = req.query
+app.get('/api/whatif/existing-combinations', (req, res) => {
+  const { dbPath, scenarioId } = req.query
 
-  if (!dbPath || !scenarioId || !entityId || !startPeriod || !endPeriod) {
-    return res.status(400).json({ error: 'Missing required parameters' })
+  if (!dbPath || !scenarioId) {
+    return res.status(400).json({ error: 'dbPath and scenarioId are required' })
   }
 
   if (!fs.existsSync(dbPath)) {
@@ -7839,985 +6934,24 @@ app.get('/api/results/roi-curve', (req, res) => {
     }
   })
 
-  // Step 1: Get template_id for this scenario
-  const templateQuery = `
-    SELECT st.template_id, st.json_structure
-    FROM scenario s
-    JOIN statement_template st ON s.statement_template_id = st.template_id
-    WHERE s.scenario_id = ?
-  `
+  const whatIfService = new WhatIfService(db)
 
-  db.get(templateQuery, [scenarioId], (err, template) => {
-    if (err || !template) {
+  whatIfService.getExistingCombinations(scenarioId)
+    .then(combinations => {
       db.close()
-      return res.status(500).json({ error: 'Failed to query template: ' + (err?.message || 'Template not found') })
-    }
-
-    // Step 2: Parse json_structure to find ROI-tagged line items
-    let lineItems
-    try {
-      const parsed = JSON.parse(template.json_structure)
-      // Support both line_items (stored format) and lineItems (legacy format)
-      lineItems = parsed.line_items || parsed.lineItems || []
-    } catch (e) {
+      res.json({ success: true, combinations })
+    })
+    .catch(error => {
       db.close()
-      return res.status(500).json({ error: 'Failed to parse template structure' })
-    }
-
-    const roiNumeratorCodes = lineItems.filter(item => item.is_roi_numerator).map(item => item.code)
-    const roiDenominatorCodes = lineItems.filter(item => item.is_roi_denominator).map(item => item.code)
-
-    if (roiNumeratorCodes.length === 0 || roiDenominatorCodes.length === 0) {
-      db.close()
-      return res.status(400).json({ error: 'No ROI numerator or denominator tagged in template. Please tag line items in Define Statements.' })
-    }
-
-    // Step 3: Get the list of management action codes (all actions can be included in ROI)
-    const actionsQuery = `
-      SELECT action_code
-      FROM management_action
-    `
-
-    db.all(actionsQuery, [], (err, actions) => {
-      if (err) {
-        db.close()
-        return res.status(500).json({ error: 'Failed to query management actions: ' + err.message })
-      }
-
-      const actionCodes = new Set(actions.map(a => a.action_code))
-
-      // Step 4: Build dynamic SQL with tagged line item codes
-      const allRoiCodes = [...roiNumeratorCodes, ...roiDenominatorCodes]
-      const placeholders = allRoiCodes.map(() => '?').join(',')
-
-      const sql = `
-        SELECT
-          sr.what_if_combination,
-          sr.period_id,
-          sr.line_item_code,
-          sr.value
-        FROM statement_result sr
-        WHERE sr.scenario_id = ?
-          AND sr.entity_id = ?
-          AND sr.period_id BETWEEN ? AND ?
-          AND sr.line_item_code IN (${placeholders})
-        ORDER BY sr.what_if_combination, sr.period_id, sr.line_item_code
-      `
-
-      const params = [scenarioId, entityId, startPeriod, endPeriod, ...allRoiCodes]
-
-      db.all(sql, params, (err, rows) => {
-        if (err) {
-          db.close()
-          return res.status(500).json({ error: 'Database query failed: ' + err.message })
-        }
-
-        console.log(`\n=== ROI Calculation Debug ===`)
-        console.log(`Query returned ${rows.length} rows`)
-        console.log(`ROI Numerator codes (benefit): ${JSON.stringify(roiNumeratorCodes)}`)
-        console.log(`ROI Denominator codes (investment): ${JSON.stringify(roiDenominatorCodes)}`)
-        console.log(`First 5 rows:`, rows.slice(0, 5))
-
-        // Step 5: Group by combination and accumulate numerator/denominator values
-        const combinationData = {}
-        rows.forEach(row => {
-          const combo = row.what_if_combination || ''
-          if (!combinationData[combo]) {
-            combinationData[combo] = {
-              numerator: 0,      // Benefit (e.g. revenue increase)
-              denominator: 0      // Investment (e.g. capital expenditure)
-            }
-          }
-
-          // Sum up values across periods
-          if (roiNumeratorCodes.includes(row.line_item_code)) {
-            combinationData[combo].numerator += row.value
-          } else if (roiDenominatorCodes.includes(row.line_item_code)) {
-            combinationData[combo].denominator += row.value
-          }
-        })
-
-        console.log(`\nCombination data keys: ${JSON.stringify(Object.keys(combinationData))}`)
-        console.log(`Combination data:`, combinationData)
-
-        // Step 6: Find base case (no actions = empty combination)
-        const baseCase = combinationData[''] || combinationData['BASE'] || combinationData['NONE'] || null
-        if (!baseCase) {
-          db.close()
-          return res.status(400).json({ error: 'Base case (no actions) not found in results' })
-        }
-
-        const baseNumerator = baseCase.numerator
-        const baseDenominator = baseCase.denominator
-
-        // Step 7: Calculate ROI for each single-action combination
-        const roiResults = []
-        Object.keys(combinationData).forEach(combo => {
-          if (!combo || combo === '' || combo === 'BASE' || combo === 'NONE') return // Skip base case
-
-          // Check if this is a single-action combination (no + signs)
-          if (combo.includes('+')) return // Skip multi-action combinations
-
-          // Check if this action exists in management actions
-          if (!actionCodes.has(combo)) return // Skip unknown actions
-
-          const data = combinationData[combo]
-          const numerator = data.numerator
-          const denominator = data.denominator
-
-          // Calculate deltas relative to base case
-          const benefit = numerator - baseNumerator  // Positive = increased benefit (e.g., OPEX reduction via positive delta)
-          const investment = denominator - baseDenominator  // Positive = increased investment (e.g., CAPEX increase via negative delta)
-
-          // Skip actions with zero investment (can't calculate meaningful ROI)
-          if (investment === 0) return
-
-          // Calculate ROI (benefit per unit of investment)
-          const roi = benefit / investment
-
-          roiResults.push({
-            action: combo,
-            investment,
-            benefit,
-            roi
-          })
-        })
-
-        // Sort by ROI (descending - highest ROI first)
-        roiResults.sort((a, b) => b.roi - a.roi)
-
-        db.close()
-        res.json({
-          success: true,
-          baseCase: {
-            totalBenefit: baseNumerator,
-            totalInvestment: baseDenominator
-          },
-          roiCurve: roiResults
-        })
-      })
+      res.status(500).json({ success: false, error: error.message })
     })
-  })
-})
-
-/**
- * Get Monte Carlo results summary (mean across draws for MC period)
- * GET /api/results/mc-summary
- * Query params: dbPath, scenarioId, period, entityId
- */
-app.get('/api/results/mc-summary', (req, res) => {
-  const { dbPath, scenarioId, periodId, entityId } = req.query
-
-  if (!dbPath || !scenarioId || !periodId || !entityId) {
-    return res.status(400).json({ error: 'Missing required parameters' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-    }
-  })
-
-  // Query MC results and calculate mean for each line item
-  const sql = `
-    SELECT
-      line_item_code,
-      AVG(value) as mean_value,
-      COUNT(DISTINCT draw_number) as num_draws
-    FROM mc_statement_result
-    WHERE scenario_id = ?
-      AND period_id = ?
-      AND entity_id = ?
-    GROUP BY line_item_code
-    ORDER BY line_item_code
-  `
-
-  db.all(sql, [scenarioId, periodId, entityId], (err, rows) => {
-    if (err) {
-      db.close()
-      return res.status(500).json({ error: 'Database query failed: ' + err.message })
-    }
-
-    db.close()
-    res.json({
-      success: true,
-      mcPeriod: parseInt(periodId),
-      numDraws: rows.length > 0 ? rows[0].num_draws : 0,
-      lineItems: rows.map(row => ({
-        code: row.line_item_code,
-        meanValue: row.mean_value
-      }))
-    })
-  })
-})
-
-/**
- * Get Monte Carlo distribution data for a specific line item
- * GET /api/results/mc-distribution
- * Query params: dbPath, scenarioId, periodId, entityId, lineItemCode
- * Returns: all draw values, statistics (mean, std, skew, kurtosis), percentiles
- */
-app.get('/api/results/mc-distribution', (req, res) => {
-  const { dbPath, scenarioId, periodId, entityId, lineItemCode } = req.query
-
-  if (!dbPath || !scenarioId || !periodId || !entityId || !lineItemCode) {
-    return res.status(400).json({ error: 'Missing required parameters' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-    }
-  })
-
-  // Query all draw values for the specific line item
-  const sql = `
-    SELECT
-      draw_number,
-      value
-    FROM mc_statement_result
-    WHERE scenario_id = ?
-      AND period_id = ?
-      AND entity_id = ?
-      AND line_item_code = ?
-    ORDER BY draw_number
-  `
-
-  db.all(sql, [scenarioId, periodId, entityId, lineItemCode], (err, rows) => {
-    if (err) {
-      db.close()
-      return res.status(500).json({ error: 'Database query failed: ' + err.message })
-    }
-
-    if (rows.length === 0) {
-      db.close()
-      return res.status(404).json({ error: 'No MC draws found for this line item' })
-    }
-
-    // Calculate statistics
-    const values = rows.map(r => r.value)
-    const n = values.length
-    const mean = values.reduce((a, b) => a + b, 0) / n
-
-    // Standard deviation
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n
-    const std = Math.sqrt(variance)
-
-    // Skewness
-    const m3 = values.reduce((sum, val) => sum + Math.pow(val - mean, 3), 0) / n
-    const skew = m3 / Math.pow(std, 3)
-
-    // Kurtosis (excess kurtosis, 0 for normal distribution)
-    const m4 = values.reduce((sum, val) => sum + Math.pow(val - mean, 4), 0) / n
-    const kurtosis = (m4 / Math.pow(std, 4)) - 3
-
-    // Percentiles
-    const sortedValues = [...values].sort((a, b) => a - b)
-    const getPercentile = (p) => {
-      const index = (p / 100) * (n - 1)
-      const lower = Math.floor(index)
-      const upper = Math.ceil(index)
-      const weight = index - lower
-      return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight
-    }
-
-    const percentiles = {
-      p5: getPercentile(5),
-      p25: getPercentile(25),
-      p50: getPercentile(50),  // median
-      p75: getPercentile(75),
-      p95: getPercentile(95)
-    }
-
-    db.close()
-    res.json({
-      success: true,
-      lineItemCode,
-      numDraws: n,
-      draws: rows.map(r => ({ drawNumber: r.draw_number, value: r.value })),
-      statistics: {
-        mean,
-        median: percentiles.p50,
-        std,
-        skew,
-        kurtosis,
-        min: sortedValues[0],
-        max: sortedValues[n - 1]
-      },
-      percentiles
-    })
-  })
-})
-
-/**
- * Risk Dashboard: Compare two scenarios across physical and transition risk dimensions
- */
-app.post('/api/results/risk-dashboard', async (req, res) => {
-  const { dbPath, scenarioA, scenarioB, lineItemCode, periodId, entityId, whatIfCombination } = req.body
-
-  console.log('[risk-dashboard] Request received:', {
-    scenarioA,
-    scenarioB,
-    lineItemCode,
-    periodId,
-    entityId,
-    whatIfCombination
-  })
-
-  if (!dbPath || !scenarioA || !lineItemCode) {
-    return res.status(400).json({ error: 'dbPath, scenarioA, and lineItemCode are required' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: `Database error: ${err.message}` })
-    }
-  })
-
-  try {
-    // Get driver decomposition results
-    // If scenarioB provided: Calculate delta (Test Case - Base Case)
-    // If scenarioB is null: Return absolute values from scenarioA
-    // In what-if mode, filter by action combination
-
-    const isAbsoluteMode = !scenarioB
-
-    // Helper function to get all child entity IDs recursively
-    const getEntityTree = async (parentId) => {
-      const allIds = [parentId]
-      const queue = [parentId]
-
-      while (queue.length > 0) {
-        const currentId = queue.shift()
-        const children = await new Promise((resolve, reject) => {
-          db.all(
-            'SELECT entity_id FROM entity WHERE parent_entity_id = ?',
-            [currentId],
-            (err, rows) => {
-              if (err) reject(err)
-              else resolve(rows.map(r => r.entity_id))
-            }
-          )
-        })
-        allIds.push(...children)
-        queue.push(...children)
-      }
-
-      return allIds
-    }
-
-    // If entityId is provided, get all entities in the tree (parent + all descendants)
-    let entityIds = []
-    if (entityId) {
-      entityIds = await getEntityTree(entityId)
-    }
-
-    const query = isAbsoluteMode ? `
-      -- Absolute mode: just show scenarioA values
-      SELECT
-        srd.driver_code,
-        d.name as driver_name,
-        d.category,
-        e.entity_id,
-        e.json_metadata,
-        SUM(srd.value) as impact
-      FROM statement_result_by_driver srd
-      JOIN driver d ON srd.driver_code = d.code
-      JOIN entity e ON srd.entity_id = e.entity_id
-      WHERE srd.scenario_id = ?
-        AND srd.line_item_code = ?
-        ${periodId ? 'AND srd.period_id = ?' : ''}
-        ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
-        ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
-        AND d.category IN ('physical', 'financial')
-      GROUP BY srd.driver_code, d.name, d.category, e.entity_id, e.json_metadata
-    ` : `
-      -- Delta mode: compare two scenarios
-      WITH all_drivers AS (
-        SELECT DISTINCT
-          srd.driver_code,
-          d.name as driver_name,
-          d.category,
-          e.entity_id,
-          e.json_metadata
-        FROM statement_result_by_driver srd
-        JOIN driver d ON srd.driver_code = d.code
-        JOIN entity e ON srd.entity_id = e.entity_id
-        WHERE srd.scenario_id IN (?, ?)
-          AND srd.line_item_code = ?
-          ${periodId ? 'AND srd.period_id = ?' : ''}
-          ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
-          AND d.category IN ('physical', 'financial')
-      ),
-      scenario_a AS (
-        SELECT
-          srd.driver_code,
-          e.entity_id,
-          SUM(srd.value) as total_value
-        FROM statement_result_by_driver srd
-        JOIN entity e ON srd.entity_id = e.entity_id
-        WHERE srd.scenario_id = ?
-          AND srd.line_item_code = ?
-          ${periodId ? 'AND srd.period_id = ?' : ''}
-          ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
-          ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
-        GROUP BY srd.driver_code, e.entity_id
-      ),
-      scenario_b AS (
-        SELECT
-          srd.driver_code,
-          e.entity_id,
-          SUM(srd.value) as total_value
-        FROM statement_result_by_driver srd
-        JOIN entity e ON srd.entity_id = e.entity_id
-        WHERE srd.scenario_id = ?
-          AND srd.line_item_code = ?
-          ${periodId ? 'AND srd.period_id = ?' : ''}
-          ${entityId ? `AND srd.entity_id IN (${entityIds.map(() => '?').join(',')})` : ''}
-          ${whatIfCombination ? 'AND srd.what_if_combination = ?' : ''}
-        GROUP BY srd.driver_code, e.entity_id
-      )
-      SELECT
-        ad.driver_code,
-        ad.driver_name,
-        ad.category,
-        ad.entity_id,
-        ad.json_metadata,
-        (COALESCE(a.total_value, 0) - COALESCE(b.total_value, 0)) as impact
-      FROM all_drivers ad
-      LEFT JOIN scenario_a a
-        ON ad.driver_code = a.driver_code
-        AND ad.entity_id = a.entity_id
-      LEFT JOIN scenario_b b
-        ON ad.driver_code = b.driver_code
-        AND ad.entity_id = b.entity_id
-    `
-
-    // Build params array based on mode and optional filters
-    let params = []
-
-    if (isAbsoluteMode) {
-      // Absolute mode: just scenarioA params
-      params = [scenarioA, lineItemCode]
-      if (periodId) params.push(periodId)
-      if (entityId) params.push(...entityIds)
-      if (whatIfCombination) params.push(whatIfCombination)
-    } else {
-      // Delta mode: all_drivers + scenario_a + scenario_b params
-      const allDriversParams = [scenarioA, scenarioB, lineItemCode]
-      if (periodId) allDriversParams.push(periodId)
-      if (entityId) allDriversParams.push(...entityIds)
-
-      const scenarioAParams = [scenarioA, lineItemCode]
-      if (periodId) scenarioAParams.push(periodId)
-      if (entityId) scenarioAParams.push(...entityIds)
-      if (whatIfCombination) scenarioAParams.push(whatIfCombination)
-
-      const scenarioBParams = [scenarioB, lineItemCode]
-      if (periodId) scenarioBParams.push(periodId)
-      if (entityId) scenarioBParams.push(...entityIds)
-      if (whatIfCombination) scenarioBParams.push(whatIfCombination)
-
-      params = [...allDriversParams, ...scenarioAParams, ...scenarioBParams]
-    }
-
-    const results = await new Promise((resolve, reject) => {
-      db.all(query, params, (err, rows) => {
-        if (err) reject(err)
-        else resolve(rows)
-      })
-    })
-
-    // Process results into physical/transition + country/driver breakdown
-    // Store driver-country combinations for cross-filtering
-    const physicalDriverCountries = [] // Array of { driver_code, driver_name, country, impact }
-    const transitionDriverCountries = []
-    const physicalCountries = new Map()
-    const transitionCountries = new Map()
-
-    results.forEach(row => {
-      const metadata = typeof row.json_metadata === 'string'
-        ? JSON.parse(row.json_metadata)
-        : row.json_metadata
-      const countries = metadata?.countries || []
-      const isPhysical = row.category?.toLowerCase() === 'physical'
-      const isTransition = row.category?.toLowerCase() === 'financial'
-
-      // Store driver-country combinations
-      countries.forEach(country => {
-        if (isPhysical) {
-          physicalDriverCountries.push({
-            driver_code: row.driver_code,
-            driver_name: row.driver_name,
-            country: country,
-            impact: row.impact
-          })
-          const current = physicalCountries.get(country) || 0
-          physicalCountries.set(country, current + row.impact)
-        } else if (isTransition) {
-          transitionDriverCountries.push({
-            driver_code: row.driver_code,
-            driver_name: row.driver_name,
-            country: country,
-            impact: row.impact
-          })
-          const current = transitionCountries.get(country) || 0
-          transitionCountries.set(country, current + row.impact)
-        }
-      })
-    })
-
-    // Aggregate drivers (sum across all countries for each driver)
-    const aggregateDrivers = (driverCountryList) => {
-      const driverMap = new Map()
-      driverCountryList.forEach(item => {
-        const key = item.driver_code
-        if (!driverMap.has(key)) {
-          driverMap.set(key, {
-            driver_code: item.driver_code,
-            driver_name: item.driver_name,
-            impact: 0
-          })
-        }
-        driverMap.get(key).impact += item.impact
-      })
-      return Array.from(driverMap.values())
-        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
-    }
-
-    const formatCountryData = (countryMap) => {
-      return Array.from(countryMap.entries())
-        .map(([country, impact]) => ({
-          country: country,
-          impact: impact
-        }))
-        .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
-    }
-
-    db.close()
-    res.json({
-      success: true,
-      physicalDrivers: aggregateDrivers(physicalDriverCountries),
-      transitionDrivers: aggregateDrivers(transitionDriverCountries),
-      physicalCountries: formatCountryData(physicalCountries),
-      transitionCountries: formatCountryData(transitionCountries),
-      // Include driver-country detail for cross-filtering
-      physicalDriverCountries,
-      transitionDriverCountries
-    })
-  } catch (err) {
-    db.close()
-    res.status(500).json({ error: `Failed to load risk dashboard data: ${err.message}` })
-  }
-})
-
-/**
- * Get period range for scenarios
- */
-app.get('/api/results/period-range', async (req, res) => {
-  const { dbPath, scenarioIds } = req.query
-
-  if (!dbPath) {
-    return res.status(400).json({ error: 'dbPath is required' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: `Database error: ${err.message}` })
-    }
-  })
-
-  try {
-    const ids = scenarioIds ? scenarioIds.split(',') : []
-    const placeholders = ids.length > 0 ? ids.map(() => '?').join(',') : '?'
-    const params = ids.length > 0 ? ids : [0]
-
-    const query = `
-      SELECT MIN(period_id) as min_period, MAX(period_id) as max_period
-      FROM statement_result
-      WHERE scenario_id IN (${placeholders})
-    `
-
-    const result = await new Promise((resolve, reject) => {
-      db.get(query, params, (err, row) => {
-        if (err) reject(err)
-        else resolve(row)
-      })
-    })
-
-    db.close()
-    res.json({
-      success: true,
-      minPeriod: result.min_period || 1,
-      maxPeriod: result.max_period || 20
-    })
-  } catch (err) {
-    db.close()
-    res.status(500).json({ error: `Failed to get period range: ${err.message}` })
-  }
-})
-
-/**
- * Get available line items for risk dashboard
- */
-app.get('/api/results/risk-line-items', async (req, res) => {
-  const { dbPath } = req.query
-
-  if (!dbPath) {
-    return res.status(400).json({ error: 'dbPath is required' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: `Database error: ${err.message}` })
-    }
-  })
-
-  try {
-    // Return all line items from statement_result (includes carbon and financial)
-    // Note: Some line items may not have driver decomposition data
-    const query = `
-      SELECT DISTINCT line_item_code as code
-      FROM statement_result
-      ORDER BY line_item_code
-    `
-
-    const results = await new Promise((resolve, reject) => {
-      db.all(query, [], (err, rows) => {
-        if (err) reject(err)
-        else resolve(rows)
-      })
-    })
-
-    const lineItems = results.map(row => ({
-      code: row.code,
-      name: row.code.split('_').map(word =>
-        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-      ).join(' ')
-    }))
-
-    db.close()
-    res.json({ success: true, lineItems })
-  } catch (err) {
-    db.close()
-    res.status(500).json({ error: `Failed to load line items: ${err.message}` })
-  }
-})
-
-/**
- * Generate what-if combinations
- */
-app.post('/api/whatif/combinations', async (req, res) => {
-  const { dbPath } = req.body
-
-  if (!dbPath) {
-    return res.status(400).json({ error: 'dbPath is required' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      return res.status(500).json({ error: `Database error: ${err.message}` })
-    }
-  })
-
-  try {
-    const whatifService = new WhatIfService(db)
-    const combinations = await whatifService.generateCombinations()
-
-    db.close()
-    res.json({ success: true, combinations })
-  } catch (err) {
-    db.close()
-    res.status(500).json({ error: `Failed to generate combinations: ${err.message}` })
-  }
-})
-
-/**
- * GET /api/results/what-if-values
- * Returns all what-if combination values for a specific line item
- * Query params: dbPath, scenarioId, entityId, period, lineItemCode
- */
-app.get('/api/results/what-if-values', async (req, res) => {
-  const { dbPath, scenarioId, entityId, period, lineItemCode } = req.query
-
-  if (!dbPath || !scenarioId || !entityId || period === undefined || !lineItemCode) {
-    return res.status(400).json({ error: 'dbPath, scenarioId, entityId, period, and lineItemCode are required' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-    if (err) {
-      return res.status(500).json({ error: `Database error: ${err.message}` })
-    }
-  })
-
-  const query = `
-    SELECT what_if_combination, value
-    FROM statement_result
-    WHERE scenario_id = ? AND entity_id = ? AND period_id = ? AND line_item_code = ?
-    ORDER BY what_if_combination
-  `
-
-  db.all(query, [scenarioId, entityId, period, lineItemCode], (err, rows) => {
-    db.close()
-
-    if (err) {
-      return res.status(500).json({ error: `Query error: ${err.message}` })
-    }
-
-    res.json({ success: true, results: rows })
-  })
-})
-
-/**
- * Prepare Monte Carlo simulation: Load correlation matrix and perform Cholesky decomposition
- */
-app.post('/api/montecarlo/prepare', async (req, res) => {
-  const { correlationCsvPath, dbPath, mappingId } = req.body
-
-  if (!correlationCsvPath) {
-    return res.status(400).json({ error: 'correlationCsvPath is required' })
-  }
-
-  if (!dbPath) {
-    return res.status(400).json({ error: 'dbPath is required' })
-  }
-
-  if (!mappingId) {
-    return res.status(400).json({ error: 'mappingId is required' })
-  }
-
-  if (!fs.existsSync(correlationCsvPath)) {
-    return res.status(400).json({ error: 'Correlation CSV file not found' })
-  }
-
-  if (!fs.existsSync(dbPath)) {
-    return res.status(400).json({ error: 'Database not found' })
-  }
-
-  try {
-    // Read CSV file
-    const csvContent = fs.readFileSync(correlationCsvPath, 'utf-8')
-    const lines = csvContent.trim().split('\n')
-
-    if (lines.length < 2) {
-      return res.status(400).json({ error: 'Correlation CSV must have at least header and one data row' })
-    }
-
-    // Parse header to get CSV column names (skip first column)
-    const header = lines[0].split(',')
-    const csvColumnNames = header.slice(1) // Skip first column (Driver label)
-    const n = csvColumnNames.length
-
-    // Parse row names from first column (should match column names for symmetric matrix)
-    const csvRowNames = []
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',')
-      csvRowNames.push(values[0].trim())
-    }
-
-    // Parse correlation matrix
-    const correlationMatrix = []
-    const MIN_VARIANCE = 1e-8  // Floor for diagonal elements to ensure positive definiteness
-
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',')
-      const row = values.slice(1).map(v => parseFloat(v.trim()))
-      if (row.length !== n) {
-        return res.status(400).json({
-          error: `Row ${i} has ${row.length} values, expected ${n}`
-        })
-      }
-      correlationMatrix.push(row)
-    }
-
-    if (correlationMatrix.length !== n) {
-      return res.status(400).json({
-        error: `Matrix should be ${n}x${n}, got ${correlationMatrix.length}x${n}`
-      })
-    }
-
-    // Apply floor to diagonal elements to ensure positive definiteness
-    // This handles cases where a variable has zero variance
-    for (let i = 0; i < n; i++) {
-      if (correlationMatrix[i][i] < MIN_VARIANCE) {
-        correlationMatrix[i][i] = MIN_VARIANCE
-      }
-    }
-
-    // Load scenario_mapping to get variable_mappings
-    const db = new sqlite3.Database(dbPath, (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
-      }
-    })
-
-    const mapping = await new Promise((resolve, reject) => {
-      db.get(
-        'SELECT variable_mappings, driver_column FROM scenario_mapping WHERE mapping_id = ?',
-        [mappingId],
-        (err, row) => {
-          if (err) reject(err)
-          else if (!row) reject(new Error(`Scenario mapping ${mappingId} not found`))
-          else resolve(row)
-        }
-      )
-    })
-
-    // Get the CSV staging table data to look up row names
-    const stagingTableName = security.createNumberedStagingTableName(
-      await new Promise((resolve, reject) => {
-        db.get(
-          'SELECT file_id FROM scenario_mapping WHERE mapping_id = ?',
-          [mappingId],
-          (err, row) => {
-            if (err) reject(err)
-            else if (!row) reject(new Error('File ID not found'))
-            else resolve(security.validateFileId(row.file_id))
-          }
-        )
-      })
-    )
-
-    const csvData = await new Promise((resolve, reject) => {
-      db.all(
-        `SELECT * FROM ${security.quoteIdentifier(stagingTableName)}`,
-        [],
-        (err, rows) => {
-          if (err) reject(err)
-          else resolve(rows)
-        }
-      )
-    })
-
-    // Close database and wait for completion before continuing
-    db.close((closeErr) => {
-      if (closeErr) {
-        return res.status(500).json({ error: 'Failed to close database: ' + closeErr.message })
-      }
-
-      const variableMappings = JSON.parse(mapping.variable_mappings)
-      const driverColumn = mapping.driver_column
-
-      // Map CSV row names to driver codes
-      const driverCodes = []
-      const unmappedRows = []
-
-      for (let i = 0; i < csvRowNames.length; i++) {
-        const csvRowName = csvRowNames[i]
-
-        // Find the CSV row in staging table that matches this row name
-        const csvRow = csvData.find(row => row[driverColumn] === csvRowName)
-
-        if (!csvRow) {
-          unmappedRows.push(csvRowName)
-          driverCodes.push(null)
-          continue
-        }
-
-        // Find the csv_row_index in staging table
-        const csvRowIndex = csvData.indexOf(csvRow)
-
-        // Find the variable mapping for this csv_row_index
-        const varMapping = variableMappings.find(vm => vm.csv_row_index === csvRowIndex)
-
-        if (!varMapping) {
-          unmappedRows.push(csvRowName)
-          driverCodes.push(null)
-        } else {
-          driverCodes.push(varMapping.driver_code)
-        }
-      }
-
-      if (unmappedRows.length > 0) {
-        return res.status(400).json({
-          error: `Failed to map CSV row names to driver codes`,
-          unmappedRows: unmappedRows,
-          hint: 'Please ensure all drivers in the correlation matrix are mapped in the scenario mapping'
-        })
-      }
-
-      // Perform Cholesky decomposition
-      // L * L^T = Correlation Matrix
-      const L = Array(n).fill(0).map(() => Array(n).fill(0))
-
-      for (let i = 0; i < n; i++) {
-        for (let j = 0; j <= i; j++) {
-          let sum = 0
-          for (let k = 0; k < j; k++) {
-            sum += L[i][k] * L[j][k]
-          }
-
-          if (i === j) {
-            const diag = correlationMatrix[i][i] - sum
-            if (diag <= 0) {
-              return res.status(400).json({
-                error: `Matrix is not positive definite (row ${i}: ${csvRowNames[i]})`
-              })
-            }
-            L[i][j] = Math.sqrt(diag)
-          } else {
-            L[i][j] = (correlationMatrix[i][j] - sum) / L[j][j]
-          }
-        }
-      }
-
-      // Extract stddevs from covariance matrix diagonal
-      // Covariance matrix diagonal contains variances: stddev = sqrt(variance)
-      const stddevs = correlationMatrix.map((row, i) => Math.sqrt(Math.abs(row[i])))
-
-      res.json({
-        success: true,
-        choleskyMatrix: L,
-        driverCodes: driverCodes,
-        stddevs: stddevs,
-        csvRowNames: csvRowNames,
-        dimension: n
-      })
-    })
-  } catch (err) {
-    res.status(500).json({ error: `Failed to prepare Monte Carlo: ${err.message}` })
-  }
 })
 
 /**
  * Run calculation engine (with integrated validation and logging - Issues #12, #13, #14)
  */
-app.post('/api/calculate', requireAuth, async (req, res) => {
-  const { dbPath, scenarioIds, skipValidation = false, whatIfCombination, mcStartPeriod, mcDrawNumber, choleskyMatrix, choleskyDrivers, choleskyStddevs } = req.body
-
-  console.log('[Calculate] Request session:', {
-    sessionId: req.sessionID,
-    session: req.session,
-    hasUserId: !!req.session?.userId
-  })
+app.post('/api/calculate', async (req, res) => {
+  const { dbPath, scenarioIds, skipValidation = false } = req.body
 
   if (!dbPath) {
     return res.status(400).json({ error: 'dbPath is required' })
@@ -8830,32 +6964,7 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
   // Initialize logging service
   const logger = new LoggingService()
   logger.start()
-  logger.info('Calculation started', { dbPath, scenarioIds, mcStartPeriod, mcDrawNumber })
-
-  // Write Cholesky data to temp file if provided (for MC draws)
-  let choleskyFilePath = null
-  if (choleskyMatrix && choleskyDrivers && mcDrawNumber) {
-    const tempDir = path.join(__dirname, '../../temp')
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true })
-    }
-
-    choleskyFilePath = path.join(tempDir, `cholesky_${Date.now()}_${mcDrawNumber}.json`)
-    const choleskyData = {
-      matrix: choleskyMatrix,
-      drivers: choleskyDrivers,
-      stddevs: choleskyStddevs || [],
-      drawNumber: mcDrawNumber
-    }
-
-    try {
-      fs.writeFileSync(choleskyFilePath, JSON.stringify(choleskyData, null, 2))
-      logger.debug('Cholesky data written to temp file', { path: choleskyFilePath })
-    } catch (err) {
-      logger.error('Failed to write Cholesky temp file', { error: err.message })
-      return res.status(500).json({ error: 'Failed to write Cholesky data: ' + err.message })
-    }
-  }
+  logger.info('Calculation started', { dbPath, scenarioIds })
 
   // Validate scenarios before calculation (unless explicitly skipped)
   if (!skipValidation && scenarioIds && scenarioIds.length > 0) {
@@ -8910,93 +7019,176 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
     }
   }
 
-  // Run the calculation
-  const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
-  logger.info('Launching C++ calculation engine', { binary: calculationBinary, whatIfCombination, mcStartPeriod })
+  // Check if any scenario has what-if mode enabled
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY)
 
-  // Build command with optional flags
-  let command = `"${calculationBinary}" "${dbPath}"`
-  if (whatIfCombination) {
-    command += ` --whatif-combination "${whatIfCombination}"`
-  }
-  if (mcStartPeriod) {
-    command += ` --mc-start-period ${mcStartPeriod}`
-  }
-  if (choleskyFilePath) {
-    command += ` --cholesky-file "${choleskyFilePath}"`
-  }
+  const sqlQuery = scenarioIds && scenarioIds.length > 0
+    ? `SELECT scenario_id, what_if_mode FROM scenario WHERE scenario_id IN (${scenarioIds.map(() => '?').join(',')})`
+    : `SELECT scenario_id, what_if_mode FROM scenario`
 
-  // Log what-if combination progress
-  if (whatIfCombination) {
-    logger.info(`Running what-if combination: ${whatIfCombination}`)
-  }
+  const queryParams = scenarioIds && scenarioIds.length > 0 ? scenarioIds : []
 
-  // Set up keep-alive mechanism with progress messages
-  // Send progress updates every 15 seconds to keep connection alive and inform user
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-  res.setHeader('X-Content-Type-Options', 'nosniff')
-  res.setHeader('Transfer-Encoding', 'chunked')
-  res.setHeader('Cache-Control', 'no-cache')
+  db.all(sqlQuery, queryParams, async (err, scenarios) => {
+      if (err) {
+        db.close()
+        logger.error('Failed to query what-if mode', { error: err.message })
+        return res.status(500).json({ success: false, error: 'Failed to query scenarios' })
+      }
 
-  // Disable socket timeout
-  if (res.socket) {
-    res.socket.setNoDelay(true)
-    res.socket.setTimeout(0)
-  }
+      const whatifScenarios = scenarios.filter(s => s.what_if_mode === 1)
 
-  const startTime = Date.now()
-  let calculationComplete = false
-  let progressCount = 0
+      if (whatifScenarios.length === 0) {
+        // Normal mode - no what-if scenarios
+        db.close()
+        runNormalCalculation()
+      } else {
+        // What-if mode enabled for at least one scenario
+        const whatifService = new WhatIfService({ get: promisify(db.get.bind(db)), all: promisify(db.all.bind(db)) })
 
-  // Send initial progress message
-  const progressMsg = `[${new Date().toLocaleTimeString()}] Calculation started...\n`
-  res.write(progressMsg)
-  console.log(progressMsg.trim())
+        try {
+          // Generate combinations for each what-if scenario
+          const allCombinations = []
+          for (const scenario of whatifScenarios) {
+            logger.info(`Generating what-if combinations for scenario ${scenario.scenario_id}`)
+            const combinations = await whatifService.generateCombinations(scenario.scenario_id)
+            allCombinations.push({ scenarioId: scenario.scenario_id, combinations })
+            logger.info(`Generated ${combinations.length} combinations for scenario ${scenario.scenario_id}`)
+          }
 
-  const progressInterval = setInterval(() => {
-    if (!calculationComplete && !res.writableEnded) {
-      progressCount++
-      const elapsed = Math.floor((Date.now() - startTime) / 1000)
-      const mins = Math.floor(elapsed / 60)
-      const secs = elapsed % 60
-      const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-      const msg = `[${new Date().toLocaleTimeString()}] Still calculating... (${timeStr} elapsed)\n`
-      res.write(msg)
-      console.log(msg.trim())
+          db.close()
+          runWhatIfCalculations(allCombinations)
+        } catch (error) {
+          db.close()
+          logger.error('Failed to generate combinations', { error: error.message })
+          return res.status(500).json({ success: false, error: 'Failed to generate what-if combinations' })
+        }
+      }
     }
-  }, 15000) // Every 15 seconds
+  )
 
-  exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-    calculationComplete = true
-    clearInterval(progressInterval)
+  // Normal calculation (no what-if mode)
+  function runNormalCalculation() {
+    const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
+    logger.info('Launching C++ calculation engine', { binary: calculationBinary })
 
-    const totalTime = Math.floor((Date.now() - startTime) / 1000)
-    const mins = Math.floor(totalTime / 60)
-    const secs = totalTime % 60
-    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-    res.write(`[${new Date().toLocaleTimeString()}] Calculation completed in ${timeStr}\n`)
-    res.write('\n---RESULTS---\n')
-    // Clean up Cholesky temp file
-    if (choleskyFilePath && fs.existsSync(choleskyFilePath)) {
-      try {
-        fs.unlinkSync(choleskyFilePath)
-        logger.debug('Cholesky temp file cleaned up', { path: choleskyFilePath })
-      } catch (cleanupErr) {
-        logger.warn('Failed to delete Cholesky temp file', { error: cleanupErr.message })
+    const child = spawn(calculationBinary, [dbPath], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+
+    let stdoutData = ''
+    let stderrData = ''
+
+    child.stdout.on('data', (data) => {
+      const output = data.toString()
+      stdoutData += output
+      // Stream output in real-time
+//       output.split('\n').filter(line => line.trim()).forEach(line => {
+//         logger.info(line, { source: 'cpp' })
+//       })
+    })
+
+    child.stderr.on('data', (data) => {
+      stderrData += data.toString()
+    })
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        handleCalculationResult(new Error(`Process exited with code ${code}`), stdoutData, stderrData)
+      } else {
+        handleCalculationResult(null, stdoutData, stderrData)
+      }
+    })
+
+    child.on('error', (error) => {
+      handleCalculationResult(error, stdoutData, stderrData)
+    })
+  }
+
+  // What-if calculation (loop over combinations)
+  function runWhatIfCalculations(scenarioCombinations) {
+    const calculationBinary = path.join(__dirname, '../../build/bin/run_calculation')
+
+    // Flatten all combinations across scenarios
+    const allRuns = []
+    for (const { scenarioId, combinations } of scenarioCombinations) {
+      for (const combo of combinations) {
+        allRuns.push({ scenarioId, combination: combo.combination })
       }
     }
 
-    // Merge C++ logs
-    if (stdout) {
-      logger.mergeCppLogs(stdout)
+    logger.info(`What-If Mode: Running ${allRuns.length} combinations`, {
+      scenarios: scenarioCombinations.map(s => s.scenarioId),
+      totalCombinations: allRuns.length
+    })
+
+    let completedRuns = 0
+    let allStdout = ''
+    let allStderr = ''
+
+    // Run each combination sequentially
+    function runNextCombination(index) {
+      if (index >= allRuns.length) {
+        // All combinations complete
+        logger.info('All what-if combinations completed', { totalRuns: allRuns.length })
+        handleCalculationResult(null, allStdout, allStderr)
+        return
+      }
+
+      const { scenarioId, combination } = allRuns[index]
+      logger.info(`Running combination ${index + 1}/${allRuns.length}`, { scenarioId, combination })
+
+      const child = spawn(calculationBinary, [dbPath, '--whatif-combination', combination], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+
+      let stdoutData = ''
+      let stderrData = ''
+
+      child.stdout.on('data', (data) => {
+        const output = data.toString()
+        stdoutData += output
+        allStdout += output
+//         // Stream output in real-time
+//         output.split('\n').filter(line => line.trim()).forEach(line => {
+//           logger.info(line, { source: 'cpp' })
+//         })
+      })
+
+      child.stderr.on('data', (data) => {
+        const errOutput = data.toString()
+        stderrData += errOutput
+        allStderr += errOutput
+      })
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          logger.error(`Combination ${index + 1} failed`, { scenarioId, combination, exitCode: code })
+        } else {
+          completedRuns++
+          logger.verbose(`Combination ${index + 1} completed`, { scenarioId, combination })
+        }
+        // Continue with next combination
+        runNextCombination(index + 1)
+      })
+
+      child.on('error', (error) => {
+        logger.error(`Combination ${index + 1} error`, { scenarioId, combination, error: error.message })
+        // Continue with next combination despite error
+        runNextCombination(index + 1)
+      })
     }
-    if (stderr) {
-      logger.mergeCppLogs(stderr)
-    }
+
+    runNextCombination(0)
+  }
+
+  // Shared result handler
+  function handleCalculationResult(error, stdout, stderr) {
+    // Note: C++ logs are already streamed in real-time during spawn() execution
+    // No need to re-process stdout/stderr here (would cause duplicate logging and memory issues)
 
     if (error) {
       logger.error('Calculation engine failed', { error: error.message, exitCode: error.code })
-      const errorResponse = JSON.stringify({
+      return res.json({
         success: false,
         error: error.message,
         stdout: stdout,
@@ -9004,167 +7196,76 @@ app.post('/api/calculate', requireAuth, async (req, res) => {
         logs: logger.getLogs('info'),
         errorSummary: logger.getErrorSummary()
       })
-      res.write(errorResponse)
-      return res.end()
     }
 
     logger.info('Calculation completed successfully')
-    if (whatIfCombination) {
-      logger.info(`✓ What-if combination complete: ${whatIfCombination}`)
-    }
 
-    // If this is a Monte Carlo draw, copy results to MC tables
-    if (mcDrawNumber) {
-      logger.info(`Copying results to MC tables for draw ${mcDrawNumber}`)
-
-      const db = new sqlite3.Database(dbPath, (err) => {
-        if (err) {
-          logger.error('Failed to open database for MC result copy', { error: err.message })
-          return res.json({
-            success: true,
-            output: stdout,
-            errors: stderr,
-            warning: 'Calculation succeeded but failed to copy to MC tables',
-            logs: logger.getLogs('info'),
-            errorSummary: logger.getErrorSummary()
-          })
-        }
-
-        // Copy statement_result to mc_statement_result
-        db.run(`
-          INSERT INTO mc_statement_result
-            (scenario_id, period_id, entity_id, line_item_code, draw_number, value, calculated_at, is_populated)
-          SELECT scenario_id, period_id, entity_id, line_item_code, ?, value, calculated_at, is_populated
-          FROM statement_result
-          WHERE what_if_combination = ''
-        `, [mcDrawNumber], (err) => {
-          if (err) {
-            logger.error('Failed to copy to mc_statement_result', { error: err.message, draw: mcDrawNumber })
-            db.close()
-            return res.json({
-              success: true,
-              output: stdout,
-              errors: stderr,
-              warning: 'Failed to copy results to mc_statement_result',
-              logs: logger.getLogs('info'),
-              errorSummary: logger.getErrorSummary()
-            })
-          }
-
-          logger.verbose(`Copied statement_result to mc_statement_result for draw ${mcDrawNumber}`)
-
-          // Copy statement_result_by_driver to mc_statement_result_by_driver
-          db.run(`
-            INSERT INTO mc_statement_result_by_driver
-              (scenario_id, period_id, entity_id, line_item_code, driver_code, draw_number, value, calculated_at)
-            SELECT scenario_id, period_id, entity_id, line_item_code, driver_code, ?, value, calculated_at
-            FROM statement_result_by_driver
-            WHERE what_if_combination = ''
-          `, [mcDrawNumber], (err) => {
-            if (err) {
-              logger.error('Failed to copy to mc_statement_result_by_driver', { error: err.message, draw: mcDrawNumber })
-              db.close()
-              return res.json({
-                success: true,
-                output: stdout,
-                errors: stderr,
-                warning: 'Failed to copy results to mc_statement_result_by_driver',
-                logs: logger.getLogs('info'),
-                errorSummary: logger.getErrorSummary()
-              })
-            }
-
-            logger.verbose(`Copied statement_result_by_driver to mc_statement_result_by_driver for draw ${mcDrawNumber}`)
-            logger.info(`MC draw ${mcDrawNumber} results saved successfully`)
-
-            db.close((closeErr) => {
-              if (closeErr) {
-                logger.error('Failed to close database', { error: closeErr.message })
-              }
-
-              // Update user's calculation counter in master database
-              if (req.session && req.session.userId) {
-                try {
-                  const masterDb = getMasterDb();
-                  masterDb.prepare(`
-                    UPDATE users
-                    SET total_calculations = total_calculations + 1,
-                        last_calculation = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                  `).run(req.session.userId);
-                  logger.verbose('Updated user calculation counter', { userId: req.session.userId })
-                } catch (err) {
-                  logger.error('Failed to update user stats', { error: err.message })
-                }
-              }
-
-              res.json({
-                success: true,
-                output: stdout,
-                errors: stderr,
-                logs: logger.getLogs('info'),
-                errorSummary: logger.getErrorSummary()
-              })
-            })
-          })
-        })
-      })
-    } else {
-      // Not a Monte Carlo draw - just return success
-      const db = new sqlite3.Database(dbPath, (err) => {
-        if (err) {
-          logger.error('Failed to open database for result verification', { error: err.message })
-          return res.json({
-            success: true,
-            output: stdout,
-            errors: stderr,
-            warning: 'Results calculated but not saved to database',
-            logs: logger.getLogs('info'),
-            errorSummary: logger.getErrorSummary()
-          })
-        }
-
-        // Note: The C++ binary should be writing results directly to the database
-        // This is just a fallback/verification step
-        db.close()
-
-        // Update user's calculation counter in master database
-        console.log('[Calculation Complete] Checking session:', {
-          hasSession: !!req.session,
-          userId: req.session?.userId,
-          username: req.session?.username
-        })
-        if (req.session && req.session.userId) {
-          try {
-            const masterDb = getMasterDb();
-            console.log('[Calculation Complete] Updating counter for user:', req.session.userId)
-            masterDb.prepare(`
-              UPDATE users
-              SET total_calculations = total_calculations + 1,
-                  last_calculation = CURRENT_TIMESTAMP
-              WHERE id = ?
-            `).run(req.session.userId);
-            console.log('[Calculation Complete] Counter updated successfully')
-            logger.verbose('Updated user calculation counter', { userId: req.session.userId })
-          } catch (err) {
-            console.error('[Calculation Complete] Failed to update user stats:', err)
-            logger.error('Failed to update user stats', { error: err.message })
-          }
-        } else {
-          console.log('[Calculation Complete] No session or userId - counter not updated')
-        }
-
-        const successResponse = JSON.stringify({
+    // Parse calculation output to extract results and write to statement_result table
+    // Output format: "✓ Scenario X completed successfully" followed by period data
+    const db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+    logger.clear()  // Clear logs after successful calculation to prevent memory accumulation
+        logger.error('Failed to open database for result verification', { error: err.message })
+        return res.json({
           success: true,
           output: stdout,
           errors: stderr,
+          warning: 'Results calculated but not saved to database',
           logs: logger.getLogs('info'),
           errorSummary: logger.getErrorSummary()
         })
-        res.write(successResponse)
-        res.end()
+      }
+
+      // Note: The C++ binary should be writing results directly to the database
+      // This is just a fallback/verification step
+      db.close()
+
+      res.json({
+        success: true,
+        output: stdout,
+        errors: stderr,
+        logs: logger.getLogs('info'),
+        errorSummary: logger.getErrorSummary()
       })
+    })
+  }
+})
+
+/**
+ * Update what-if mode for scenarios
+ * POST /api/scenarios/update-whatif-mode
+ * Body: { dbPath, whatIfMode }
+ */
+app.post('/api/scenarios/update-whatif-mode', express.json(), (req, res) => {
+  const { dbPath, whatIfMode } = req.body
+
+  if (!dbPath) {
+    return res.status(400).json({ error: 'dbPath is required' })
+  }
+
+  if (typeof whatIfMode !== 'boolean') {
+    return res.status(400).json({ error: 'whatIfMode must be a boolean' })
+  }
+
+  const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to connect to database: ' + err.message })
     }
+  })
+
+  const modeValue = whatIfMode ? 1 : 0
+  db.run('UPDATE scenario SET what_if_mode = ?', [modeValue], function(err) {
+    db.close()
+
+    if (err) {
+      return res.status(500).json({ error: 'Failed to update what-if mode: ' + err.message })
+    }
+
+    res.json({
+      success: true,
+      message: `Updated ${this.changes} scenario(s) to what-if mode: ${whatIfMode}`,
+      changes: this.changes
+    })
   })
 })
 
@@ -9288,22 +7389,6 @@ app.post('/api/runs/save', express.json(), (req, res) => {
                           }
 
                           console.log('[Save Run] Successfully saved run with ID:', this.lastID)
-
-                          // Update user's calculation counter in master database
-                          if (req.session && req.session.userId) {
-                            try {
-                              const masterDb = getMasterDb();
-                              masterDb.prepare(`
-                                UPDATE users
-                                SET total_calculations = total_calculations + 1,
-                                    last_calculation = CURRENT_TIMESTAMP
-                                WHERE id = ?
-                              `).run(req.session.userId);
-                            } catch (err) {
-                              console.error('[Save Run] Failed to update user stats:', err);
-                            }
-                          }
-
                           db.close()
                           res.json({ success: true, runId: this.lastID, message: 'Run saved successfully' })
                         }
@@ -9777,180 +7862,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Dashboard API Server' })
 })
 
-/**
- * Generate PDF report from components
- * POST /api/reports/generate
- * Body: { components: [{type, content, imageData, caption, aiText, width}, ...] }
- */
-app.post('/api/reports/generate', (req, res) => {
-  try {
-    const { components } = req.body
-
-    if (!components || !Array.isArray(components)) {
-      return res.status(400).json({ error: 'Invalid components array' })
-    }
-
-    // Create a new PDF document (A4 size)
-    const doc = new PDFDocument({
-      size: 'A4',
-      margins: { top: 72, bottom: 72, left: 72, right: 72 }
-    })
-
-    // Set response headers for PDF download
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="report-${new Date().toISOString().split('T')[0]}.pdf"`)
-
-    // Pipe the PDF to the response
-    doc.pipe(res)
-
-    // Page dimensions
-    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
-    const pageHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom
-
-    // Helper function to check if we need a new page
-    const checkPageBreak = (neededHeight) => {
-      if (doc.y + neededHeight > doc.page.height - doc.page.margins.bottom) {
-        doc.addPage()
-        return true
-      }
-      return false
-    }
-
-    // Render each component
-    components.forEach((component, index) => {
-      if (component.type === 'title') {
-        checkPageBreak(40)
-        doc.fontSize(24)
-           .font('Helvetica-Bold')
-           .text(component.content, { align: 'left' })
-           .moveDown(0.5)
-      } else if (component.type === 'subtitle') {
-        checkPageBreak(30)
-        doc.fontSize(18)
-           .font('Helvetica-Bold')
-           .text(component.content, { align: 'left' })
-           .moveDown(0.3)
-      } else if (component.type === 'text') {
-        // Calculate approximate text height
-        const textHeight = doc.heightOfString(component.content, {
-          width: pageWidth,
-          align: 'left'
-        })
-        checkPageBreak(textHeight + 20)
-
-        doc.fontSize(12)
-           .font('Helvetica')
-           .text(component.content, { align: 'left' })
-           .moveDown(0.5)
-      } else if (component.type === 'visualization' && component.imageData) {
-        try {
-          // Extract base64 data (remove data:image/png;base64, prefix)
-          const base64Data = component.imageData.replace(/^data:image\/\w+;base64,/, '')
-          const imageBuffer = Buffer.from(base64Data, 'base64')
-
-          // Get image dimensions (PDFKit will handle this)
-          // Calculate scaled width based on component.width (percentage) or default to 100%
-          const widthPercent = component.width || 100
-          const scaledWidth = (pageWidth * widthPercent) / 100
-
-          // Get the image to determine its aspect ratio
-          const img = doc.openImage(imageBuffer)
-          const aspectRatio = img.height / img.width
-          const scaledHeight = scaledWidth * aspectRatio
-
-          // Calculate available space on current page
-          const availableHeight = doc.page.height - doc.page.margins.bottom - doc.y
-
-          // If image + captions won't fit, start on new page
-          if (scaledHeight + 100 > availableHeight) {
-            doc.addPage()
-          }
-
-          // Add image at current Y position
-          const imageY = doc.y
-          const maxImageHeight = doc.page.height - doc.page.margins.top - doc.page.margins.bottom - 100
-
-          doc.image(imageBuffer, doc.page.margins.left, imageY, {
-            width: scaledWidth,
-            fit: [scaledWidth, maxImageHeight]
-          })
-
-          // Calculate actual rendered height and advance Y position
-          const actualImageHeight = Math.min(scaledHeight, maxImageHeight)
-          doc.y = imageY + actualImageHeight + 10
-
-          // Add caption if present
-          if (component.caption) {
-            doc.fontSize(10)
-               .font('Helvetica-Bold')
-               .fillColor('#1e293b')
-               .text(component.caption, {
-                 align: 'left',
-                 width: scaledWidth
-               })
-               .fillColor('#000000')
-               .moveDown(0.3)
-          }
-
-          // Add AI text if present
-          if (component.aiText) {
-            const aiTextHeight = doc.heightOfString(component.aiText, {
-              width: scaledWidth,
-              align: 'left'
-            })
-            checkPageBreak(aiTextHeight + 20)
-
-            doc.fontSize(9)
-               .font('Helvetica')
-               .fillColor('#334155')
-               .text(component.aiText, {
-                 align: 'left',
-                 width: scaledWidth
-               })
-               .fillColor('#000000')
-               .moveDown(0.5)
-          }
-
-          doc.moveDown(1)
-        } catch (imgError) {
-          console.error('[PDF] Error processing image:', imgError)
-          // If image fails, add a placeholder
-          doc.fontSize(10)
-             .font('Helvetica')
-             .fillColor('#ef4444')
-             .text('[Image could not be rendered]', { align: 'left' })
-             .fillColor('#000000')
-             .moveDown(0.5)
-        }
-      }
-    })
-
-    // Finalize the PDF
-    doc.end()
-
-    console.log(`[PDF] Generated report with ${components.length} components`)
-  } catch (error) {
-    console.error('[PDF] Error generating report:', error)
-    res.status(500).json({ error: 'Failed to generate PDF report' })
-  }
+const PORT = 3001
+app.listen(PORT, () => {
+  console.log(`Dashboard API server running on http://localhost:${PORT}`)
 })
-
-// Serve static files from the React app build (for production)
-app.use(express.static(path.join(__dirname, '../dist')))
-
-// All other routes serve the React app (catch-all for client-side routing)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'))
-})
-
-const server = app.listen(config.port, () => {
-  console.log(`Dashboard API server running on http://localhost:${config.port}`)
-})
-
-// Increase timeout for long-running calculations (10 minutes)
-server.timeout = 600000
-server.keepAliveTimeout = 610000
-server.headersTimeout = 620000
 
 /**
  * ======================

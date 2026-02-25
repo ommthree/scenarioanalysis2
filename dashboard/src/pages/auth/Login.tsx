@@ -182,6 +182,25 @@ export default function Login() {
       }}>
         Navigate the labyrinth with confidence
       </p>
+
+      {/* Version label - bottom right */}
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        padding: '8px 16px',
+        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+        border: '1px solid rgba(59, 130, 246, 0.3)',
+        borderRadius: '8px',
+        fontSize: '13px',
+        color: '#94a3b8'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ color: '#3b82f6', fontWeight: '600' }}>v15-local</span>
+          <span style={{ color: '#64748b' }}>•</span>
+          <span style={{ color: '#94a3b8' }}>Login authentication restored</span>
+        </div>
+      </div>
     </div>
   );
 }
