@@ -25,62 +25,118 @@
 
 ---
 
-## The Critical Structure (S3 Upload Standard)
+## CRITICAL: Understanding the Deployment Flow
 
-**VERIFIED FROM v13 - THIS IS THE EXACT STRUCTURE REQUIRED:**
+**There are THREE separate repositories/locations involved:**
+
+1. **Local Development Git** (`git@github.com:ommthree/scenarioanalysis2.git`)
+   - Your working repository
+   - Push here for version control
+   - **NOT used by GCaaS deployment**
+
+2. **S3 Bucket** (`s3://pwcsucks/gcaas-deploy.tar.gz`)
+   - Contains deployment tarball
+   - **THIS IS WHAT GCAAS USES**
+   - Must be manually uploaded after changes
+   - **Pushing to GitHub alone does NOT trigger deployment**
+
+3. **GCaaS GitHub** (`pwc-ch-adv-riskreg/daedalus`)
+   - Different repository used by GCaaS Kaniko builder
+   - Pulls code via git context during build
+   - You don't directly push here
+
+### The Deployment Process (What Actually Happens)
 
 ```
-./                                 ← Root level (has config files)
-├── CMakeLists.txt                ✅ Root build config
-├── README.md                     ✅ Deployment readme
-├── ecosystem.config.cjs          ✅ PM2 configuration (root level)
-├── values.yaml                   ✅ GCaaS values (root level)
-│
-├── deployment/                   ✅ CRITICAL - GCaaS Helm config (root level)
-│   ├── Chart.yaml
-│   ├── values.yaml
-│   └── templates/
-│       ├── ksvc.yaml
-│       ├── configmap.yaml
-│       └── secrets.yaml
-│
-├── docs/                         ✅ Documentation
-│   └── docu/                     ✅ User guides
-│
-├── run/                          ✅ Runtime scripts
-│
-└── src/                          ✅ ALL SOURCE CODE GOES HERE
-    ├── CMakeLists.txt            ✅ Source build config
-    ├── Dockerfile                ✅ Container build (in src/)
-    ├── ecosystem.config.cjs      ✅ PM2 config (duplicate in src/)
+1. Edit code locally → 2. Push to GitHub (ommthree/scenarioanalysis2) [Version Control]
+                    ↓
+3. Create tarball with src/ structure [CRITICAL: Must have ./src/Dockerfile]
+                    ↓
+4. Upload to S3 (gcaas-deploy.tar.gz) [THIS TRIGGERS GCAAS]
+                    ↓
+5. GCaaS downloads from S3 → 6. Kaniko builds using git context from daedalus repo
+                    ↓
+7. Docker image created with Node.js 20.x → 8. Deployed to Knative
+```
+
+**CRITICAL MISTAKE TO AVOID:**
+- ❌ Pushing to GitHub and thinking deployment is complete
+- ❌ Forgetting to upload tarball to S3
+- ❌ Creating tarball without src/ structure
+- ❌ Not verifying Node.js 20.x in Dockerfile
+
+**CORRECT WORKFLOW:**
+1. Edit code in `/Users/Owen/ScenarioAnalysis2/`
+2. Commit and push to GitHub (`git push origin master`)
+3. Create deployment tarball with `src/` structure (see Step 3 below)
+4. **Upload tarball to S3** (see Step 5 below)
+5. GCaaS will automatically detect new S3 upload and deploy
+
+---
+
+## The Critical Structure (S3 Tarball Upload Standard)
+
+**CRITICAL: GCaaS Kaniko expects `./src/Dockerfile` path in tarball**
+
+**When creating the tarball, your local directory structure needs to be packaged into a `src/` subdirectory:**
+
+```
+./gcaas-v16-staging/               ← Staging directory (tarball root)
+└── src/                           ← CRITICAL: All code must be in src/
+    ├── Dockerfile                 ✅ MUST be at ./src/Dockerfile (NOT root level)
+    │                                 MUST have Node.js 20.x (not 18.x)
+    ├── CMakeLists.txt             ✅ Source build config
+    ├── README.md                  ✅ Deployment readme
+    ├── ecosystem.config.cjs       ✅ PM2 configuration
     │
-    ├── dashboard/                ✅ Full dashboard code
-    │   ├── package.json
-    │   ├── vite.config.ts
-    │   ├── src/                  ✅ React/TypeScript source
-    │   ├── server/               ✅ Node.js API server
-    │   └── public/               ✅ Static assets
-    │
-    ├── data/                     ✅ Data directory (minimal)
-    │   ├── users.db              ✅ Auth DB (49KB - INCLUDE)
-    │   ├── inputs/               ✅ Sample input files
-    │   ├── migrations/           ✅ Database migrations
-    │   └── users/                ✅ Empty directory (NO large DBs)
-    │
-    ├── deployment/               ✅ Helm templates (duplicate in src/)
+    ├── deployment/                ✅ GCaaS Helm configuration
+    │   ├── Chart.yaml
+    │   ├── values.yaml            (with volumes, configMap, etc.)
     │   └── templates/
     │
-    ├── engine/                   ✅ C++ calculation engine
+    ├── dashboard/                 ✅ Full dashboard code
+    │   ├── package.json
+    │   ├── vite.config.ts
+    │   ├── src/                   (React/TypeScript source)
+    │   ├── server/                (Node.js API server)
+    │   │   ├── index.js
+    │   │   ├── routes/
+    │   │   └── middleware/
+    │   └── public/                (Static assets)
+    │
+    ├── data/                      ✅ Data directory (minimal)
+    │   ├── users.db               (Auth DB - 49KB - INCLUDE)
+    │   ├── inputs/                (Sample input files)
+    │   ├── migrations/            (Database migrations)
+    │   └── users/                 (Empty directory - NO large DBs)
+    │
+    ├── engine/                    ✅ C++ calculation engine
     │   ├── CMakeLists.txt
     │   ├── include/
     │   └── src/
     │
-    └── external/                 ✅ C++ dependencies
-        ├── catch2/
-        ├── crow/
-        ├── eigen/
-        ├── nlohmann_json/
-        └── spdlog/
+    ├── external/                  ✅ C++ dependencies
+    │   ├── catch2/
+    │   ├── crow/
+    │   ├── eigen/
+    │   ├── nlohmann_json/
+    │   └── spdlog/
+    │
+    └── docs/                      ✅ Documentation
+        └── docu/                  (User guides)
+```
+
+**After creating the tarball:**
+```bash
+tar -czf gcaas-deploy-v16.tar.gz gcaas-v16-staging/src/
+```
+
+**Tarball contents will be:**
+```
+gcaas-v16-staging/src/Dockerfile      ← GCaaS Kaniko looks for ./src/Dockerfile
+gcaas-v16-staging/src/dashboard/
+gcaas-v16-staging/src/engine/
+...
 ```
 
 ### What to EXCLUDE (Critical)
@@ -307,43 +363,54 @@ grep "setup_20" Dockerfile run/Dockerfile
 
 ### Step 3: Prepare Deployment Package
 
-**Create a clean deployment tarball matching S3 structure:**
+**CRITICAL: Create tarball with src/ structure (GCaaS Kaniko expects ./src/Dockerfile)**
 
 ```bash
 cd /Users/Owen/ScenarioAnalysis2
 
-# Create tarball with exact structure
-tar -czf gcaas-deploy-v15.tar.gz \
+# 1. Create staging directory with src/ structure
+mkdir -p /tmp/gcaas-v16-staging/src
+
+# 2. Copy files to staging directory using rsync (preserves structure, excludes unwanted files)
+rsync -av \
   --exclude='node_modules' \
   --exclude='build' \
   --exclude='build-windows' \
   --exclude='.git' \
-  --exclude='data/users/*/scenario_analysis.db' \
   --exclude='*.tar.gz' \
   --exclude='*.log' \
   --exclude='*.mp4' \
   --exclude='gcaas-deploy' \
-  --exclude='legacydeployment' \
-  --dereference \
+  --exclude='sessions.db' \
+  --exclude='data/users/*/scenario_analysis.db' \
+  --exclude='.vite' \
   CMakeLists.txt \
   Dockerfile \
-  ecosystem.config.cjs \
-  README.md \
-  deployment/ \
   dashboard/ \
   data/users.db \
   data/inputs/ \
   data/migrations/ \
   engine/ \
   external/ \
-  docs/
+  deployment/ \
+  docs/ \
+  ecosystem.config.cjs \
+  README.md \
+  /tmp/gcaas-v16-staging/src/
 
-# Verify size (should be ~200-900MB)
-ls -lh gcaas-deploy-v15.tar.gz
+# 3. Verify Dockerfile has Node.js 20.x (CRITICAL)
+grep "setup_20" /tmp/gcaas-v16-staging/src/Dockerfile
 
-# Verify contents (check for symbolic links, large files)
-tar -tzf gcaas-deploy-v15.tar.gz | head -50
-tar -tzf gcaas-deploy-v15.tar.gz | grep -E '\.(db|tar\.gz)$'
+# 4. Create tarball from staging directory
+cd /tmp
+tar -czf gcaas-deploy-v16.tar.gz gcaas-v16-staging/src/
+
+# 5. Verify size (should be ~200MB)
+ls -lh gcaas-deploy-v16.tar.gz
+
+# 6. Verify tarball structure (must have src/Dockerfile path)
+tar -tzf gcaas-deploy-v16.tar.gz | grep "^[^/]*/src/Dockerfile$"
+tar -tzf gcaas-deploy-v16.tar.gz | head -20
 ```
 
 ### Step 4: Fix Database Paths for Container
@@ -369,18 +436,33 @@ tar -czf gcaas-deploy-v15.tar.gz [... same as above ...]
 mv data/users.db.backup data/users.db
 ```
 
-### Step 5: Upload to S3
+### Step 5: Upload to S3 (THIS TRIGGERS DEPLOYMENT)
+
+**CRITICAL: This step is REQUIRED for deployment. Pushing to GitHub alone does NOT deploy.**
 
 ```bash
-# Upload as latest
-aws s3 cp gcaas-deploy-v15.tar.gz s3://pwcsucks/gcaas-deploy.tar.gz
+# Upload as latest (THIS IS WHAT GCAAS USES)
+aws s3 cp /tmp/gcaas-deploy-v16.tar.gz s3://pwcsucks/gcaas-deploy.tar.gz
 
-# Also upload versioned copy
-aws s3 cp gcaas-deploy-v15.tar.gz s3://pwcsucks/gcaas-deploy-v15.tar.gz
+# Also upload versioned copy (for rollback)
+aws s3 cp /tmp/gcaas-deploy-v16.tar.gz s3://pwcsucks/gcaas-deploy-v16.tar.gz
 
-# Verify upload
+# Verify upload (check timestamp and size)
 aws s3 ls s3://pwcsucks/ | grep gcaas-deploy
 ```
+
+**Expected output:**
+```
+2026-02-26 09:01:52  211940710 gcaas-deploy-v16.tar.gz
+2026-02-26 09:00:55  211940710 gcaas-deploy.tar.gz
+```
+
+**What happens next:**
+1. GCaaS detects new `gcaas-deploy.tar.gz` in S3
+2. GCaaS downloads tarball and extracts it
+3. Kaniko builds Docker image using `./src/Dockerfile` with Node.js 20.x
+4. Image is pushed to registry and deployed to Knative
+5. Application becomes available at GCaaS URL
 
 ### Step 6: Update Documentation
 
