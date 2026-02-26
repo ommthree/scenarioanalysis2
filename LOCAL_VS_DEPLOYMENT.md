@@ -162,18 +162,18 @@ app.use(session({
 
 **Why:** Local uses in-memory sessions for development simplicity. Deployment versions may use persistent storage for production reliability. **Both are valid** - choose based on deployment needs.
 
-### 3. Built Frontend (MUST differ as of v15)
+### 3. Built Frontend (MAY differ)
 
 **Local Development:**
 - No `dashboard/dist/` directory (excluded from git)
 - Vite dev server serves unbundled source (port 5173)
 
-**Deployment (REQUIRED):**
-- MUST include `dashboard/dist/` with pre-built frontend (~15MB)
-- Pre-built locally before creating tarball
-- Dockerfile still runs `npm ci && npx vite build`, but dist/ acts as fallback
+**Deployment:**
+- `dashboard/dist/` built during Docker build process
+- Dockerfile runs `npm ci && npx vite build` to generate dist/
+- Requires Node.js 20+ in Dockerfile (see below)
 
-**Why:** **CRITICAL for v15+** - Tailwind CSS v4 uses native Rust bindings that are platform-specific. Package-lock.json from Mac (Apple Silicon) fails when Docker builds on Linux. Pre-building locally and including dist/ avoids PostCSS native binding errors: `Cannot find native binding. npm has a bug related to optional dependencies`
+**Why:** Frontend is built from source during Docker build. **Node.js 20+ is REQUIRED** in Dockerfile because Tailwind CSS v4, Vite 7, and React Router 7 all require Node.js 20+.
 
 ### 4. Node Modules (MAY differ)
 
@@ -289,25 +289,19 @@ npm run dev                        # Foreground
 # Test login, calculations, all features
 ```
 
-### Step 2.5: Pre-Build Frontend (CRITICAL)
+### Step 2.5: Verify Node.js Version in Dockerfiles (CRITICAL)
 
-**Why this is critical:** Tailwind CSS v4 uses native Rust bindings that are platform-specific. Package-lock.json generated on Mac (Apple Silicon) contains optional dependencies that fail when Docker tries to build on Linux. Pre-building the frontend locally and including `dist/` in the tarball avoids PostCSS native binding errors during Docker build.
+**Why this is critical:** Tailwind CSS v4, Vite 7, and React Router 7 require Node.js 20+. The Dockerfiles MUST use Node.js 20.x, not 18.x, otherwise the Docker build will fail with PostCSS native binding errors.
 
 ```bash
-# Build frontend locally to generate dist/
-cd /Users/Owen/ScenarioAnalysis2/dashboard
-npx vite build
+# Check BOTH Dockerfiles have Node.js 20.x:
+grep "setup_20" Dockerfile run/Dockerfile
 
-# Verify dist was created (should be ~15MB)
-du -sh dist/
-ls -la dist/
-
-# You should see:
-# - dist/index.html
-# - dist/assets/index-*.js
-# - dist/assets/index-*.css
-# - Static assets (logos, PDFs, etc.)
+# You should see (in BOTH files):
+# RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 ```
+
+**If you see `setup_18.x` instead, the build WILL FAIL.** Update both Dockerfiles to use Node.js 20.x.
 
 **Important:** The Dockerfile will still run `npm ci && npx vite build` during Docker build, but having the pre-built dist/ ensures the container can fall back to it if the build step has issues.
 
@@ -409,7 +403,7 @@ GCaaS will automatically detect the new package and deploy it. No manual steps n
 
 1. **Edit files in old tarballs** - Always edit in local dev
 2. **Include node_modules** - Bloats package, installed during build
-3. **Skip pre-building frontend** - Causes PostCSS native binding errors in Docker
+3. **Use Node.js 18.x in Dockerfiles** - Causes PostCSS native binding errors; MUST use Node.js 20+
 4. **Include symbolic links** - Break on Windows and in containers
 5. **Mix local and container paths** - Use environment-specific paths
 6. **Upload without testing locally** - Always test first
@@ -452,25 +446,31 @@ UPDATE users SET db_path = REPLACE(db_path, '/Users/Owen/ScenarioAnalysis2', '/a
 [vite:css] Failed to load PostCSS config (searchPath: /app/dashboard):
 [Error] Loading PostCSS Plugin failed: Cannot find native binding.
 npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828)
+
+You are using Node.js 18.20.8. Vite requires Node.js version 20.19+ or 22.12+.
+npm warn EBADENGINE   package: '@tailwindcss/oxide@4.2.1',
+npm warn EBADENGINE   required: { node: '>= 20' },
+npm warn EBADENGINE   current: { node: 'v18.20.8', npm: '10.8.2' }
 ```
 
-**Cause:** Tailwind CSS v4 uses native Rust bindings. Package-lock.json from Mac (Apple Silicon) contains platform-specific optional dependencies that fail when Docker builds on Linux.
+**Root Cause:** The Dockerfile is using Node.js 18.x, but Tailwind CSS v4, Vite 7, and React Router 7 require Node.js 20+.
 
-**Fix:**
-```bash
-# Pre-build frontend locally before creating tarball
-cd /Users/Owen/ScenarioAnalysis2/dashboard
-npx vite build
+**Fix:** Upgrade Node.js version in **BOTH** Dockerfiles (`Dockerfile` and `run/Dockerfile`):
+```dockerfile
+# Change from:
+# Install Node.js 18.x
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
 
-# Verify dist/ was created
-ls -la dist/
-
-# Recreate tarball WITH dist/ included
-cd /Users/Owen/ScenarioAnalysis2
-tar -czf gcaas-deploy-v15.tar.gz ... dashboard/ ...
+# To:
+# Install Node.js 20.x (required for Tailwind CSS v4, Vite 7, React Router 7)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
 ```
 
-**Prevention:** ALWAYS include pre-built `dashboard/dist/` in deployment tarballs (as of v15+).
+Update **BOTH occurrences** (builder stage AND production stage) in **BOTH Dockerfiles**.
+
+**Prevention:** Keep Node.js version in Dockerfiles aligned with package.json requirements. When you see `npm warn EBADENGINE`, upgrade Node.js version in Dockerfiles.
 
 ### "GCaaS build fails: Cannot find module"
 
